@@ -56,7 +56,7 @@ class Classifier(nn.Module):
         #SET UP CLF CONFIG
         clf_name = self.get_clf_name()
         self.config = {'clf_name':clf_name, 'in_features':self.in_feats, 'out_features':self.out_feats, 
-                       'nlayers':self.nlayers, 'activation':self.activation, 'ckpt':self.ckpt}
+                       'nlayers':self.nlayers, 'activation':self.activation}
         if self.ckpt is not None:
             self.config['ckpt'] = str(self.config['ckpt']) 
 

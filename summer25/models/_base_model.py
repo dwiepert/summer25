@@ -100,8 +100,7 @@ class BaseModel(nn.Module):
         Get a base configuration file to append to
         :return base_config: Dict[str -> str or List of str]
         """
-        base_config={'model_name':self.model_name, 'freeze_method': self.freeze_method, 'pool_method':self.pool_method,
-                      'pt_ckpt': self.pt_ckpt, 'ft_ckpt': self.ft_ckpt}
+        base_config={'model_name':self.model_name, 'freeze_method': self.freeze_method, 'pool_method':self.pool_method}
         if self.pt_ckpt is not None:
             base_config['pt_ckpt'] = str(base_config['pt_ckpt'])
         if self.ft_ckpt is not None:
@@ -199,7 +198,11 @@ class BaseModel(nn.Module):
         Save a config dictionary
         :param config: Dict
         """
-        save_path = self.out_dir / 'config.json'
+        save_path = self.out_dir / 'configs'
+        save_path.mkdir(exist_ok=True)
+        save_path = save_path / 'model_config.json'
+        if save_path.exists(): print(f'Overwriting model config file saved at {str(save_path)}')
+        
         with open(str(save_path), "w") as outfile:
             json.dump(config, outfile)
 
@@ -208,8 +211,15 @@ class BaseModel(nn.Module):
         """
         Save the model components
         """
-        bm_path = self.out_dir / self.model_name+'.pt'
+        bm_path = self.out_dir / 'weights'
+        clf_path.mkdir(exist_ok=True)
+        bm_path = bm_path / self.model_name+'.pt'
+
+        if bm_path.exists(): print(f'Overwriting existing model at {str(bm_path)}')
         torch.save(self.base_model.state_dict(), bm_path)
 
-        clf_path = self.out_dir / self.clf_config['clf_name']+'.pt'
+        clf_path = self.out_dir / 'weights' 
+        clf_path.mkdir(exist_ok=True)
+        clf_path = clf_path / self.clf_config['clf_name']+'.pt'
+        if clf_path.exists(): print(f'Overwriting existing classifier head at {str(clf_path)}')
         torch.save(self.clf.state_dict(), clf_path)

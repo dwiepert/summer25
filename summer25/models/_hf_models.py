@@ -25,14 +25,21 @@ class HFModel(BaseModel):
     """
     Model class for hugging face models 
 
-    :param model_type: str
+    :param model_type: str, hugging face model type for naming purposes
     :param hf_path: str, either string name for transformers folder or path to local directory
+    :param use_featext: bool, specify whether there is a separate feature extractor to load for a hugging face model
+    :param out_dir: Pathlike, output directory to save to
+    :param target_sample_rate: int, target sampling rate, used with feature extractor
+    :param freeze_extractor: bool, specify whether the feature extractor component of a model with a built-in feature extractor (use_featext=FALSE) should be frozen.
     :param freeze_method: str, freeze method for base pretrained model (default=all)
     :param pool_method: str, pooling method for base model output (default=mean)
     :param ft_ckpt: pathlike, path to finetuned base model checkpoint (default=None)
+    :param seed: int, specify random seed for ensuring reproducibility
     :param kwargs: additional arguments for optional parameters (e.g., pool_dim for mean/max pooling and unfreeze_layers if freeze_method is layer)
     """
-    def __init__(self, model_type:str, hf_path:str, use_featext:bool, target_sample_rate:int, out_dir:Union[Path, str], freeze_extractor:bool=True, freeze_method:str = 'all', pool_method:str = 'mean',
+    def __init__(self, model_type:str, hf_path:str, use_featext:bool, out_dir:Union[Path, str], 
+                 target_sample_rate:int=16000,freeze_extractor:bool=True, 
+                 freeze_method:str = 'all', pool_method:str = 'mean', 
                  ft_ckpt:Optional[Union[Path,str]]=None, seed:int=42, **kwargs):
         
         self.model_type = model_type 
@@ -50,7 +57,7 @@ class HFModel(BaseModel):
         super().__init__(out_dir=out_dir, clf_args=self._initialize_clf_args(), freeze_method=freeze_method, pool_method=pool_method, ft_ckpt=ft_ckpt, **kwargs)
 
         self.model_name = self.get_model_name()
-        self.config = {'model_name': self.model_name, 'hf_path':self.hf_path, 'seed':self.seed,
+        self.config = {'model_name': self.model_name, 'model_type':self.model_type, 'hf_path':self.hf_path, 'seed':self.seed,
                        'freeze_extractor': self.freeze_extractor, 'use_featext': self.use_featext, 'target_sample_rate': self.target_sample_rate,
                        'clf_config': self.clf_config, 'base_config':self.base_config}
         self.save_config()
@@ -123,6 +130,12 @@ class HFModel(BaseModel):
         raise NotImplementedError('Unfreezing by layer not implemented for hugging face models')
     
     def forward(self, sample:Dict):
+        """
+        Overwritten forward loop. 
+
+        :param sample: batched sample from a DataLoader object that minimally contains a `waveform` key storing the tensor of the loaded audio
+        :return: classifier output
+        """
         if self.feature_extractor is not None:
             preprocessed_wav = self.feature_extractor(list(sample['waveform']).cpu().numpy(),
                                                       return_tensors='pt', 
