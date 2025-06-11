@@ -27,7 +27,9 @@ class Classifier(nn.Module):
 
     """
     def __init__(self, in_features:int, out_features:int, nlayers:int=2, 
-                 activation:str='sigmoid', ckpt:Optional[Union[str,Path]]=None):
+                 activation:str='sigmoid', ckpt:Optional[Union[str,Path]]=None, seed:int=42):
+        
+        super(Classifier, self).__init__()
         #INITIALIZE VARIABLES
         self.in_feats = in_features
         self.out_feats = out_features
@@ -35,11 +37,16 @@ class Classifier(nn.Module):
         self.activation = activation 
         self.ckpt = ckpt
 
-        if not isinstance(self.ckpt, Path): self.ckpt = Path(self.ckpt)
+        #SET SEED
+        self.seed = seed
+        torch.manual_seed(self.seed)
+
+        if self.ckpt:
+            if not isinstance(self.ckpt, Path): self.ckpt = Path(self.ckpt)
 
         #ASSERTIONS
         assert self.activation in ['sigmoid'], f'{self.activation} is not a valid activation function.'
-        max_layers = 1
+        max_layers = 2
         assert self.nlayers <= max_layers, f'Classifier class cannot handle {self.nlayers}. Must be less than {max_layers}.'
         #TODO: assertions for in and out feats
 
@@ -51,6 +58,10 @@ class Classifier(nn.Module):
             if i+1 != self.nlayers:
                 model_dict[f'{self.activation}{i+1}'] = self._get_activation_layer()
         self.classifier = nn.Sequential(model_dict)
+        
+        #https://www.askpython.com/python-modules/initialize-model-weights-pytorch
+        print('TODO: random initialization of weights')
+        #self.classifier.apply(self.classifier._init_weights)
         self._load_checkpoint()
 
         #SET UP CLF CONFIG
@@ -65,9 +76,9 @@ class Classifier(nn.Module):
         Get classifier parameters based on input parameters
         """
         self.params = {}
-        if self.nlayers == 2 and self.in_feats == 1 and self.out_feats == 1:
-            self.params['in_feats'] = [1,1]
-            self.params['out_feats'] = [1,1]
+        if self.nlayers == 2:
+            self.params['in_feats'] = [self.in_feats,self.in_feats]
+            self.params['out_feats'] = [self.in_feats,self.out_feats]
         else:
             raise NotImplementedError(f'Classifier parameters not yet implemented for given inputs.')
         
@@ -83,14 +94,14 @@ class Classifier(nn.Module):
             raise NotImplementedError(f'{self.activation} not yet implemented.')
             #TODO: add
 
-    def _load_checkpoint(self, ckpt):
+    def _load_checkpoint(self):
         """
         Load a checkpoint for the model from a state_dict
         
         :param ckpt: pathlike object, model checkpoint - path to state dict
         """
-        if ckpt is not None:
-            self.classifier.load_state_dict(torch.load(ckpt, weights_only=True))
+        if self.ckpt is not None:
+            self.classifier.load_state_dict(torch.load(self.ckpt, weights_only=True))
     
     def forward(self, x) -> torch.Tensor:
         """

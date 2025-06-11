@@ -14,6 +14,9 @@ from typing import List
 
 ##local
 from summer25.models import HFModel
+from summer25.configs import _REQUIRED_ARGS, _FREEZE, _POOL, _MODELS
+
+_REQUIRED_LOAD = ['output_dir']
 
 # HELPER FUNCTIONS #
 def load_config(config_file):
@@ -21,19 +24,18 @@ def load_config(config_file):
         return json.load(f)
 
 # CHECK ARGUMENTS #
-def check_load(args:dict, required:List[str]=['output_dir']) -> dict:
+def check_load(args:dict) -> dict:
     """
     Load config file for data saving and audio loading, and ensure required arguments are there and pass assertions. 
 
     :param args: dictionary of arguments - vars(argparse object)
-    :param required: list of required arguments
     :return args: updated args dictionary
     """ 
     if 'load_cfg' in args:
         load_cfg = args.pop('load_cfg')
         args.update(load_cfg)
     else:
-        for r in required:
+        for r in _REQUIRED_LOAD:
             assert r in args, f'The required argument `{r}` was not given. Use `-h` or `--help` if information on the argument is needed.'
 
     assert args['output_dir'], 'Output directory not given.'
@@ -42,29 +44,23 @@ def check_load(args:dict, required:List[str]=['output_dir']) -> dict:
     
     return args
 
-def check_model(args:dict, 
-                allowed_models:List[str]=['wavlm-base'],
-                allowed_pool:List[str]= ['mean', 'max'],
-                allowed_freeze:List[str] = ['all', 'layer', 'none'],
-                required:List[str] =['model_type', 'pt_ckpt', 'seed', 'freeze_method', 'pool_method', 'in_features', 'out_features']) -> dict:
+def check_model(args:dict, ) -> dict:
     """
     Check if a model config file exists or has been given, load in if it does, and ensure required arguments are there and pass assertions. 
 
     If the model config file is not an existing model config (as saved in the model class), make sure that it follows the format of those config files. See README for more information. TODO!
 
     :param args: dictionary of arguments - vars(argparse object)
-    :param allowed_models: list of allowed model types
-    :param allowed_pool: list of allowed pooling methods
-    :param allowed_freeze: list of allowed freeze methods
-    :param required: list of required arguments
     :return args: updated args dictionary
     """
     #check for mismatch between existing and not existing model cfg
-    existing_cfg = args['output_dir'].rglob('*model_config.json')
-
+    ec = args['output_dir'].rglob('*model_config.json')
+    existing_cfg = [e for e in ec]
+    
     if existing_cfg:
-        f = next(existing_cfg)
+        f = existing_cfg[0]
         precfg = load_config(f)
+        raise NotImplementedError('Updating args with existing config is not implemented.')
 
     #TODO: compare existing model_cfg and given arguments? or just overwrite with existing arguments? 
 
@@ -73,8 +69,6 @@ def check_model(args:dict,
         base_cfg = model_cfg.pop('base_config')
         clf_cfg = model_cfg.pop('clf_config')
 
-        if 'hf_path' in model_cfg:
-            model_cfg['pt_ckpt'] = model_cfg.pop('hf_path')
         if 'ckpt' in clf_cfg:
             clf_cfg['clf_ckpt'] = clf_cfg.pop('ckpt')
 
@@ -83,31 +77,37 @@ def check_model(args:dict,
         args.update(model_cfg)
 
         mt = args['model_type']
-        assert mt in allowed_models, f'{mt} is an invalid model type. Choose one of {allowed_models}.'
+        assert mt in list(_MODELS.keys()), f'{mt} is an invalid model type. Choose one of {list(_MODELS.keys())}.'
         fm = args['freeze_method']
-        assert fm in allowed_freeze, f'{fm} is an invalid freeze method. Choose one of {allowed_freeze}.'
+        assert fm in _FREEZE, f'{fm} is an invalid freeze method. Choose one of {_FREEZE}.'
         pm = args['pool_method']
-        assert pm in allowed_pool, f'{pm} is an invalid pooling method. Choose one of {allowed_pool}.'
+        assert pm in _POOL, f'{pm} is an invalid pooling method. Choose one of {_POOL}.'
 
     else:
-        for r in required:
+        for r in _REQUIRED_ARGS:
             assert r in args, f'The required argument `{r}` was not given. Use `-h` or `--help` if information on the argument is needed.'
 
-    if 'clf_ckpt' in args:
+    if args['clf_ckpt'] is not None:
         if not isinstance(args['clf_ckpt'], Path): args['clf_ckpt'] = Path(args['clf_ckpt'])
-    if 'ft_ckpt' in args:
+    if args['ft_ckpt'] is not None:
         if not isinstance(args['ft_ckpt'], Path): args['ft_ckpt'] = Path(args['ft_ckpt'])
     
-    if args['model_type'] in ['wavlm-base']:
+    if 'hf_hub' in _MODELS[args['model_type']]:
         args['hf_model'] = True
-        if not isinstance(args['pt_ckpt'],str): args['pt_ckpt'] = str(args['pt_ckpt'])
+        if args['pt_ckpt']:
+            if not isinstance(args['pt_ckpt'],str): args['pt_ckpt'] = str(args['pt_ckpt'])
     else:
         args['hf_model'] = False
 
     assert 'freeze_method' in args, 'Freeze method not given. Check command line arguments or model configuration file.'
     if args['freeze_method'] == 'layer': assert 'unfreeze_layers' in args, 'unfreeze_layers must be given if freeze method is `layer`.'
+    return args
 
-    if args['pool_method'] in ['mean', 'max']: assert 'pool_dim' in args, 'pool_dim not given. Check command line arguments or model configuration file. '
+def save_path(args:argparse.Namespace) -> argparse.Namespace:
+    """
+    Generate save path to ensure models are not overwritten 
+    """
+    print('Output directory save path not fully implemented.')
     return args
 
 # PREP ARGUMENTS #
@@ -118,8 +118,6 @@ def zip_clf(args:argparse.Namespace) -> dict:
     :return clf_args: dict of classifier arguments
     """
     clf_args = {}
-    if args.in_features:
-        clf_args['in_features'] = args.in_features
     if args.out_features:
         clf_args['out_features'] = args.out_features
     if args.nlayers:
@@ -137,20 +135,21 @@ def zip_model(args:argparse.Namespace) -> dict:
     :return model_args: dict of model arguments
     """
     if args.hf_model:
-        model_args = {'model_type':args.model_type, 'hf_path':str(args.pt_ckpt), 'use_featext':args.use_featext,
-                    'out_dir':args.output_dir,'freeze_extractor':args.freeze_extractor, 
-                    'freeze_method':args.freeze_method, 'pool_method':args.pool_method, 'seed':args.seed}
-    if args.sample_rate:
-        model_args['target_sample_rate'] = args.sample_rate
-    if args.ft_ckpt:
-        model_args['ft_ckpt'] = args.ft_ckpt
-    if args.pool_dim:
-        model_args['pool_dim'] = args.pool_dim
-    if args.unfreeze_layers:
-        model_args['unfreeze_layers'] = args.unfreeze_layers
-    
+        model_args = {'model_type':args.model_type,'out_dir':args.output_dir,'keep_extractor':args.keep_extractor, 
+                    'freeze_method':args.freeze_method, 'pool_method':args.pool_method, 'pool_dim':_MODELS[args.model_type]['pool_dim'],
+                    'seed':args.seed}
     else:
         raise NotImplementedError('Only compatible with huggingface models currently.')
+    
+    if args.delete_download:
+        model_args['delete_download'] = args.delete_download
+    if args.pt_ckpt:
+        model_args['pt_ckpt'] = args.pt_ckpt
+    if args.ft_ckpt:
+        model_args['ft_ckpt'] = args.ft_ckpt
+    if args.unfreeze_layers:
+        model_args['unfreeze_layers'] = args.unfreeze_layers
+
     return model_args
 
 if __name__ == "__main__":
@@ -164,39 +163,30 @@ if __name__ == "__main__":
     io_args.add_argument('--output_dir', type=Path, help='Output directory for saving all files.')
     #AUDIO
     audio_args = parser.add_argument_group('audio', 'Audio file related args')
-    audio_args.add_argument('--sample_rate', type=int, help='Specify target sample rate. Must line up with model.')
     #BASE MODEL
     model_args = parser.add_argument_group('model', 'model related arguments')
     model_args.add_argument('--model_type', type=str,
-                            choices=['wavlm-base'], help='Specify model type')
-    model_args.add_argument('--pt_ckpt', type=Path, help='Specify pretrained model path. For hugging face models, this can be the hub name or a local path.')
+                            choices=list(_MODELS.keys()), help='Specify model type')
+    model_args.add_argument('--pt_ckpt', type=Path, help='Specify local pretrained model path. Only required for hugging face models if issues loading from hub.')
+    model_args.add_argument('--delete_download', action='store_true', help='Specify local pretrained model path. Only required for hugging face models if issues loading from hub.')
     model_args.add_argument('--seed', type=int, help='Specify random seed for model initialization.')
-    model_args.add_argument('--use_featext', action='store_true', help='Specify whether a separate feature extractor is used.')
-    model_args.add_argument('--freeze_extractor', action='store_true', help='Specify whether to freeze the feature extractor.')
+    model_args.add_argument('--keep_extractor', action='store_true', help='Specify whether to keep weights of feature extractor.')
     model_args.add_argument('--freeze_method', type=str, choices=['all', 'layer', 'none'], help='Specify what freeze method to use.')
     model_args.add_argument('--unfreeze_layers', nargs="+", help="If freeze_method is `layer`, use this to specify which layers to freeze")
     model_args.add_argument('--ft_ckpt', type=Path, help='Specify finetuned model checkpoint')
     model_args.add_argument('--pool_method', type=str, choices=['mean', 'max', 'attn'], help='Specify pooling method prior to classification head.')
-    model_args.add_argument('--pool_dim', type=int, nargs="+", help='Specify the pooling dimension(s).')
     #CLASSIFIER
     clf_args = parser.add_argument_group('classifier', 'classifier related arguments')
-    clf_args.add_argument('--in_features', type=int, help="Number of input features to the classification head.")
     clf_args.add_argument('--out_features', type=int, help='Specify number of classification categories (output features).')
     clf_args.add_argument('--nlayers', type=int, help='Specify classification head size.')
     clf_args.add_argument('--activation', type=str, help='Specify type of activation function to use in the classifier.')
     clf_args.add_argument('--clf_ckpt', type=Path, help="Specify classification checkpoint.")
-
-    required_load = ['output_dir']
-    allowed_models=['wavlm-base']
-    allowed_pool = ['mean', 'max']
-    allowed_freeze = ['all', 'layer', 'none']
-    required_model =['model_type', 'pt_ckpt', 'seed', 'freeze_method', 'pool_method', 'in_features', 'out_features']
     
     args = parser.parse_args()
     args_dict = vars(args)
-    args_dict_l = check_load(args_dict, required_load)
-    args_dict_m = check_model(args_dict_l, allowed_models, allowed_pool, allowed_freeze, required_model)
-    updated_args = argparse.Namespace(**args_dict_m)
+    args_dict_l = check_load(args_dict)
+    args_dict_m = check_model(args_dict_l)
+    updated_args = save_path(argparse.Namespace(**args_dict_m))
 
     ma = zip_model(updated_args)
     ca = zip_clf(updated_args)
