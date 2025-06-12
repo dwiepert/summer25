@@ -97,3 +97,20 @@ _MODELS = {  "wavlm-base": {
 _POOL = ['mean', 'max']
 _FREEZE = ['all', 'layer', 'none']
 _REQUIRED_ARGS =['model_type', 'pt_ckpt', 'seed', 'freeze_method', 'pool_method', 'out_features']
+
+_TASKS = ['sentence_repetition', 'word_repetition']
+
+_FEATURES = ['abn_pitch_or_loudness_variability', 'abn_resonance',
+       'accelerating_rate', 'audible_false_starts_or_restarts',
+       'audible_nasal_emission', 'breathy', 'excess_equal_stress',
+       'high_pitch', 'hoarse_harsh', 'hypernasal',
+       'inappropriate_silences_or_prolonged_intervals', 'intelligibility',
+       'irregular_artic_breakdowns', 'language', 'loudness_decay', 'low_pitch',
+       'monopitch_monoloudness', 'other_cognitive_communication_skills',
+       'prolonged_sounds', 'rapid_rate', 'reduced_syllables_per_breath_group',
+       'repeated_sounds', 'slow_rate', 'sound_additions', 'sound_distortions',
+       'sound_omissions', 'sound_sequencing_errors', 'sound_substitutions',
+       'strained', 'stridor', 'syllable_segmentation',
+       'telescoping_of_syllables', 'verbal_asides', 'vocal_noises',
+       'voice_interruptions', 'word_or_phrase_repetitions']
+

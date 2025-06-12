@@ -14,9 +14,10 @@ from typing import List
 
 ##local
 from summer25.models import HFModel
-from summer25.configs import _REQUIRED_ARGS, _FREEZE, _POOL, _MODELS
+from summer25.dataset import seeded_split
+from summer25.constants import _REQUIRED_ARGS, _FREEZE, _POOL, _MODELS
 
-_REQUIRED_LOAD = ['output_dir']
+_REQUIRED_LOAD = ['output_dir', 'audio_dir', 'split_dir']
 
 # HELPER FUNCTIONS #
 def load_config(config_file):
@@ -38,8 +39,16 @@ def check_load(args:dict) -> dict:
         for r in _REQUIRED_LOAD:
             assert r in args, f'The required argument `{r}` was not given. Use `-h` or `--help` if information on the argument is needed.'
 
+    assert args['audio_dir'], 'Audio directory not given.'
+    assert args['split_dir'], 'Split dir not given.'
     assert args['output_dir'], 'Output directory not given.'
+
+    if not isinstance(args['audio_dir'], Path): args['audio_dir'] = Path(args['audio_dir'])
+    if not isinstance(args['split_dir'],Path): args['split_dir'] = Path(args['split_dir'])
     if not isinstance(args['output_dir'], Path): args['output_dir'] = Path(args['output_dir'])
+    
+    assert args['audio_dir'].exists(), 'Given audio directory does not exist.'
+    args['split_dir'].mkdir(parents=True, exist_ok=True)
     args['output_dir'].mkdir(parents=True, exist_ok=True)
     
     return args
@@ -152,6 +161,34 @@ def zip_model(args:argparse.Namespace) -> dict:
 
     return model_args
 
+def zip_splits(args:argparse.Namespace) -> dict:
+    """
+    Zip arguments for splits into a dictionary
+    :param args: argparse Namespace object
+    :return split_args: dict of split arguments
+    """
+    split_args = {'audio_dir': args.audio_dir, 'split_dir': args.split_dir,
+                  'seed': args.seed, 'save': args.save_split, 'load_existing': args.load_existing_split, 'as_json':args.as_json}
+
+    if args.proportions:
+        split_args['proportions'] = args.proportions
+    if args.target_tasks:
+        split_args['target_tasks'] = args.target_tasks
+    if args.target_features:
+        split_args['target_features'] = args.target_features
+    if args.stratify_threshold:
+        split_args['stratify_threshold'] = args.stratify_threshold
+    if args.subject_key:
+        split_args['subject_key'] = args.subject_key
+    if args.date_key:
+        split_args['date_key'] = args.date_key
+    if args.task_key:
+        split_args['task_key'] = args.task_key
+    if args.audio_key:
+        split_args['audio_key'] = args.audio_key
+
+    return split_args
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Main Parser")
     #OPTIONAL CONFIG FILES
@@ -160,7 +197,20 @@ if __name__ == "__main__":
     cfg_args.add_argument('--model_cfg', type=load_config, help="Model configuration json")
     #I/O
     io_args = parser.add_argument_group('io', 'file related arguments')
+    io_args.add_argument('--audio_dir', type=Path, help='Directory with audio files & a csv with information on speakers/task.')
+    io_args.add_argument('--split_dir', type=Path, help='Directory with csv or jsons of file splits.')
+    io_args.add_argument('--load_exisiting_split', action='store_true', help='Default to loading exisiting split.')
+    io_args.add_argument('--as_json', action='store_true', help='True if loading/saving splits as json files.')
+    io_args.add_argument('--save_split', action='store_true', help='Save generated data splits.')
     io_args.add_argument('--output_dir', type=Path, help='Output directory for saving all files.')
+    io_args.add_argument('--target_tasks', nargs="+", type=List[str], help="Specify target tasks for dataset.")
+    io_args.add_argument('--target_features', nargs="+", type=List[str], help="Specify target features for dataset.")
+    io_args.add_argument('--stratify_threshold', type=int, help="Specify minimum number of positive examples for a feature group.")
+    io_args.add_argument('--subject_key', type=str, help='Specify column/key name for subjects in dataset metadata table')
+    io_args.add_argument('--date_key', type=str, help='Specify column/key name for date in dataset metadata table')
+    io_args.add_argument('--task_key', type=str, help='Specify column/key name for tasks in dataset metadata table')
+    io_args.add_argument('--audio_key', type=str, help='Specify column/key name for audio file names in dataset metadata table')
+    io_args.add_argument('--proportions', nargs="+", type=List[float], help='Specify split proportions.')
     #AUDIO
     audio_args = parser.add_argument_group('audio', 'Audio file related args')
     #BASE MODEL
@@ -187,6 +237,9 @@ if __name__ == "__main__":
     args_dict_l = check_load(args_dict)
     args_dict_m = check_model(args_dict_l)
     updated_args = save_path(argparse.Namespace(**args_dict_m))
+
+    s = zip_splits(updated_args)
+    train_df, val_df, test_df = seeded_split(**s)
 
     ma = zip_model(updated_args)
     ca = zip_clf(updated_args)

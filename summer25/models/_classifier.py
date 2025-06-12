@@ -24,6 +24,7 @@ class Classifier(nn.Module):
     :param nlayers: integer, number of classifier layers (default=2)
     :param activation: str, activation function to use (default=sigmoid)
     :param ckpt: pathlike, optional path to trained classifier (default=none)
+    :param seed: int, random seed (default = 42)
 
     """
     def __init__(self, in_features:int, out_features:int, nlayers:int=2, 
@@ -103,7 +104,7 @@ class Classifier(nn.Module):
         if self.ckpt is not None:
             self.classifier.load_state_dict(torch.load(self.ckpt, weights_only=True))
     
-    def forward(self, x) -> torch.Tensor:
+    def forward(self, x:torch.Tensor) -> torch.Tensor:
         """
         Classifier forward function
         :return: torch tensor, classifier output
@@ -113,6 +114,7 @@ class Classifier(nn.Module):
     def get_config(self) -> Dict[str, Union[str, int]]:
         """
         Return classifier config
+        :return: configuration dictionary for classifier
         """
         return self.config
     
@@ -120,7 +122,7 @@ class Classifier(nn.Module):
         """
         Get name for model type, including how it was freezed and whether it has been pretrained and finetuned
         Update for new model classes
-        :return model_name: str with model name
+        :return model_name: str with classifier model name
         """
         model_name = f'Classifier_in{self.in_feats}_out{self.out_feats}_{self.activation}_n{self.nlayers}'
         if self.ckpt is not None:

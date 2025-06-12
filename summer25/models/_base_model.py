@@ -31,7 +31,12 @@ class BaseModel(nn.Module):
     :param pool_method: str, pooling method for base model output (default=mean)
     :param pt_ckpt: pathlike, path to base pretrained model checkpoint (default=None)
     :param ft_ckpt: pathlike, path to finetuned base model checkpoint (default=None)
-    :TODO:
+    :param in_features: int, number of input features to classifier (based on output layers of the base model) (default = 768)
+    :param out_features: int, number of output features (number of classes) (default = 1)
+    :param nlayers: int, number of layers in classification head (default = 2)
+    :param device: torch device
+    :param activation: str, activation function to use for classification head
+    :param seed: int, random seed
     :param kwargs: additional arguments for optional parameters (e.g., pool_dim for mean/max pooling and unfreeze_layers if freeze_method is layer; clf ckpt)
     """
     def __init__(self, out_dir:Union[Path, str], freeze_method:str = 'all', pool_method:str = 'mean',
@@ -90,6 +95,7 @@ class BaseModel(nn.Module):
         self.clf = Classifier(**self.clf_args)
         self.clf_config = self.clf.get_config()
         self.clf = self.clf.to(self.device)
+        #TODO: weight randomization for classifier
         #raise NotImplementedError('Classifier weight randomization with seed set')
     
     ### LOGGING ###

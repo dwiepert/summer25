@@ -2,3 +2,5 @@
 /private_cfg
 *.pyc
 test.py
+practice.py
+private_loading/download_files.py

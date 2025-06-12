@@ -24,20 +24,23 @@ from transformers import AutoModel, AutoFeatureExtractor, WhisperModel
 ##local
 from ._base_model import BaseModel
 from ._classifier import Classifier
-from summer25.configs import _MODELS
+from summer25.constants import _MODELS
 
 class HFModel(BaseModel):
     """
     Model class for hugging face models 
 
-    :param model_type: str, hugging face model type for naming purposes
     :param out_dir: Pathlike, output directory to save to
-    :param freeze_extractor: bool, specify whether the feature extractor component of a model with a built-in feature extractor should be frozen.
+    :param model_type: str, hugging face model type for naming purposes
+    :param keep_extractor: bool, keep base extractor frozen (default=True)
     :param freeze_method: str, freeze method for base pretrained model (default=all)
     :param pool_method: str, pooling method for base model output (default=mean)
     :param ft_ckpt: pathlike, path to finetuned base model checkpoint (default=None)
+    :param out_features: int, number of output features from classifier (number of classes) (default = 1)
+    :param nlayers: int, number of layers in classification head (default = 2)
+    :param activation: str, activation function to use in classification head (default = 'sigmoid')
     :param seed: int, specify random seed for ensuring reproducibility
-    #TODO
+    :param device: torch device
     :param kwargs: additional arguments for optional parameters (e.g., unfreeze_layers if freeze_method is layer, delete_download if you want to remove local versions of checkpoints after downloading)
     """
     def __init__(self, 
@@ -46,7 +49,6 @@ class HFModel(BaseModel):
                  out_features:int=1, nlayers:int=2, activation:str='sigmoid',
                  seed:int=42, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
                  **kwargs):
-    
 
         self.out_dir = out_dir 
         if not isinstance(self.out_dir, Path): self.out_dir = Path(self.out_dir)

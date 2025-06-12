@@ -1,4 +1,7 @@
 # Summer 2025 Project
+REQUIREMENTS:
+
+audio directory format
 
 # Step 1:
 Load hugging face models in flexible classes, add functionality to freeze as desired 
@@ -8,6 +11,7 @@ TODO: look at previous work/lastwish/etc. to see what you want to do for dataset
 FREEZING FEATURE EXTRACTOR?
 
 TO DEBUG:
+*
 * diff model types, diff freeze methods, diff pool methods
 * unfreeze_layers, freeze_extractor, freezing in general 
 * pool_dim
@@ -16,7 +20,17 @@ TO DEBUG:
 * load existing configuration
 
 CURRENT DEBUG TODOS:
+* safe for features to be public? tasks to be public?
+* TEST SUITE - ALL ASSERTIONS!
+    * ~~split~~
+    * hugging face models
+    * classifier
+* What’s 1.5 vs 2 for our purposes in features
+* which features to use for debugging
+* is the data context in the example up to date
 * keep_extractor for models without feature extractor!
+* what are our metrics of interest, just accuracy? balanced accuracy? anything else
+* LOSS FUNCTION
 PLAN:
 * load from existing configuration
 * ~~load huggingface models~~ 
@@ -35,6 +49,7 @@ PLAN:
     * ~~wavlm~~
     * ~~hubert~~
     * ~~whisper~~ - should whisper decoder always be frozen since we aren't using it at all?^^
+    * set module names - can then just give layers? determine which modules to freeze
     * keep extractor
         * hubert???
         * wavlm
@@ -43,10 +58,8 @@ PLAN:
     * decide test features vs. all features? different groupings? what is the plan here
 * Add LoRA option
 * Add soft prompting option 
-* Flexibly create data splits - each seed has a different split? 
-    * split by randomly selecting 
-    * split by speaker
-    * split by task
+* ~~Flexibly create data splits - each seed has a different split?~~ 
+    * why pooled feature annotations?^^
 * Load data into a dataset
     * transform to 16000 if not done
     * optional trim (FOR WHISPER!!)
