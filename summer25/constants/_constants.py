@@ -91,12 +91,19 @@ _MODELS = {  "wavlm-base": {
                   "target_sample_rate": 16000,
                   'trim':True,
                   'clip_length': 30
+            },
+            "test_model": {
+                  "use_featext": False,
+                  "in_features":1280,
+                  "pool_dim": 1,
+                  "target_sample_rate": 16000,
+                  'trim':True,
+                  'clip_length': 30
             }
 }
 
-_POOL = ['mean', 'max']
+_POOL = ['mean', 'max', 'attn']
 _FREEZE = ['all', 'layer', 'none']
-_REQUIRED_ARGS =['model_type', 'pt_ckpt', 'seed', 'freeze_method', 'pool_method', 'out_features']
 
 _TASKS = ['sentence_repetition', 'word_repetition']
 

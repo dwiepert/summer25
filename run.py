@@ -15,8 +15,9 @@ from typing import List
 ##local
 from summer25.models import HFModel
 from summer25.dataset import seeded_split
-from summer25.constants import _REQUIRED_ARGS, _FREEZE, _POOL, _MODELS
+from summer25.constants import _MODELS
 
+_REQUIRED_MODEL_ARGS =['model_type']
 _REQUIRED_LOAD = ['output_dir', 'audio_dir', 'split_dir']
 
 # HELPER FUNCTIONS #
@@ -35,9 +36,9 @@ def check_load(args:dict) -> dict:
     if 'load_cfg' in args:
         load_cfg = args.pop('load_cfg')
         args.update(load_cfg)
-    else:
-        for r in _REQUIRED_LOAD:
-            assert r in args, f'The required argument `{r}` was not given. Use `-h` or `--help` if information on the argument is needed.'
+
+    for r in _REQUIRED_LOAD:
+        assert r in args, f'The required argument `{r}` was not given. Use `-h` or `--help` if information on the argument is needed.'
 
     assert args['audio_dir'], 'Audio directory not given.'
     assert args['split_dir'], 'Split dir not given.'
@@ -75,39 +76,22 @@ def check_model(args:dict, ) -> dict:
 
     if 'model_cfg' in args:
         model_cfg = args.pop('model_cfg')
-        base_cfg = model_cfg.pop('base_config')
-        clf_cfg = model_cfg.pop('clf_config')
 
-        if 'ckpt' in clf_cfg:
-            clf_cfg['clf_ckpt'] = clf_cfg.pop('ckpt')
-
-        args.update(base_cfg)
-        args.update(clf_cfg)
+        if 'clf_ckpt' in model_cfg:
+            model_cfg['clf_ckpt'] = model_cfg.pop('clf_ckpt')
         args.update(model_cfg)
 
-        mt = args['model_type']
-        assert mt in list(_MODELS.keys()), f'{mt} is an invalid model type. Choose one of {list(_MODELS.keys())}.'
-        fm = args['freeze_method']
-        assert fm in _FREEZE, f'{fm} is an invalid freeze method. Choose one of {_FREEZE}.'
-        pm = args['pool_method']
-        assert pm in _POOL, f'{pm} is an invalid pooling method. Choose one of {_POOL}.'
-
-    else:
-        for r in _REQUIRED_ARGS:
-            assert r in args, f'The required argument `{r}` was not given. Use `-h` or `--help` if information on the argument is needed.'
+    for r in _REQUIRED_MODEL_ARGS:
+        assert r in args, f'The required argument `{r}` was not given. Use `-h` or `--help` if information on the argument is needed.'
 
     if args['clf_ckpt'] is not None:
         if not isinstance(args['clf_ckpt'], Path): args['clf_ckpt'] = Path(args['clf_ckpt'])
     if args['ft_ckpt'] is not None:
         if not isinstance(args['ft_ckpt'], Path): args['ft_ckpt'] = Path(args['ft_ckpt'])
     
-    if 'hf_hub' in _MODELS[args['model_type']]:
-        args['hf_model'] = True
-        if args['pt_ckpt']:
-            if not isinstance(args['pt_ckpt'],str): args['pt_ckpt'] = str(args['pt_ckpt'])
-    else:
-        args['hf_model'] = False
-
+    args['hf_model'] = False
+    if 'hf_hub' in _MODELS[args['model_type']]: args['hf_model'] = True
+        
     assert 'freeze_method' in args, 'Freeze method not given. Check command line arguments or model configuration file.'
     if args['freeze_method'] == 'layer': assert 'unfreeze_layers' in args, 'unfreeze_layers must be given if freeze method is `layer`.'
     return args

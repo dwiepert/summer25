@@ -11,7 +11,8 @@ TODO: look at previous work/lastwish/etc. to see what you want to do for dataset
 FREEZING FEATURE EXTRACTOR?
 
 TO DEBUG:
-*
+* make sure base model super has all the possible things from HF model
+* unfreeze layers = int vs str
 * diff model types, diff freeze methods, diff pool methods
 * unfreeze_layers, freeze_extractor, freezing in general 
 * pool_dim
@@ -24,7 +25,8 @@ CURRENT DEBUG TODOS:
 * TEST SUITE - ALL ASSERTIONS!
     * ~~split~~
     * hugging face models
-    * classifier
+    * ~~classifier~~
+    * ~~base model~~
 * What’s 1.5 vs 2 for our purposes in features
 * which features to use for debugging
 * is the data context in the example up to date

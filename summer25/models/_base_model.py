@@ -19,13 +19,14 @@ import torch
 import torch.nn as nn
 
 ##local
-from ._classifier import Classifier
+from summer25.constants import _MODELS, _FREEZE, _POOL
 
 class BaseModel(nn.Module):
     """
     Base model class
     Includes all shared parameters
 
+    :param model_type: str, type of model being initialized
     :param out_dir: pathlike, path to directory for saving all model information
     :param freeze_method: str, freeze method for base pretrained model (default=all)
     :param pool_method: str, pooling method for base model output (default=mean)
@@ -37,9 +38,9 @@ class BaseModel(nn.Module):
     :param device: torch device
     :param activation: str, activation function to use for classification head
     :param seed: int, random seed
-    :param kwargs: additional arguments for optional parameters (e.g., pool_dim for mean/max pooling and unfreeze_layers if freeze_method is layer; clf ckpt)
+    :param kwargs: additional arguments for optional parameters (e.g., pool_dim for mean/max pooling and unfreeze_layers if freeze_method is layer, clf_ckpt)
     """
-    def __init__(self, out_dir:Union[Path, str], freeze_method:str = 'all', pool_method:str = 'mean',
+    def __init__(self, model_type:str, out_dir:Union[Path, str], freeze_method:str = 'all', pool_method:str = 'mean',
                  pt_ckpt:Optional[Union[Path, str]]=None, ft_ckpt:Optional[Union[Path,str]]=None, 
                  in_features:int=768, out_features:int=1, nlayers:int=2, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
                  activation:str='sigmoid', seed:int=42,
@@ -48,6 +49,7 @@ class BaseModel(nn.Module):
         super(BaseModel, self).__init__()
 
         # INITIALIZE VARIABLES
+        self.model_type = model_type
         self.out_dir = out_dir
         if not isinstance(self.out_dir, Path): self.out_dir = Path(self.out_dir)
         self.out_dir.mkdir(parents=True, exist_ok=True)
@@ -66,17 +68,32 @@ class BaseModel(nn.Module):
             self.clf_args['ckpt'] = kwargs.pop('clf_ckpt')
         
         # ASSERTIONS
+        assert self.model_type in list(_MODELS.keys()), f'{self.model_type} is an invalid model type. Choose one of {list(_MODELS.keys())}.'
         if self.pt_ckpt is not None:
             if not isinstance(self.pt_ckpt, Path): self.pt_ckpt = Path(self.pt_ckpt)
             assert self.pt_ckpt.exists(), f'Pretrained model path {self.pt_ckpt} does not exist.'
         if self.ft_ckpt is not None:
             if not isinstance(self.ft_ckpt, Path): self.ft_ckpt = Path(self.ft_ckpt)
             assert self.ft_ckpt.exists(), f'Finetuned model path {self.ft_ckpt} does not exist.'
-        assert self.freeze_method in ['all', 'layer', 'none'], f'{self.freeze_method} is not a valid freeze method. Use one of [`all`, `layer`, `none`].'
+
+            if self.ft_ckpt.suffix != '.pt' and self.ft_ckpt.suffix != '.pth':
+                poss_files = [p for p in self.ft_ckpt.rglob("*.pt")]
+                poss_files += [p for p in self.ft_ckpt.rglob("*.pth")]
+
+                assert poss_files != [], 'No finetuned paths exist in given checkpoint.'
+                model_path = [p for p in poss_files if self.model_type in str(p)]
+                clf_path = [p for p in poss_files if 'Classifier' in str(p)]
+                self.ft_ckpt = model_path[0]
+                if 'ckpt' not in self.clf_args and clf_path != []:
+                    self.clf_args['ckpt'] = clf_path[0]
+
+        assert self.freeze_method in _FREEZE, f'{self.freeze_method} is not a valid freeze method. Choose one of {_FREEZE}.'
         if self.freeze_method == 'layer':
             assert 'unfreeze_layers' in kwargs, 'Layers to unfreeze not given as input'
             self.unfreeze_layers = kwargs.pop('unfreeze_layers')
-        assert self.pool_method in ['mean', 'max', 'attn'], f'{self.pool_method} is not a valid pooling method. Must be one of [`mean`,`max`,`attn`].'
+            assert isinstance(self.unfreeze_layers, list), 'Unfreeze layers expects a list.'
+            assert all([isinstance(l,str) for l in self.unfreeze_layers]) or all([isinstance(l,int) for l in self.unfreeze_layers]), 'Unfreeze layers expects a list of str or list of ints.'
+        assert self.pool_method in _POOL, f'{self.pool_method} is not a valid pooling method. Choose one of {_POOL}.'
         if self.pool_method in ['mean', 'max']:
             assert 'pool_dim' in kwargs, 'Pooling dimensions not given for mean or max pooling'
             assert isinstance(kwargs['pool_dim'], int) or (isinstance(kwargs['pool_dim'], tuple)), 'Pooling dimensions must be single integer or tuple of integers'
@@ -84,20 +101,8 @@ class BaseModel(nn.Module):
                 assert all(isinstance(i,int) for i in kwargs['pool_dim']), 'All pooling dimensions in a tuple must be integers.'
             self.pool_dim = kwargs.pop('pool_dim') #should be an int or a tuple of ints
         
-        #INITIALIZE BASE MODEL
-        self._initialize_base_model()
-        self.base_model = self.base_model.to(self.device)
-        self.model_name = self.get_model_name()
         self.base_config = self._base_config()
 
-
-        # INITIALIZE CLASSIFIER (doesn't need to be overwritten)
-        self.clf = Classifier(**self.clf_args)
-        self.clf_config = self.clf.get_config()
-        self.clf = self.clf.to(self.device)
-        #TODO: weight randomization for classifier
-        #raise NotImplementedError('Classifier weight randomization with seed set')
-    
     ### LOGGING ###
     @abstractmethod
     def get_model_name(self) -> str:
@@ -118,11 +123,11 @@ class BaseModel(nn.Module):
         Get a base configuration file to append to
         :return base_config: Dict[str -> str or List of str]
         """
-        base_config={'model_name':self.model_name, 'freeze_method': self.freeze_method, 'pool_method':self.pool_method}
+        base_config={'freeze_method': self.freeze_method, 'pool_method':self.pool_method}
         if self.pt_ckpt is not None:
             base_config['pt_ckpt'] = str(self.pt_ckpt)
         if self.ft_ckpt is not None:
-            base_config['ft_ckpt'] = str(base_config['ft_ckpt'])
+            base_config['ft_ckpt'] = str(self.ft_ckpt)
         if self.freeze_method == 'layer':
             base_config['unfreeze_layers'] = self.unfreeze_layers
         if self.pool_method in ['mean', 'max']:
@@ -161,8 +166,11 @@ class BaseModel(nn.Module):
         :param ckpt: pathlike object, model checkpoint - path to state dict
         """
         if ckpt is not None:
-            self.base_model.load_state_dict(torch.load(ckpt, weights_only=True))
-        
+            try:
+                self.base_model.load_state_dict(torch.load(ckpt, weights_only=True))
+            except:
+                raise ValueError('Finetuned checkpoint could not be loaded. Weights may not be compatible with the initialized models.')
+    
     def _freeze_all(self):
         """
         Freeze the entire model
@@ -225,19 +233,16 @@ class BaseModel(nn.Module):
             json.dump(self.config, outfile)
 
 
-    def save_model(self):
+    def save_base_model(self):
         """
         Save the model components
         """
         bm_path = self.out_dir / 'weights'
-        clf_path.mkdir(exist_ok=True)
+
+        bm_path.mkdir(exist_ok=True)
         bm_path = bm_path / self.model_name+'.pt'
 
         if bm_path.exists(): print(f'Overwriting existing model at {str(bm_path)}')
         torch.save(self.base_model.state_dict(), bm_path)
 
-        clf_path = self.out_dir / 'weights' 
-        clf_path.mkdir(exist_ok=True)
-        clf_path = clf_path / self.clf_config['clf_name']+'.pt'
-        if clf_path.exists(): print(f'Overwriting existing classifier head at {str(clf_path)}')
-        torch.save(self.clf.state_dict(), clf_path)
+    

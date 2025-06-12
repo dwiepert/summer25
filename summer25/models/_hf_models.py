@@ -35,27 +35,39 @@ class HFModel(BaseModel):
     :param keep_extractor: bool, keep base extractor frozen (default=True)
     :param freeze_method: str, freeze method for base pretrained model (default=all)
     :param pool_method: str, pooling method for base model output (default=mean)
+    :param pt_ckpt: pathlike, path to pretrained model checkpoint (default=None)
     :param ft_ckpt: pathlike, path to finetuned base model checkpoint (default=None)
     :param out_features: int, number of output features from classifier (number of classes) (default = 1)
     :param nlayers: int, number of layers in classification head (default = 2)
     :param activation: str, activation function to use in classification head (default = 'sigmoid')
     :param seed: int, specify random seed for ensuring reproducibility
     :param device: torch device
-    :param kwargs: additional arguments for optional parameters (e.g., unfreeze_layers if freeze_method is layer, delete_download if you want to remove local versions of checkpoints after downloading)
+    :param from_hub: bool, specify whether to load from hub or from existing pt_ckpt
+    :param test_hub_fail: bool, TESTING ONLY
+    :param test_local_fail: bool, TESTING ONLY
+    :param kwargs: additional arguments for optional parameters (e.g., unfreeze_layers if freeze_method is layer, delete_download if you want to remove local versions of checkpoints after downloading, clf_ckpt if wanting to load checkpoint for classifier)
     """
     def __init__(self, 
                  out_dir:Union[Path, str], model_type:str, keep_extractor:bool=True,
-                 freeze_method:str = 'all', pool_method:str = 'mean', ft_ckpt:Optional[Union[Path,str]]=None, 
+                 freeze_method:str = 'all', pool_method:str = 'mean',pt_ckpt:Optional[Union[Path,str]]=None, ft_ckpt:Optional[Union[Path,str]]=None, 
                  out_features:int=1, nlayers:int=2, activation:str='sigmoid',
                  seed:int=42, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
-                 **kwargs):
+                 from_hub:bool=True, test_hub_fail:bool=False, test_local_fail:bool=False, **kwargs):
 
         self.out_dir = out_dir 
         if not isinstance(self.out_dir, Path): self.out_dir = Path(self.out_dir)
+        
+        #TODO: confirm weights are initialized properly - NEED TO ALSO DO THIS FOR THE CLASSIFIER!!!!!!!!!!
+        super().__init__(model_type=model_type, out_dir=out_dir,
+                         freeze_method=freeze_method, pool_method=pool_method, pt_ckpt=pt_ckpt,ft_ckpt=ft_ckpt,
+                         in_features=_MODELS[model_type]['in_features'], out_features=out_features, nlayers=nlayers, activation=activation, 
+                         device=device, seed=seed, base_only=False, pool_dim=_MODELS[model_type]['pool_dim'],**kwargs)
 
-        ## BASE MODEL ARGS
-        self.model_type = model_type 
-        self.hf_hub = _MODELS[self.model_type]['hf_hub']
+        #HF ARGS
+        try:
+            self.hf_hub = _MODELS[self.model_type]['hf_hub']
+        except:
+            assert False,  f'{self.model_type} is incompatible with HFModel class.'
         if "delete_download" in kwargs:
             self.delete_download = kwargs.pop("delete_download")
         else:
@@ -63,28 +75,31 @@ class HFModel(BaseModel):
         #TODO: try this and see if it works
         self.keep_extractor = keep_extractor
         self.use_featext = _MODELS[self.model_type]['use_featext']
+        self.from_hub = from_hub
 
-        ## CLF ARGS
-        self.in_features = _MODELS[self.model_type]['in_features']
-        self.out_features = out_features
-        self.nlayers = nlayers
-        self.activation = activation
-
-        #TODO: confirm weights are initialized properly - NEED TO ALSO DO THIS FOR THE CLASSIFIER!!!!!!!!!!
-
-  
-        super().__init__(out_dir=out_dir, model_type=self.model_type,
-                         freeze_method=freeze_method, pool_method=pool_method, ft_ckpt=ft_ckpt,
-                         in_features=self.in_features, out_features=self.out_features, nlayers=self.nlayers, activation=self.activation, 
-                         device=device, seed=seed, **kwargs)
-    
+        if not self.from_hub: 
+            assert self.pt_ckpt is not None, 'Must give pt_ckpt if not loading from the hub'
+            assert self.pt_ckpt.exists(), 'Given pt_ckpt does not exist.'
         
+        if self.pt_ckpt is not None: #hugging face models don't require pt ckpt but could be used as a backup
+            if not isinstance(self.pt_ckpt,str): self.pt_ckpt = str(self.pt_ckpt)
+
+        #INITIALIZE MODEL COMPONENTS
+        self._initialize_base_model()
+        self.base_model = self.base_model.to(self.device, test_hub_fail=test_hub_fail, test_local_fail=test_local_fail)
+
+        # INITIALIZE CLASSIFIER (doesn't need to be overwritten)
+        self.clf = Classifier(**self.clf_args)
+        self.clf = self.clf.to(self.device)
+        #TODO: weight randomization for classifier
+
         if self.local_path and not self.delete_download:
             self.base_config['pt_ckpt'] = self.local_path
 
-        self.config = {'model_type':self.model_type,'seed':self.seed, 'keep_extractor': self.keep_extractor,
-                       'clf_config': self.clf_config, 'base_config':self.base_config}
+        self.config = {'model_name':self.get_model_name(),'model_type':self.model_type,'seed':self.seed, 'keep_extractor': self.keep_extractor}
         
+        self.config.update(self._base_config)
+        self.config_update(self.clf.get_config())
         self.save_config()
  
     
@@ -101,43 +116,60 @@ class HFModel(BaseModel):
             model_name += '_ft'
         return model_name
 
-    def _load_model(self):
-        if self.pt_ckpt:
-            if self.use_featext:
-                self.feature_extractor = AutoFeatureExtractor.from_pretrained(self.pt_ckpt)
-            self.base_model = AutoModel.from_pretrained(self.pt_ckpt, output_hidden_states=True)
-        else:    
-            try:
+    def _load_model(self, test_hub_fail:bool=False, test_local_fail:bool=False):
+        """
+        TODO
+        """
+        if self.from_hub:
+            try: 
+                if test_hub_fail or test_local_fail: 
+                    raise Exception()
                 if self.use_featext:
                     self.feature_extractor = AutoFeatureExtractor.from_pretrained(self.hf_hub, trust_remote_code=True)
                 self.base_model = AutoModel.from_pretrained(self.hf_hub, output_hidden_states=True, trust_remote_code=True)
                 self.local_path=None
-            except Exception as e:
-                print('Downloading model locally...')
-                self.local_path = Path(f'./{self.hf_hub}').absolute()
-                self.local_path.mkdir(parents=True, exist_ok=True)
-                snapshot_download(repo_id=self.hf_hub, local_dir=str(self.local_path))
-                if self.use_featext:
-                    self.feature_extractor = AutoFeatureExtractor.from_pretrained(self.hf_hub)
-                self.base_model = AutoModel.from_pretrained(self.local_path, output_hidden_states=True)
-                if self.delete_download:
-                    print('Deleting local copy of checkpoint')
-                    shutil.rmtree(str(self.local_path))
+                return 
+            except:
+                try:
+                    if test_local_fail:
+                        raise Exception()
+                    
+                    print('Loading directly from hugging face hub failed. Downloading model locally...')
+                    self.local_path = Path(f'./{self.hf_hub}').absolute()
+                    self.local_path.mkdir(parents=True, exist_ok=True)
+                    snapshot_download(repo_id=self.hf_hub, local_dir=str(self.local_path))
+                    if self.use_featext:
+                        self.feature_extractor = AutoFeatureExtractor.from_pretrained(self.hf_hub)
+                    self.base_model = AutoModel.from_pretrained(self.local_path, output_hidden_states=True)
+                    if self.delete_download:
+                        print('Deleting local copy of checkpoint')
+                        shutil.rmtree(str(self.local_path))
 
-                    bp = Path('.').absolute()
-                    curr_parent = self.local_path.parent
-                    while bp.name != curr_parent.name: 
-                        os.rmdir(curr_parent)
-                        temp = curr_parent.parent 
-                        curr_parent = temp
+                        bp = Path('.').absolute()
+                        curr_parent = self.local_path.parent
+                        while bp.name != curr_parent.name: 
+                            os.rmdir(curr_parent)
+                            temp = curr_parent.parent 
+                            curr_parent = temp
+                    return
+
+                except: 
+                    assert self.pt_ckpt is not None, 'Downloading from hub failed, but backup pt_ckpt not available.'
+                    print('Downloading from hub failed. Trying pt_ckpt.')
+
+        if self.use_featext:
+            self.feature_extractor = AutoFeatureExtractor.from_pretrained(self.pt_ckpt)
+        self.base_model = AutoModel.from_pretrained(self.pt_ckpt, output_hidden_states=True)
+        return
                    
-    def _initialize_base_model(self):
+    def _initialize_base_model(self, test_hub_fail:bool=False, test_local_fail:bool=False):
         """
         Initialize base hugging face models
+        TODO
         """
         print(f'Loading model {self.model_type} from Hugging Face Hub...')
 
-        self._load_model()      
+        self._load_model(test_hub_fail=test_hub_fail, test_local_fail=test_local_fail)      
         self.is_whisper_model = isinstance(self.base_model, WhisperModel)
         
         if self.keep_extractor and not self.is_whisper_model:
@@ -188,3 +220,10 @@ class HFModel(BaseModel):
         pooled = self.pooling(output)
  
         return self.clf(pooled)
+    
+    def save_model_components(self):
+        """
+        Save base model and classifier separately
+        """
+        self.save_base_model()
+        self.clf.save_classifier(self.out_dir)

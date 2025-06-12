@@ -1,12 +1,23 @@
-from pathlib import Path 
-import pytest
-import shutil
-import os
-import pandas as pd
-from summer25.dataset import seeded_split
-from summer25.constants import _FEATURES
-import json
+"""
+Testing for data splits
 
+Author(s): Daniela Wiepert
+Last modified: 06/2025
+"""
+#IMPORTS
+##built-in
+import json
+import os
+from pathlib import Path
+import shutil
+
+##third-party
+import pandas as pd
+import pytest
+
+##local
+from summer25.constants import _FEATURES
+from summer25.dataset import seeded_split
 
 #### SUPPORT CODE ### 
 def data_dictionary():

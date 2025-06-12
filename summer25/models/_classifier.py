@@ -44,13 +44,17 @@ class Classifier(nn.Module):
 
         if self.ckpt:
             if not isinstance(self.ckpt, Path): self.ckpt = Path(self.ckpt)
+            assert self.ckpt.exists(), f'Cannot load from given checkpoint: {self.ckpt}'
+            if self.ckpt.suffix != '.pt' and self.ckpt.suffix != '.pth':
+                poss_files = [p for p in self.ckpt.rglob("*.pt")]
+                poss_files += [p for p in self.ckpt.rglob("*.pth")]
+
+                assert poss_files != [], 'No checkpoints exist in given directory.'
+                paths = [str(p) for p in poss_files]
+                paths2 = [p for p in paths if 'Classifier' in p]
+                self.ckpt = paths2[0]
 
         #ASSERTIONS
-        assert self.activation in ['sigmoid'], f'{self.activation} is not a valid activation function.'
-        max_layers = 2
-        assert self.nlayers <= max_layers, f'Classifier class cannot handle {self.nlayers}. Must be less than {max_layers}.'
-        #TODO: assertions for in and out feats
-
         #SET UP CLASSIFIER
         self._params()
         model_dict = OrderedDict()
@@ -69,15 +73,19 @@ class Classifier(nn.Module):
         clf_name = self.get_clf_name()
         self.config = {'clf_name':clf_name, 'in_features':self.in_feats, 'out_features':self.out_feats, 
                        'nlayers':self.nlayers, 'activation':self.activation}
+        
         if self.ckpt is not None:
-            self.config['ckpt'] = str(self.config['ckpt']) 
+            self.config['clf_ckpt'] = str(self.ckpt) 
 
     def _params(self):
         """
         Get classifier parameters based on input parameters
         """
         self.params = {}
-        if self.nlayers == 2:
+        if self.nlayers == 1:
+            self.params['in_feats'] = [self.in_feats]
+            self.params['out_feats'] = [self.out_feats]
+        elif self.nlayers == 2:
             self.params['in_feats'] = [self.in_feats,self.in_feats]
             self.params['out_feats'] = [self.in_feats,self.out_feats]
         else:
@@ -102,7 +110,11 @@ class Classifier(nn.Module):
         :param ckpt: pathlike object, model checkpoint - path to state dict
         """
         if self.ckpt is not None:
-            self.classifier.load_state_dict(torch.load(self.ckpt, weights_only=True))
+            try:
+                self.classifier.load_state_dict(torch.load(self.ckpt, weights_only=True))
+            except:
+                raise ValueError('Classifier checkpoint could not be loaded. Weights may not be compatible with the initialized models.')
+                
     
     def forward(self, x:torch.Tensor) -> torch.Tensor:
         """
@@ -128,3 +140,15 @@ class Classifier(nn.Module):
         if self.ckpt is not None:
             model_name += '_ct'
         return model_name
+    
+    def save_classifier(self, out_dir:Union[Path, str]):
+        """
+        Save the model components
+        :param out_dir: pathlike, location to save model to
+        """
+        if not isinstance(out_dir, Path): out_dir=Path(out_dir)
+        clf_path = out_dir / 'weights' 
+        clf_path.mkdir(exist_ok=True)
+        clf_path = clf_path / (self.config['clf_name']+'.pt')
+        if clf_path.exists(): print(f'Overwriting existing classifier head at {str(clf_path)}')
+        torch.save(self.classifier.state_dict(), clf_path)
