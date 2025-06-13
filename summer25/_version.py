@@ -1,4 +1,4 @@
-__version__ = '0.2.1'
+__version__ = '0.2.2'
 
 #change log:
 # 0.0.0: initial commit
@@ -6,3 +6,4 @@ __version__ = '0.2.1'
 # 0.1.0: hugging face model class implemented
 # 0.2.0: data split implementation
 # 0.2.1: data split testing
+# 0.2.2: round 1 of model tests added

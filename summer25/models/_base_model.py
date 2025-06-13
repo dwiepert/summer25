@@ -82,6 +82,7 @@ class BaseModel(nn.Module):
 
                 assert poss_files != [], 'No finetuned paths exist in given checkpoint.'
                 model_path = [p for p in poss_files if self.model_type in str(p)]
+                assert model_path != [], f'{self.model_type} checkpoint does not exist in given directory.'
                 clf_path = [p for p in poss_files if 'Classifier' in str(p)]
                 self.ft_ckpt = model_path[0]
                 if 'ckpt' not in self.clf_args and clf_path != []:
@@ -130,8 +131,6 @@ class BaseModel(nn.Module):
             base_config['ft_ckpt'] = str(self.ft_ckpt)
         if self.freeze_method == 'layer':
             base_config['unfreeze_layers'] = self.unfreeze_layers
-        if self.pool_method in ['mean', 'max']:
-            base_config['pool_dim'] = self.pool_dim
         
         return base_config
 
@@ -240,7 +239,7 @@ class BaseModel(nn.Module):
         bm_path = self.out_dir / 'weights'
 
         bm_path.mkdir(exist_ok=True)
-        bm_path = bm_path / self.model_name+'.pt'
+        bm_path = bm_path / (self.model_name+'.pt')
 
         if bm_path.exists(): print(f'Overwriting existing model at {str(bm_path)}')
         torch.save(self.base_model.state_dict(), bm_path)

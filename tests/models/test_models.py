@@ -26,7 +26,6 @@ def test_basemodel_params():
     params['model_type'] = 'wavlm-base'
     m = BaseModel(**params)
 
-    assert 'pool_dim' in m.base_config and m.base_config['pool_dim'] == params['pool_dim'], 'Pool dim not added to base config'
     assert 'unfreeze_layers' not in m.base_config, 'Unfreeze layers incorrectly added to config'
     assert 'pt_ckpt' not in m.base_config, 'pt_ckpt incorrectly added to base config'
     assert 'ft_ckpt' not in m.base_config, 'ft_ckpt incorrectly added to base config'
@@ -78,7 +77,6 @@ def test_basemodel_params():
     #pool dim - tuple
     params['pool_dim'] = (0,1)
     m = BaseModel(**params)
-    assert 'pool_dim' in m.base_config and m.base_config['pool_dim'] == params['pool_dim'], 'Pool dim not added to base config'
     params['pool_dim'] = ('0','1')
     with pytest.raises(AssertionError):
         m = BaseModel(**params)
@@ -174,23 +172,35 @@ def test_classifier_checkpoints():
     with pytest.raises(ValueError):
         m = Classifier(**params)
 
-    shutil.rmtree(ckpt)
+    if ckpt.exists():
+        shutil.rmtree(ckpt)
 
-    #TODO: try forward function of classifier
-
-def test_hfmodel_base():
-    #test hf_hub not in model_type (ADD RANDOM TEST MODEL)
+@pytest.mark.slow
+def test_hfmodel_pretrained_base():
     params = {'out_dir':Path('./out_dir')}
 
+    #base test
+    params['model_type'] = 'wavlm-base'
+    m = HFModel(**params)
+    assert m is not None, 'Model not running properly.'
+
+    #invalid model type (not hugging face)
     params['model_type']='test_model'
     with pytest.raises(AssertionError):
         m = HFModel(**params)
     
+    #not loading from hub but not given pt ckpt
     params['model_type'] = 'wavlm-base'
     params['from_hub'] = False
     with pytest.raises(AssertionError):
         m = HFModel(**params)
     
+    params['from_hub'] = True
+    with pytest.raises(AssertionError):
+        m = HFModel(test_local_fail=True, **params)
+
+    params['from_hub'] = False
+    #ckpt named but doesn't exist
     pt_ckpt = Path('./ckpt')
     if pt_ckpt.exists():
         shutil.rmtree(pt_ckpt)
@@ -198,36 +208,55 @@ def test_hfmodel_base():
     with pytest.raises(AssertionError):
         m = HFModel(**params)
 
+    #checkpoint created but has no models
     pt_ckpt.mkdir(exist_ok=True)
     with pytest.raises(ValueError):
         m = HFModel(**params)
     
+    #confirm it defaults back to the hub even if given checkpoint (no failure)
     params['from_hub'] = True
     m = HFModel(**params)
-    """
+    assert m is not None, 'Model not running properly.'
+
+    #test loading local directory
     m = HFModel(test_hub_fail=True, **params) #should work no issue - DON'T DELETE
+    assert m is not None, 'Model not running properly.'
     assert m.local_path.exists(), 'Local path with copy of checkpoint does not exist.'
     
+    #test exception raised if local failure and incompatible checkpoint
     pt_ckpt = m.local_path
-    with pytest.raises(AssertionError):
+    with pytest.raises(ValueError):
         m = HFModel(test_local_fail=True, **params)
 
+    #check no failure if given a true ckpt and fails
     params['pt_ckpt'] = m.local_path
     m = HFModel(test_local_fail=True, **params)
+    assert m is not None, 'Model not running properly.'
 
+    #check no failure if loading directly from checkpoint
     params['from_hub'] = False
     m = HFModel(**params)
+    assert m is not None, 'Model not running properly.'
 
+    #check that you can delete a checkpoint download
     params['from_hub'] = True
     params['delete_download'] = True
     del params['pt_ckpt'] 
 
-    m = HFModel(**params)
+    m = HFModel(test_hub_fail=True, **params)
     assert not m.local_path.exists(), 'Local path to checkpoint not deleted.'
-    """
-    """
+    shutil.rmtree(params['out_dir'])
+    if pt_ckpt.exists():
+        shutil.rmtree(pt_ckpt)
+    
+def test_hfmodel_finetuned_base():
+    params = {'out_dir':Path('./out_dir')}
+
+    #base test
+    params['model_type'] = 'wavlm-base'
+
     ### FINETUNED CHECKPOINT
-    ft_ckpt = params['out_dir'] / 'weight'
+    ft_ckpt = params['out_dir'] / 'weights'
     if ft_ckpt.exists():
         shutil.rmtree(ft_ckpt)
     params['ft_ckpt'] = ft_ckpt
@@ -237,7 +266,7 @@ def test_hfmodel_base():
         m = HFModel(**params)
 
     #exists but no files
-    ft_ckpt.mkdir(parents=True, exist_ok=true)
+    ft_ckpt.mkdir(parents=True, exist_ok=True)
     with pytest.raises(AssertionError):
         m = HFModel(**params)
     
@@ -246,8 +275,8 @@ def test_hfmodel_base():
     # check SAVING
     m = HFModel(**params)
     m.save_model_components()
-    assert ft_ckpt/(m.model_name + '.pt').exists(), 'Base model properly saved.'
-    assert ft_ckpt/(m.clf.config['clf_name'] + '.pt').exists(), 'Classifier properly saved.'
+    assert (ft_ckpt/(m.model_name + '.pt')).exists(), 'Base model properly saved.'
+    assert (ft_ckpt/(m.clf.config['clf_name'] + '.pt')).exists(), 'Classifier properly saved.'
 
     #FT POSSIBILITIES:
     #directly give .pt file and only update base model
@@ -270,12 +299,36 @@ def test_hfmodel_base():
 
     # Incompatible model
     params['model_type'] = 'hubert-base'
-    with pytest.raises(ValueError):
+    with pytest.raises(AssertionError):
         m = HFModel(**params)
     
+    #Incompatible classifier checkpoint but compatible ft_ckpt
+    ckpt = Path('./ckpt')
+    if ckpt.exists():
+        shutil.rmtree(ckpt)
+    ckpt.mkdir(exist_ok=True)
+
+    clf_params = {'in_features':1, 'out_features':1}
+    m = Classifier(**clf_params)
+    m.save_classifier(ckpt)
+    out_ckpt = ckpt / 'weights' 
+    out_path = out_ckpt / (m.config['clf_name']+'.pt')
+    assert out_path.exists(), 'Classifier not saved properly'
+    
+    #create new model with different params and try to load old ckpt
+    params['nlayers'] = 1
+    params['clf_ckpt'] = out_path
+    params['ft_ckpt'] = model_ft_ckpt
+    with pytest.raises(ValueError):
+        m = HFModel(**params)
+
     shutil.rmtree(params['out_dir'])
+    if ft_ckpt.exists():
+        shutil.rmtree(ft_ckpt)
+    if ckpt.exists():
+        shutil.rmtree(ckpt)
     #sth w use feat ext?
-"""
+
 
 def test_freeze():
     #check freeze methods work properly
@@ -296,17 +349,7 @@ def test_forward():
     #test forward pass works
     pass
 
-
+@pytest.mark.slow
 def test_load_hfmodels():
     #TODO: check that the base model for each of the possible hugging face models loads in properly with no errors
-    pass
-
-def test_hf_config():
-    #TODO:
-    #assert 'ft_ckpt' in m.base_config and m.base_config['ft_ckpt'] == str(ft_ckpt), 'ft ckpt not added to config correctly.'
-    pass
-
-def test_finetuned():
-    #model saves properly
-    #load from finetuned ckpt
     pass

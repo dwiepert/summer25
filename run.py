@@ -11,7 +11,6 @@ import json
 from pathlib import Path
 from typing import List
 
-
 ##local
 from summer25.models import HFModel
 from summer25.dataset import seeded_split
@@ -54,7 +53,7 @@ def check_load(args:dict) -> dict:
     
     return args
 
-def check_model(args:dict, ) -> dict:
+def check_model(args:dict ) -> dict:
     """
     Check if a model config file exists or has been given, load in if it does, and ensure required arguments are there and pass assertions. 
 
@@ -64,13 +63,12 @@ def check_model(args:dict, ) -> dict:
     :return args: updated args dictionary
     """
     #check for mismatch between existing and not existing model cfg
-    ec = args['output_dir'].rglob('*model_config.json')
-    existing_cfg = [e for e in ec]
-    
-    if existing_cfg:
-        f = existing_cfg[0]
-        precfg = load_config(f)
-        raise NotImplementedError('Updating args with existing config is not implemented.')
+    ec = [e for e in args['output_dir'].rglob('*model_config.json')] 
+    if ec != [] and args['use_existing_cfg']:
+        existing_cfg = load_config(ec[0])
+    else:
+        existing_cfg = None
+        #raise NotImplementedError('Updating args with existing config is not implemented.')
 
     #TODO: compare existing model_cfg and given arguments? or just overwrite with existing arguments? 
 
@@ -81,8 +79,11 @@ def check_model(args:dict, ) -> dict:
             model_cfg['clf_ckpt'] = model_cfg.pop('clf_ckpt')
         args.update(model_cfg)
 
+    if existing_cfg is not None:
+        args.update(existing_cfg)
+        
     for r in _REQUIRED_MODEL_ARGS:
-        assert r in args, f'The required argument `{r}` was not given. Use `-h` or `--help` if information on the argument is needed.'
+        assert r in args, f'The required argument `{r}` was not given in a config file or in the command line. Use `-h` or `--help` if information on the argument is needed.'
 
     if args['clf_ckpt'] is not None:
         if not isinstance(args['clf_ckpt'], Path): args['clf_ckpt'] = Path(args['clf_ckpt'])
@@ -129,7 +130,7 @@ def zip_model(args:argparse.Namespace) -> dict:
     """
     if args.hf_model:
         model_args = {'model_type':args.model_type,'out_dir':args.output_dir,'keep_extractor':args.keep_extractor, 
-                    'freeze_method':args.freeze_method, 'pool_method':args.pool_method, 'pool_dim':_MODELS[args.model_type]['pool_dim'],
+                    'freeze_method':args.freeze_method, 'pool_method':args.pool_method,
                     'seed':args.seed}
     else:
         raise NotImplementedError('Only compatible with huggingface models currently.')
@@ -179,6 +180,7 @@ if __name__ == "__main__":
     cfg_args = parser.add_argument_group('cfg', 'configuration file related arguments')
     cfg_args.add_argument('--load_cfg', type=load_config, help='Audio loading configuration json')
     cfg_args.add_argument('--model_cfg', type=load_config, help="Model configuration json")
+    cfg_args.add_argument('--use_existing_cfg', action='store_true', help='Specify whether to use an existing config file if it exists in the given output_dir')
     #I/O
     io_args = parser.add_argument_group('io', 'file related arguments')
     io_args.add_argument('--audio_dir', type=Path, help='Directory with audio files & a csv with information on speakers/task.')
