@@ -4,7 +4,7 @@ _MODELS = {  "wavlm-base": {
                   "in_features":768,
                   "pool_dim": 1,
                   "target_sample_rate": 16000,
-                  "trim": False
+                  "monochannel": True
             },
             "wavlm-large": {
                   "hf_hub": "microsoft/wavlm-large",
@@ -12,7 +12,7 @@ _MODELS = {  "wavlm-base": {
                   "in_features": 1024,
                   "pool_dim": 1,
                   "target_sample_rate": 16000,
-                  "trim": False
+                  "monochannel": True
             },
             "hubert-base": {
                   "hf_hub": "facebook/hubert-base-ls960",
@@ -20,7 +20,7 @@ _MODELS = {  "wavlm-base": {
                   "in_features":768,
                   "pool_dim": 1,
                   "target_sample_rate": 16000,
-                  "trim": False
+                  "monochannel": True
             },
             "hubert-large": {
                   "hf_hub": "facebook/hubert-large-ll60k",
@@ -28,7 +28,7 @@ _MODELS = {  "wavlm-base": {
                   "in_features":1024,
                   "pool_dim": 1,
                   "target_sample_rate": 16000,
-                  "trim": False
+                  "monochannel": True
             },
             "hubert-xlarge": {
                   "hf_hub": "facebook/hubert-xlarge-ll60k",
@@ -36,7 +36,7 @@ _MODELS = {  "wavlm-base": {
                   "in_features":1280,
                   "pool_dim": 1,
                   "target_sample_rate": 16000,
-                  "trim": False
+                  "monochannel": True
             },
             "whisper-tiny": {
                   "hf_hub": "openai/whisper-tiny",
@@ -44,8 +44,8 @@ _MODELS = {  "wavlm-base": {
                   "in_features":384,
                   "pool_dim": 1,
                   "target_sample_rate": 16000,
-                  'trim':True,
-                  'clip_length': 30
+                  'clip_length': 30,
+                  "monochannel": True
             },
             "whisper-base": {
                   "hf_hub": "openai/whisper-base",
@@ -53,8 +53,8 @@ _MODELS = {  "wavlm-base": {
                   "in_features":512,
                   "pool_dim": 1,
                   "target_sample_rate": 16000,
-                  'trim':True,
-                  'clip_length': 30
+                  'clip_length': 30,
+                  "monochannel": True
             },
             "whisper-small": {
                   "hf_hub": "openai/whisper-small",
@@ -62,8 +62,8 @@ _MODELS = {  "wavlm-base": {
                   "in_features":768,
                   "pool_dim": 1,
                   "target_sample_rate": 16000,
-                  'trim':True,
-                  'clip_length': 30
+                  'clip_length': 30,
+                  "monochannel": True
             },
             "whisper-medium": {
                   "hf_hub": "openai/whisper-medium",
@@ -71,8 +71,8 @@ _MODELS = {  "wavlm-base": {
                   "in_features":1024,
                   "pool_dim": 1,
                   "target_sample_rate": 16000,
-                  'trim':True,
-                  'clip_length': 30
+                  'clip_length': 30,
+                  "monochannel": True
             },
             "whisper-large": {
                   "hf_hub": "openai/whisper-large",
@@ -80,8 +80,8 @@ _MODELS = {  "wavlm-base": {
                   "in_features":1280,
                   "pool_dim": 1,
                   "target_sample_rate": 16000,
-                  'trim':True,
-                  'clip_length': 30
+                  'clip_length': 30,
+                  "monochannel": True
             },
             "whisper-large-v2": {
                   "hf_hub": "openai/whisper-large-v2",
@@ -89,15 +89,14 @@ _MODELS = {  "wavlm-base": {
                   "in_features":1280,
                   "pool_dim": 1,
                   "target_sample_rate": 16000,
-                  'trim':True,
-                  'clip_length': 30
+                  'clip_length': 30,
+                  "monochannel": True
             },
             "test_model": {
                   "use_featext": False,
                   "in_features":1280,
                   "pool_dim": 1,
                   "target_sample_rate": 16000,
-                  'trim':True,
                   'clip_length': 30
             }
 }

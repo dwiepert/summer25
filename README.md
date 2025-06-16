@@ -5,13 +5,19 @@ REQUIREMENTS:
 
 ## QUESTIONS
 * safe for features to be public? tasks to be public?
-* What’s 1.5 vs 2 for our purposes in features
-* why pooled feature annotations?^^
+* What’s 1.5 vs 2 for our purposes in features: Binarize - but 1.5 to 0, 2> will be 1. Leland - for one of the models that he trained, he came up with a combo loss that is BCE and w/in each batch, used more finegrained ratings to get the rank of the samples in that batch correctly (mildest to most severe, can learn mild to severe). Get splits that aren't yet binarized, add transform to binarize. 
+* why pooled feature annotations?^^ how do we pool this over annotator. Max abnormality (whichever is highest)***
 * which features to use for debugging
-* is the data context in the example up to date
+* is the data context in the example up to date - data context is the big query last, ask leland to double check which data context and for snippet of combo loss so that I have it. 
 * keep_extractor for models without feature extractor!
 * what are our metrics of interest, just accuracy? balanced accuracy? anything else
-* LOSS FUNCTION
+* figure out the feature extractor for WavLM - don't unfreeze it? add option to unfreeze? Double checkrequires.grad =False or True for model as in. 
+* Always freeze whisper decoder, keep
+* freeze - most common is it to do last layer or unfreeze the whole thing, half might also be interesting (early transformations are more general)
+* LOSS FUNCTION - BCE 
+* assume CNN that goes wavform to tokens is fixed - SHOUKLD ALWAYS FREEZE
+* key and query in LoRA. common things - figure out what the standard things are for HuBERT/WavLM/Whisper. 
+* don't pool over Padding tokens!!!!!!! in any pooling!!! how do we ensure that? what does that mean. 
 
 ## ACTIVE DEBUGGING/TASKS
 * Documentation upate
@@ -20,7 +26,7 @@ REQUIREMENTS:
     * ~~hugging face models~~
     * ~~classifier~~
     * ~~base model~~
-    * dataset/data loading
+    * dataset/data loading (io, transforms, dataset folder)
     * freeze/pool/forward
     * loops/metrics
 * unfreeze layers
