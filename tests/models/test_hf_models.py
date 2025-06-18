@@ -1,5 +1,5 @@
 """
-Test models
+Test hugging face models
 
 Author(s): Daniela Wiepert
 Last modified: 06/2025
@@ -13,167 +13,7 @@ import shutil
 import pytest
 
 ##local
-from summer25.models import HFModel, BaseModel, Classifier
-
-def test_basemodel_params():
-    params = {'out_dir':Path('./out_dir'), 'pool_dim': 1}
-    
-    # check model type? add into class HF and base model (2 diff constants)
-    params['model_type'] = 'random'
-    with pytest.raises(AssertionError):
-        m = BaseModel(**params)
-    
-    params['model_type'] = 'wavlm-base'
-    m = BaseModel(**params)
-
-    assert 'unfreeze_layers' not in m.base_config, 'Unfreeze layers incorrectly added to config'
-    assert 'pt_ckpt' not in m.base_config, 'pt_ckpt incorrectly added to base config'
-    assert 'ft_ckpt' not in m.base_config, 'ft_ckpt incorrectly added to base config'
-
-    #check freeze method 
-    params['freeze_method'] = 'layer'
-    with pytest.raises(AssertionError):
-        m = BaseModel(**params)
-    params['unfreeze_layers'] = 0
-    with pytest.raises(AssertionError):
-        m = BaseModel(**params)
-
-    params['unfreeze_layers'] = ['encoder.layer0']
-    m = BaseModel(**params)
-    assert 'unfreeze_layers' in m.base_config and m.base_config['unfreeze_layers'] == params['unfreeze_layers'], 'Unfreeze layers not added to base config.'
-
-    params['unfreeze_layers'] = [0]
-    m = BaseModel(**params)
-    assert 'unfreeze_layers' in m.base_config and m.base_config['unfreeze_layers'] == params['unfreeze_layers'], 'Unfreeze layers not added to base config.'
-
-    params['unfreeze_layers'] = [{}] #TODO: what would this do?
-    with pytest.raises(AssertionError):
-        m = BaseModel(**params)
-
-    params['freeze_method'] = 'random'
-    with pytest.raises(AssertionError):
-        m = BaseModel(**params)
-    
-    del params['freeze_method']
-    del params['unfreeze_layers']
-
-    #check pool method
-    params['pool_method'] = 'random'
-    with pytest.raises(AssertionError):
-        m = BaseModel(**params)
-    
-    del params['pool_method']
-
-    #no pool dim - mean pooling
-    del params['pool_dim']
-    with pytest.raises(AssertionError):
-        m = BaseModel(**params)
-
-    #pool dim not int or tuple
-    params['pool_dim'] = '1'
-    with pytest.raises(AssertionError):
-        m = BaseModel(**params)
-
-    #pool dim - tuple
-    params['pool_dim'] = (0,1)
-    m = BaseModel(**params)
-    params['pool_dim'] = ('0','1')
-    with pytest.raises(AssertionError):
-        m = BaseModel(**params)
-    
-    #no pool dim + attn 
-    params['pool_method'] = 'attn'
-    m = BaseModel(**params)
-    assert 'pool_dim' not in m.base_config, 'Pool dim incorrectly added to base config'
-    params['pool_dim'] = 1
-    del params['pool_method']
-
-    # check pretrained ckpt exists
-    pt_ckpt = Path('./pt_ckpt')
-    if pt_ckpt.exists():
-        shutil.rmtree(pt_ckpt)
-    params['pt_ckpt'] = pt_ckpt 
-    with pytest.raises(AssertionError):
-        m = BaseModel(**params)
-    pt_ckpt.mkdir(exist_ok=True)
-    m = BaseModel(**params)
-    assert 'pt_ckpt' in m.base_config and m.base_config['pt_ckpt'] == str(pt_ckpt), 'pt ckpt not added to config correctly.'
-    del params['pt_ckpt']
-    shutil.rmtree(pt_ckpt)
-
-    # check finetuned ckpt exists
-    ft_ckpt = Path('./ft_ckpt')
-    if ft_ckpt.exists():
-        shutil.rmtree(ft_ckpt)
-    params['ft_ckpt'] = ft_ckpt 
-    with pytest.raises(AssertionError):
-        m = BaseModel(**params)
-    
-    ft_ckpt.mkdir(exist_ok=True)
-    with pytest.raises(AssertionError):
-        m = BaseModel(**params)
-
-    del params['ft_ckpt']
-    shutil.rmtree(ft_ckpt)
-    shutil.rmtree(params['out_dir'])
-
-def test_classifier_params():
-    params = {'in_features':1, 'out_features':1}
-    m = Classifier(**params)
-    assert 'ckpt' not in m.get_config(), 'Checkpoint added to config when not given.'
-
-    #Not implemented error for invalid n layers 
-    params['nlayers'] = 3
-    with pytest.raises(NotImplementedError):
-        m = Classifier(**params)
-    del params['nlayers']
-
-    #Not implemented error for invalid activation
-    params['activation'] = 'random'
-    with pytest.raises(NotImplementedError):
-        m = Classifier(**params)
-    del params['activation']
-    #check 
-
-def test_classifier_checkpoints():
-    params = {'in_features':1, 'out_features':1}
-    #invalid checkpoint 
-    ckpt = Path('./ckpt')
-    if ckpt.exists():
-        shutil.rmtree(ckpt)
-    params['ckpt'] = ckpt
-    with pytest.raises(AssertionError):
-        m = Classifier(**params)
-    
-    ckpt.mkdir(exist_ok=True)
-    with pytest.raises(AssertionError):
-        m = Classifier(**params)
-
-    #Test saving 
-    del params['ckpt']
-    m = Classifier(**params)
-    m.save_classifier(ckpt)
-    out_ckpt = ckpt / 'weights' 
-    out_path = out_ckpt / (m.config['clf_name']+'.pt')
-    assert out_path.exists(), 'Classifier not saved properly'
-
-    #load with newly saved ckpt
-    params['ckpt'] = out_path
-    m = Classifier(**params)
-
-    
-    #load with directory
-    params['ckpt'] = out_ckpt
-    m = Classifier(**params)
-
-    
-    #create new model with different params and try to load old ckpt
-    params['nlayers'] = 1
-    with pytest.raises(ValueError):
-        m = Classifier(**params)
-
-    if ckpt.exists():
-        shutil.rmtree(ckpt)
+from summer25.models import HFModel, Classifier
 
 @pytest.mark.slow
 def test_hfmodel_pretrained_base():
@@ -328,7 +168,6 @@ def test_hfmodel_finetuned_base():
     if ckpt.exists():
         shutil.rmtree(ckpt)
     #sth w use feat ext?
-
 
 def test_freeze():
     #check freeze methods work properly

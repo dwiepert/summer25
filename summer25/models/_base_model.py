@@ -11,10 +11,9 @@ from abc import abstractmethod
 from collections import OrderedDict
 import json
 from pathlib import Path
-from typing import List, Union, Dict, Optional, Tuple
+from typing import List, Union, Dict, Optional
 
 ##third-party
-import numpy as np
 import torch
 import torch.nn as nn
 

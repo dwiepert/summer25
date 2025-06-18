@@ -11,7 +11,7 @@ class WaveMean(object):
     def __call__(self, sample:dict) -> dict:
         """
         :param sample:dict, input sample
-        :param meansample: dict, sample after subtracting mean
+        :return meansample: dict, sample after subtracting mean
         """
         meansample = sample.copy()
         waveform = meansample['waveform']

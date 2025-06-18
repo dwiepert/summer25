@@ -15,7 +15,7 @@ class ToTensor(object):
     def __call__(self, sample:dict) -> dict:
         """
         :param sample: dict, input sample
-        :param tensample: dict, sample after torch conversion
+        :return tensample: dict, sample after torch conversion
         """
         
         tensample = sample.copy()

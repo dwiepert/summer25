@@ -10,15 +10,12 @@ Last modified: 06/2025
 import copy
 import os
 from pathlib import Path
-import random
 import shutil
-from typing import List, Union, Dict, Optional, Tuple
+from typing import Union, Dict, Optional
 
 ##third-party
 from huggingface_hub import snapshot_download
-import numpy as np
 import torch
-import torch.nn as nn
 from transformers import AutoModel, AutoFeatureExtractor, WhisperModel
 
 ##local

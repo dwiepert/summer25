@@ -4,14 +4,16 @@ Monochannel conversion
 Author(s): NAIP
 Last modified: 06/2025
 """
+#IMPORTS
+##third-party
 import torch
 
 class ToMonophonic(object):
     '''
     Convert to monochannel with a reduce function (can alter based on how waveform is loaded)
-    :param reduce_fn: function to use for reducing channels
+    :param reduce_fn: function to use for reducing channels (default = channel sum)
     '''
-    def __init__(self, reduce_fn):
+    def __init__(self, reduce_fn=lambda w: torch.sum(w, axis = 0).unsqueeze(0)):
         
         self.reduce_fn = reduce_fn
         

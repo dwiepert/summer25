@@ -1,30 +1,45 @@
-#third party
+"""
+Load waveform from local machine
+
+Author(s): Daniela Wiepert
+Last modified: 06/2025
+"""
+#IMPORTS
+##built-in
+from pathlib import Path
+from typing import Union, Tuple
+
+##third party
 import librosa
 import torch
 import torchaudio
-import torch.nn.functional
 
-def load_waveform_from_local(input_dir, uid, extension = None, lib=False):
+def load_waveform_from_local(input_dir:Union[str,Path], uid:str, extension:str='wav', lib:bool=False, structured:bool=False) -> Tuple[torch.Tensor, int]:
     """
-    :param input_directory: directory where data is stored locally
+    :param input_directory: pathlike, directory where data is stored locally
     :param uid: audio identifier
-    :param extension: audio type (default, None)
-    :param lib: boolean indicating to load with librosa rather than torchaudio
+    :param extension: audio type (default = wav)
+    :param lib: boolean indicating to load with librosa rather than torchaudio (default = False)
+    :param structured: boolean indicating whether to load from a structured directory (prefix/uid/waveform.wav) or not (default = False)
 
-    :return: loaded audio waveform as tensor
+    :return waveform: torch tensor, loaded audio waveform
+    :return sr: int, sample rate
     """
-    
-    if extension is None:
-        extension = 'wav'
-        
-    waveform_path = f'{input_dir}/{uid}/waveform.{extension}'
+    if not isinstance(input_dir, Path): input_dir=Path(input_dir)
+    if structured:     
+        waveform_path = input_dir / f'{uid}'
+        waveform_path = waveform_path / f'waveform.{extension}'
+    else:
+        waveform_path = input_dir / f'{uid}.{extension}'
     
     if not lib:
-        waveform, sr = torchaudio.load(waveform_path, format = extension)
+        waveform, sr = torchaudio.load(waveform_path, format=extension)
     else:
         waveform, sr = librosa.load(waveform_path, mono=False, sr=None)
         waveform = torch.from_numpy(waveform)
         if len(waveform.shape) == 1:
            waveform = waveform.unsqueeze(0)
+        elif waveform.shape[1] == 1 or waveform.shape[1] == 2:
+            waveform = torch.transpose(waveform)
     
     return waveform, sr

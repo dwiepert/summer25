@@ -4,7 +4,8 @@ Mix two audio samples together
 Author(s): Daniela Wiepert
 Last modified: 06/2025
 """
-
+#IMPORTS
+##third-party
 import numpy as np
 import torch
 
@@ -13,7 +14,7 @@ class Mixup(object):
     Implement mixup of two files
 
     :param sample1: dictionary of first sample
-    :param sample2: dictionary of second sample
+    :param sample2: dictionary of second sample (default=None)
     :return basesample: sample with waveform updated
     '''
 
