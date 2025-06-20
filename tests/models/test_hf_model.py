@@ -243,6 +243,8 @@ def test_freeze():
     assert check_requires_grad(m8)
     assert len(m8.unfreeze) == 2
 
+    shutil.rmtree(params['out_dir'])
+
 
 def test_pooling():
     #TODO:
