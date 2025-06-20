@@ -71,3 +71,7 @@ def test_classifier_checkpoints():
 
     if ckpt.exists():
         shutil.rmtree(ckpt)
+
+def test_weight_initialization():
+    #TODO
+    pass

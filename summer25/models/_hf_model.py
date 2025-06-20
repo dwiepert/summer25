@@ -11,7 +11,7 @@ import copy
 import os
 from pathlib import Path
 import shutil
-from typing import Union, Dict, Optional
+from typing import Union, Dict, Optional, List
 
 ##third-party
 from huggingface_hub import snapshot_download
@@ -29,8 +29,7 @@ class HFModel(BaseModel):
 
     :param out_dir: Pathlike, output directory to save to
     :param model_type: str, hugging face model type for naming purposes
-    :param keep_extractor: bool, keep base extractor frozen (default=True)
-    :param freeze_method: str, freeze method for base pretrained model (default=all)
+    :param freeze_method: str, freeze method for base pretrained model (default=required-only)
     :param pool_method: str, pooling method for base model output (default=mean)
     :param pt_ckpt: pathlike, path to pretrained model checkpoint (default=None)
     :param ft_ckpt: pathlike, path to finetuned base model checkpoint (default=None)
@@ -45,8 +44,8 @@ class HFModel(BaseModel):
     :param kwargs: additional arguments for optional parameters (e.g., unfreeze_layers if freeze_method is layer, delete_download if you want to remove local versions of checkpoints after downloading, clf_ckpt if wanting to load checkpoint for classifier)
     """
     def __init__(self, 
-                 out_dir:Union[Path, str], model_type:str, keep_extractor:bool=True,
-                 freeze_method:str = 'all', pool_method:str = 'mean',pt_ckpt:Optional[Union[Path,str]]=None, ft_ckpt:Optional[Union[Path,str]]=None, 
+                 out_dir:Union[Path, str], model_type:str, freeze_method:str = 'required-only', 
+                 pool_method:str = 'mean',pt_ckpt:Optional[Union[Path,str]]=None, ft_ckpt:Optional[Union[Path,str]]=None, 
                  out_features:int=1, nlayers:int=2, activation:str='sigmoid',
                  seed:int=42, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
                  from_hub:bool=True, test_hub_fail:bool=False, test_local_fail:bool=False, **kwargs):
@@ -54,7 +53,6 @@ class HFModel(BaseModel):
         self.out_dir = out_dir 
         if not isinstance(self.out_dir, Path): self.out_dir = Path(self.out_dir)
         
-        #TODO: confirm weights are initialized properly - NEED TO ALSO DO THIS FOR THE CLASSIFIER!!!!!!!!!!
         super().__init__(model_type=model_type, out_dir=out_dir,
                          freeze_method=freeze_method, pool_method=pool_method, 
                          pt_ckpt=pt_ckpt,ft_ckpt=ft_ckpt,
@@ -63,6 +61,11 @@ class HFModel(BaseModel):
                          pool_dim=_MODELS[model_type]['pool_dim'],**kwargs)
 
         #HF ARGS
+        #handle some hugging face model specific parameters
+        self.required_freeze = _MODELS[self.model_type]['required_freeze']
+        self.optional_freeze = _MODELS[self.model_type]['optional_freeze']
+        self.unfreeze_prefixes = _MODELS[self.model_type]['unfreeze_prefixes']
+
         assert 'hf_hub' in _MODELS[self.model_type], f'{self.model_type} is incompatible with HFModel class.'
         self.hf_hub = _MODELS[self.model_type]['hf_hub']
 
@@ -70,8 +73,7 @@ class HFModel(BaseModel):
             self.delete_download = kwargs.pop("delete_download")
         else:
             self.delete_download = False
-        #TODO: try this and see if it works
-        self.keep_extractor = keep_extractor
+
         self.from_hub = from_hub
 
         if not self.from_hub: 
@@ -79,20 +81,22 @@ class HFModel(BaseModel):
             assert self.pt_ckpt.exists(), 'Given pt_ckpt does not exist.'
         
         #INITIALIZE MODEL COMPONENTS
-        self._initialize_base_model(test_hub_fail=test_hub_fail, test_local_fail=test_local_fail)
+        print(f'Loading model {self.model_type} from Hugging Face Hub...')
+        self._load_model(test_hub_fail=test_hub_fail, test_local_fail=test_local_fail)      
+        self.is_whisper_model = isinstance(self.base_model, WhisperModel)
+        self._load_checkpoint(self.ft_ckpt)
         self._freeze()
         self.base_model = self.base_model.to(self.device)
 
         # INITIALIZE CLASSIFIER (doesn't need to be overwritten)
         self.clf = Classifier(**self.clf_args)
         self.clf = self.clf.to(self.device)
-        #TODO: weight randomization for classifier
 
         if self.local_path and not self.delete_download:
             self.base_config['pt_ckpt'] = str(self.local_path)
 
         self.model_name = self.get_model_name()
-        self.config = {'model_name':self.model_name,'model_type':self.model_type,'seed':self.seed, 'keep_extractor': self.keep_extractor}
+        self.config = {'model_name':self.model_name,'model_type':self.model_type,'seed':self.seed}
         
         self.config.update(self.base_config)
         self.config.update(self.clf.get_config())
@@ -105,15 +109,16 @@ class HFModel(BaseModel):
         :return model_name: str with model name
         """
         model_name = f'{self.model_type}_seed{self.seed}_f{self.freeze_method}_{self.pool_method}'
-        if self.keep_extractor:
-            model_name += '_keepext'
         if self.ft_ckpt is not None:
             model_name += '_ft'
         return model_name
 
     def _load_model(self, test_hub_fail:bool=False, test_local_fail:bool=False):
         """
-        TODO
+        Load pretrained model from hugging face
+
+        :param test_hub_fail: bool, for testing purposes to confirm that non-hugging face functionality works (default=False)
+        :param test_local_fail: bool, for testing purposes to confirm that failing a local load raises errors (default=False)
         """
         if self.from_hub:
             try: 
@@ -121,7 +126,7 @@ class HFModel(BaseModel):
                     raise Exception()
                 self.base_model = AutoModel.from_pretrained(self.hf_hub, output_hidden_states=True, trust_remote_code=True)
                 self.local_path = None
-                return None
+                return
             except:
                 try:
                     if test_local_fail:
@@ -142,7 +147,7 @@ class HFModel(BaseModel):
                             os.rmdir(curr_parent)
                             temp = curr_parent.parent 
                             curr_parent = temp
-                    return None
+                    return
 
                 except: 
                     assert self.pt_ckpt is not None, 'Downloading from hub failed, but backup pt_ckpt not available.'
@@ -150,76 +155,69 @@ class HFModel(BaseModel):
 
         try:
             self.base_model = AutoModel.from_pretrained(str(self.pt_ckpt), output_hidden_states=True)
-            self.local_path = None
+            self.local_path = self.pt_ckpt
         except:
             raise ValueError('Pretrained checkpoint is incompatible with HuggingFace models. Confirm this is a path to a local hugging face checkpoint.')
-        return None
+        
+        return
                    
-    def _initialize_base_model(self, test_hub_fail:bool=False, test_local_fail:bool=False):
-        """
-        Initialize base hugging face models
-        TODO
-        """
-        print(f'Loading model {self.model_type} from Hugging Face Hub...')
-
-        self._load_model(test_hub_fail=test_hub_fail, test_local_fail=test_local_fail)      
-        self.is_whisper_model = isinstance(self.base_model, WhisperModel)
-        if self.is_whisper_model and self.freeze_method=='extractor':
-            print('Whisper model has no extractor. Model is not frozen.')
-        
-        if self.keep_extractor and not self.is_whisper_model:
-            ext_state_dict = copy.deepcopy(self.base_model.feature_extractor.state_dict())
-        
-        print('TODO: check that weights are initialized properly? Is _init_weights good for Whisper too???')
-        self.base_model.apply(self.base_model._init_weights)
-
-        if self.keep_extractor and not self.is_whisper_model:
-            self.base_model.feature_extractor.load_state_dict(ext_state_dict)
-            del ext_state_dict
-
-        self._load_checkpoint(self.ft_ckpt)
-
     def _freeze(self):
         """
+        Freeze model with specified method
         """
-         #FREEZE MODEL LAYERS
-        if self.freeze_method == 'extractor':
-            self._freeze_extractor()
-        elif self.freeze_method != 'none' or self.is_whisper_model:
-            self._freeze_all()
-            if self.freeze_method == 'exclude_last':
-                self.unfreeze_layers = self.layer_names[-1:]
-            elif self.freeze_method == 'half':
-                half = int(len(self.layer_names) / 2)
-                self.unfreeze_layers = self.layer_names[half:]
-            elif self.freeze_method == 'none' and self.is_whisper_model:
-                self.unfreeze_layers = self.layer_names
-            if self.unfreeze_layers:
-                if self.is_whisper_model:
-                    assert 'decoder' not in self.unfreeze_layers, 'Do not unfreeze decoder for Whisper.'
-                self._unfreeze_by_layer(self.unfreeze_layers)
+        #FREEZE MODEL LAYERS
+        self._freeze_all()
+        
+        if self.freeze_method == 'required-only': #only case where optional freeze layers should be unfrozen
+            layer_names = self._get_unfreezable_layers(self.unfreeze_prefixes+self.optional_freeze)
         else:
+            layer_names = self._get_unfreezable_layers(self.unfreeze_prefixes)
+        
+        #return layer names that can be unfrozen #only 
+        if self.freeze_method == 'required-only' or self.freeze_method == 'optional':
+            self.unfreeze = layer_names
+        elif self.freeze_method == 'half':   
             if self.is_whisper_model:
-                self._
-    
-    def _get_layer_names(self):
+                ind = int((len(layer_names)-1)/2) #calculation needs to only consider encoder.layers and not encoder.layer_norm 
+                ind += 1
+            else:
+                ind = int(len(layer_names)/2)
+            self.unfreeze = layer_names[-ind:]
+        elif self.freeze_method == 'exclude-last':
+            ind = -1
+            if self.is_whisper_model: #calculations needs to exclude final encoder.layer_norm (unfreeze actual final encoder.layers) 
+                ind -= 1
+            self.unfreeze = layer_names[ind:]
+        elif self.freeze_method == 'layer':
+            self.unfreeze = self.unfreeze_layers
+
+        self._unfreeze_by_layer(self.unfreeze) 
+
+    def _get_unfreezable_layers(self, unfreezable_prefixes:List[str],group_level:int=1) -> List[str]:
         """
+        Get layer names that can be unfrozen
+
+        :param unfreezable: List[str], list of layer prefixes that can be unfrozen
+        :param group_level: which layer group to return from model (based on unfreezable_prefixes) (default=1)
+        :return layer_names: List[str], list of layers that can be unfrozen (group level down, e.g. if 'encoder.layers' in unfreezable_prefixes and group_level = 1, 'encoder.layers.0' in layer_names)
         """
         layer_names = []
-        for name, param in self.base_model.named_parameters():
-            if 'encoder' in name:
-                n = name.split(".")[1]
-                if n not in layer_names:
-                    layer_names.append(n)
-        self.layer_names = layer_names
-            
-    def _freeze_extractor(self):
-        """
-        TODO
-        """
-        for name, param in self.base_model.named_parameters():
-            if 'feature_extractor' in name:
-                param.requires_grad = False
+    
+        for name, _ in self.base_model.named_parameters():
+            #print(name)
+            for u in unfreezable_prefixes:
+                if u in name:
+                    p = u.split(".")
+                    n = name.split(".")
+                    if len(p) == len(n) or len(p)+1 == len(n):
+                        if u not in layer_names:
+                            layer_names.append(u)
+                    else:
+                        l = ".".join(n[:len(p)+group_level])
+                        if l not in layer_names:
+                            layer_names.append(l)
+
+        return layer_names
     
     def forward(self, sample:Dict):
         """

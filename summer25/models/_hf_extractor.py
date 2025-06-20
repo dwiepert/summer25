@@ -52,16 +52,18 @@ class HFExtractor(BaseExtractor):
             #if self.pt_ckpt is not None: #hugging face models don't require pt ckpt but could be used as a backup
             #    if not isinstance(self.pt_ckpt,str): self.pt_ckpt = str(self.pt_ckpt)
             
-            self._initialize_extractor(test_hub_fail=test_hub_fail, test_local_fail=test_local_fail)
+            self._load_extractor(test_hub_fail=test_hub_fail, test_local_fail=test_local_fail)
             self._set_kwargs()
         else:
             self.feature_extractor=None
             self.local_path = None
         
-    def _initialize_extractor(self, test_hub_fail:bool=False, test_local_fail:bool=False):
+    def _load_extractor(self, test_hub_fail:bool=False, test_local_fail:bool=False):
         """
-        Initialize hugging face extractor
-        TODO
+        Load hugging face extractor
+        
+        :param test_hub_fail: bool, for testing purposes to confirm that non-hugging face functionality works (default=False)
+        :param test_local_fail: bool, for testing purposes to confirm that failing a local load raises errors (default=False)
         """
         if self.from_hub:
             try: 
@@ -69,7 +71,7 @@ class HFExtractor(BaseExtractor):
                     raise Exception()
                 self.feature_extractor = AutoFeatureExtractor.from_pretrained(self.hf_hub, trust_remote_code=True)
                 self.local_path = None
-                return None
+                return 
             except:
                 try:
                     if test_local_fail:
@@ -90,7 +92,7 @@ class HFExtractor(BaseExtractor):
                             os.rmdir(curr_parent)
                             temp = curr_parent.parent 
                             curr_parent = temp
-                    return None
+                    return 
 
                 except: 
                     assert self.pt_ckpt is not None, 'Downloading from hub failed, but backup pt_ckpt not available.'

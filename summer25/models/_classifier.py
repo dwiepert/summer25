@@ -101,7 +101,6 @@ class Classifier(nn.Module):
             return nn.Sigmoid()
         else:
             raise NotImplementedError(f'{self.activation} not yet implemented.')
-            #TODO: add
 
     def _load_checkpoint(self):
         """

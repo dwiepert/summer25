@@ -4,7 +4,10 @@ _MODELS = {  "wavlm-base": {
                   "in_features":768,
                   "pool_dim": 1,
                   "target_sample_rate": 16000,
-                  "monochannel": True
+                  "monochannel": True,
+                  "required_freeze": ['masked_spec_embed', 'feature_extractor', 'feature_projector'],
+                  "optional_freeze": ['encoder.pos_conv_embed', 'encoder.layer_norm'],
+                  "unfreeze_prefixes": ['encoder.layers']
             },
             "wavlm-large": {
                   "hf_hub": "microsoft/wavlm-large",
@@ -12,7 +15,10 @@ _MODELS = {  "wavlm-base": {
                   "in_features": 1024,
                   "pool_dim": 1,
                   "target_sample_rate": 16000,
-                  "monochannel": True
+                  "monochannel": True,
+                  "required_freeze": ['masked_spec_embed', 'feature_extractor', 'feature_projector'],
+                  "optional_freeze": ['encoder.pos_conv_embed', 'encoder.layer_norm'],
+                  "unfreeze_prefix": ['encoder.layers']
             },
             "hubert-base": {
                   "hf_hub": "facebook/hubert-base-ls960",
@@ -20,7 +26,10 @@ _MODELS = {  "wavlm-base": {
                   "in_features":768,
                   "pool_dim": 1,
                   "target_sample_rate": 16000,
-                  "monochannel": True
+                  "monochannel": True,
+                  "required_freeze": ['masked_spec_embed', 'feature_extractor', 'feature_projector'],
+                  "optional_freeze": ['encoder.pos_conv_embed', 'encoder.layer_norm'],
+                  "unfreeze_prefixes": ['encoder.layers']
             },
             "hubert-large": {
                   "hf_hub": "facebook/hubert-large-ll60k",
@@ -28,7 +37,10 @@ _MODELS = {  "wavlm-base": {
                   "in_features":1024,
                   "pool_dim": 1,
                   "target_sample_rate": 16000,
-                  "monochannel": True
+                  "monochannel": True,
+                  "required_freeze": ['masked_spec_embed', 'feature_extractor', 'feature_projector'],
+                  "optional_freeze": ['encoder.pos_conv_embed', 'encoder.layer_norm'],
+                  "unfreeze_prefixes": ['encoder.layers']
             },
             "hubert-xlarge": {
                   "hf_hub": "facebook/hubert-xlarge-ll60k",
@@ -36,7 +48,10 @@ _MODELS = {  "wavlm-base": {
                   "in_features":1280,
                   "pool_dim": 1,
                   "target_sample_rate": 16000,
-                  "monochannel": True
+                  "monochannel": True,
+                  "required_freeze": ['masked_spec_embed', 'feature_extractor', 'feature_projector'],
+                  "optional_freeze": ['encoder.pos_conv_embed', 'encoder.layer_norm'],
+                  "unfreeze_prefixes": ['encoder.layers']
             },
             "whisper-tiny": {
                   "hf_hub": "openai/whisper-tiny",
@@ -45,7 +60,10 @@ _MODELS = {  "wavlm-base": {
                   "pool_dim": 1,
                   "target_sample_rate": 16000,
                   'clip_length': 30,
-                  "monochannel": True
+                  "monochannel": True,
+                  "required_freeze": ['encoder.conv1', 'encoder.conv2', 'encoder.embed_positions', 'decoder'],
+                  "optional_freeze": [],
+                  "unfreeze_prefixes": ['encoder.layers', 'encoder.layer_norm']
             },
             "whisper-base": {
                   "hf_hub": "openai/whisper-base",
@@ -54,7 +72,10 @@ _MODELS = {  "wavlm-base": {
                   "pool_dim": 1,
                   "target_sample_rate": 16000,
                   'clip_length': 30,
-                  "monochannel": True
+                  "monochannel": True,
+                  "required_freeze": ['encoder.conv1', 'encoder.conv2', 'encoder.embed_positions', 'decoder'],
+                  "optional_freeze": [],
+                  "unfreeze_prefixes": ['encoder.layers', 'encoder.layer_norm']
             },
             "whisper-small": {
                   "hf_hub": "openai/whisper-small",
@@ -63,7 +84,10 @@ _MODELS = {  "wavlm-base": {
                   "pool_dim": 1,
                   "target_sample_rate": 16000,
                   'clip_length': 30,
-                  "monochannel": True
+                  "monochannel": True,
+                  "required_freeze": ['encoder.conv1', 'encoder.conv2', 'encoder.embed_positions', 'decoder'],
+                  "optional_freeze": [],
+                  "unfreeze_prefixes": ['encoder.layers', 'encoder.layer_norm']
             },
             "whisper-medium": {
                   "hf_hub": "openai/whisper-medium",
@@ -72,7 +96,10 @@ _MODELS = {  "wavlm-base": {
                   "pool_dim": 1,
                   "target_sample_rate": 16000,
                   'clip_length': 30,
-                  "monochannel": True
+                  "monochannel": True,
+                  "required_freeze": ['encoder.conv1', 'encoder.conv2', 'encoder.embed_positions', 'decoder'],
+                  "optional_freeze": [],
+                  "unfreeze_prefixes": ['encoder.layers', 'encoder.layer_norm']
             },
             "whisper-large": {
                   "hf_hub": "openai/whisper-large",
@@ -81,7 +108,10 @@ _MODELS = {  "wavlm-base": {
                   "pool_dim": 1,
                   "target_sample_rate": 16000,
                   'clip_length': 30,
-                  "monochannel": True
+                  "monochannel": True,
+                  "required_freeze": ['encoder.conv1', 'encoder.conv2', 'encoder.embed_positions', 'decoder'],
+                  "optional_freeze": [],
+                  "unfreeze_prefixes": ['encoder.layers', 'encoder.layer_norm']
             },
             "whisper-large-v2": {
                   "hf_hub": "openai/whisper-large-v2",
@@ -90,19 +120,26 @@ _MODELS = {  "wavlm-base": {
                   "pool_dim": 1,
                   "target_sample_rate": 16000,
                   'clip_length': 30,
-                  "monochannel": True
+                  "monochannel": True,
+                  "required_freeze": ['encoder.conv1', 'encoder.conv2', 'encoder.embed_positions', 'decoder'],
+                  "optional_freeze": [],
+                  "unfreeze_prefixes": ['encoder.layers', 'encoder.layer_norm']
             },
             "test_model": {
                   "use_featext": False,
                   "in_features":1280,
                   "pool_dim": 1,
                   "target_sample_rate": 16000,
-                  'clip_length': 30
+                  'clip_length': 30,
+                  "required_freeze": [],
+                  "optional_freeze": [],
+                  "unfreeze_prefixes": []
+
             }
 }
 
 _POOL = ['mean', 'max', 'attn']
-_FREEZE = ['all', 'extractor', 'half', 'exclude_last', 'layer', 'none']
+_FREEZE = ['half', 'exclude-last', 'layer', 'optional', 'required-only']
 
 _TASKS = ['sentence_repetition', 'word_repetition']
 

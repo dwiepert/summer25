@@ -169,14 +169,80 @@ def test_hfmodel_finetuned_base():
         shutil.rmtree(ckpt)
     #sth w use feat ext?
 
-def test_freeze():
-    #check freeze methods work properly
-    #TODO:
-    pass
+def check_requires_grad(model):
+    unfrozen = model.unfreeze
+    check = []
+    for name, param in model.base_model.named_parameters():
+        if any([f in name for f in unfrozen]):
+            check.append(param.requires_grad)
+        else:
+            check.append(param.requires_grad is False)
+    return all(check)
 
-def test_weight_initialization():
-    #TODO:
-    pass
+@pytest.mark.hf
+def test_freeze():
+    params = {'out_dir':Path('./out_dir'), 'model_type':'wavlm-base'}
+
+    #no freezing (required only)
+    params['freeze_method'] = 'required-only'
+    m = HFModel(**params)
+    assert m is not None, 'Model not running properly.'
+    assert check_requires_grad(m)
+
+    #freeze optional
+    params['freeze_method'] = 'optional'
+    m1 = HFModel(**params)
+    assert m1 is not None, 'Model not running properly.'
+    assert check_requires_grad(m1)
+
+    #freeze half
+    params['freeze_method'] = 'half'
+    m2 = HFModel(**params)
+    assert m2 is not None, 'Model not running properly.'
+    assert check_requires_grad(m2)
+    assert len(m2.unfreeze) == 6
+
+    #freeze all but last
+    params['freeze_method'] = 'exclude-last'
+    m3 = HFModel(**params)
+    assert m3 is not None, 'Model not running properly.'
+    assert check_requires_grad(m3)
+    assert len(m3.unfreeze) == 1
+
+    #freeze specific layers
+    params['freeze_method'] = 'layer'
+    params['unfreeze_layers'] = ['encoder.layers.5']
+    m4 = HFModel(**params)
+    assert m4 is not None, 'Model not running properly.'
+    assert check_requires_grad(m4)
+    assert len(m4.unfreeze) == 1 and m4.unfreeze == params['unfreeze_layers']
+
+    #TRY WITH HUBERT
+    params['model_type'] = 'hubert-base'
+    params['freeze_method'] = 'optional'
+    del params['unfreeze_layers']
+    m5 = HFModel(**params)
+
+    #TRY WITH WHISPER
+    params['model_type'] = 'whisper-tiny'
+    params['freeze_method'] = 'optional'
+    m6 = HFModel(**params)
+    assert m6 is not None, 'Model not running properly.'
+    assert check_requires_grad(m6)
+
+    #Check whisper with half and exclude last 
+    params['freeze_method'] = 'half'
+    m7 = HFModel(**params)
+    assert m7 is not None, 'Model not running properly.'
+    assert check_requires_grad(m7)
+    assert len(m7.unfreeze) == 3 
+
+    params['freeze_method'] = 'exclude-last'
+    m8 = HFModel(**params)
+    assert m8 is not None, 'Model not running properly.'
+    assert check_requires_grad(m8)
+    assert len(m8.unfreeze) == 2
+
 
 def test_pooling():
     #TODO:

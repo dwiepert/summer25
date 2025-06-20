@@ -4,6 +4,8 @@ REQUIREMENTS:
     metadata expectations
 
 ## QUESTIONS
+* Extra layer norm in whisper????
+* We don't actually want to re-initialize any weights except to randomly initialize classifier weights, correct? 
 * safe for features to be public? tasks to be public?
 * What’s 1.5 vs 2 for our purposes in features: Binarize - but 1.5 to 0, 2> will be 1 (MAKE SURE TO GET BOTH >2 and also regular 1,2,3, etc). Leland - for one of the models that he trained, he came up with a combo loss that is BCE and w/in each batch, used more finegrained ratings to get the rank of the samples in that batch correctly (mildest to most severe, can learn mild to severe). Get splits that aren't yet binarized, add transform to binarize. 
 * why pooled feature annotations?^^ how do we pool this over annotator. Max abnormality (whichever is highest)***
@@ -23,15 +25,17 @@ REQUIREMENTS:
 * TEST SUITE - ALL ASSERTIONS!
     * test google cloud things????? mark to run only sometimes, check out pytest slow as well to skip some stupp
     * ~~split~~
-    * ~~hugging face models~~
+    * ~~hugging face models~~ (load smallest of each type and clear cache afterwards)
     * ~~classifier~~
     * ~~base model~~
     * ~~base dataset~~
     * ~~io/transforms - Non-GCS~~
     * io/transforms - GCS
     * ~~wav dataset~~
-    * ~~HF extractor~~
-    * freeze/pool/forward
+    * ~~HF extractor~~ (load all options? load smallest of each type and clear cache afterwards)
+    * ~~freeze~~
+    * pool
+    * forward
     * loops/metrics
 * unfreeze layers
     * int vs. string
@@ -48,21 +52,18 @@ REQUIREMENTS:
     * ~~Check local checkpoint load~~
     * ~~confirm configuration is saving properly~~
     * ~~tests~~
-* random weight initialization - check seed for classifier and base model
+* random weight initialization for classifier - check seed
     * tests
-* processor - tokenizer needed?
+* ~~processor - tokenizer needed?~~
     * ~~wavlm~~
     * ~~hubert~~
     * ~~whisper~~
-* freeze by layers (decide layer configurations) for -  assert int or str
+* ~~freeze by layers (decide layer configurations) for -  assert int or str~~
     * ~~wavlm~~
     * ~~hubert~~
-    * ~~whisper~~ - should whisper decoder always be frozen since we aren't using it at all?^^
-    * set module names - can then just give layers? determine which modules to freeze
-    * keep extractor
-        * hubert???
-        * wavlm
-    * tests
+    * ~~whisper~~
+    * ~~set module names - can then just give layers? determine which modules to freeze~~
+    * ~~tests~~
 * Classification head 
     * decide basic configurations/layer options
     * decide test features vs. all features? different groupings? what is the plan here

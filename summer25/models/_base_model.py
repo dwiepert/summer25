@@ -27,7 +27,7 @@ class BaseModel(nn.Module):
 
     :param model_type: str, type of model being initialized
     :param out_dir: pathlike, path to directory for saving all model information
-    :param freeze_method: str, freeze method for base pretrained model (default=all)
+    :param freeze_method: str, freeze method for base pretrained model (default=required-only)
     :param pool_method: str, pooling method for base model output (default=mean)
     :param pt_ckpt: pathlike, path to base pretrained model checkpoint (default=None)
     :param ft_ckpt: pathlike, path to finetuned base model checkpoint (default=None)
@@ -39,7 +39,7 @@ class BaseModel(nn.Module):
     :param seed: int, random seed
     :param kwargs: additional arguments for optional parameters (e.g., pool_dim for mean/max pooling and unfreeze_layers if freeze_method is layer, clf_ckpt)
     """
-    def __init__(self, model_type:str, out_dir:Union[Path, str], freeze_method:str = 'all', pool_method:str = 'mean',
+    def __init__(self, model_type:str, out_dir:Union[Path, str], freeze_method:str = 'required-only', pool_method:str = 'mean',
                  pt_ckpt:Optional[Union[Path, str]]=None, ft_ckpt:Optional[Union[Path,str]]=None, 
                  in_features:int=768, out_features:int=1, nlayers:int=2, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
                  activation:str='sigmoid', seed:int=42,
@@ -137,7 +137,6 @@ class BaseModel(nn.Module):
         return base_config
 
     ### BASE MODEL INITIALIZATION ###
-    @abstractmethod
     def _initialize_base_model(self):
         """
         Initialize model variable 
@@ -187,10 +186,8 @@ class BaseModel(nn.Module):
         """
         assert all([isinstance(v, str) for v in unfreeze_layers]), f'Freeze layers should be given as a string layer name.'
         for name, param in self.base_model.named_parameters():
-            for s in unfreeze_layers:
-                if s in name:
-                    param.requires_grad=True
-            #print(f"{name}: requires_grad={param.requires_grad}")
+            if any([u in name for u in unfreeze_layers]):
+                param.requires_grad=True
 
     ### POOLING ###
     def pooling(self, x:torch.Tensor) -> torch.Tensor:
