@@ -3,6 +3,10 @@ REQUIREMENTS:
     audio directory format
     metadata expectations
 
+CONFIG FILES:
+    - run.py only contains some parameters for audio
+    - can specify more exact specifics for WavDataset transforms by adding to a config file. TODO
+
 ## QUESTIONS
 * Extra layer norm in whisper????
 * We don't actually want to re-initialize any weights except to randomly initialize classifier weights, correct? 
@@ -22,15 +26,16 @@ REQUIREMENTS:
 * don't pool over Padding tokens!!!!!!! in any pooling!!! how do we ensure that? what does that mean. 
 
 ## ACTIVE DEBUGGING/TASKS
+* update splits
+* test custom collate
 * TEST SUITE - ALL ASSERTIONS!
-    * test google cloud things????? mark to run only sometimes, check out pytest slow as well to skip some stupp
     * ~~split~~
     * ~~hugging face models~~ (load smallest of each type and clear cache afterwards)
     * ~~classifier~~
     * ~~base model~~
     * ~~base dataset~~
     * ~~io/transforms - Non-GCS~~
-    * io/transforms - GCS
+    * io/transforms - GCS test google cloud things????? mark to run only sometimes
     * ~~wav dataset~~
     * ~~HF extractor~~ (load all options? load smallest of each type and clear cache afterwards)
     * ~~freeze~~
@@ -43,6 +48,7 @@ REQUIREMENTS:
     * thoughts on extractor being frozen even during all? (keep_extractor)
 
 ## All TODO
+* Make seeded_split compatible with gcs + run
 * ~~load from existing configuration~~
 * ~~load huggingface models~~ 
     * ~~wavlm~~

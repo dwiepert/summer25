@@ -111,179 +111,187 @@ def df_compare(search_dir, add, out, as_json=True):
 def test_directories_errors():
     audio_dir1, split_dir1 = create_directories(True, True, False)
 
+    keys = {'subject_key': 'subject', 'date_key':'incident_date', 'audio_key':'original_audio_id', 'task_key':'task_name'}
     #audio_dir/split_dir None
     with pytest.raises(AssertionError):
-        seeded_split(audio_dir=None, split_dir=None)
+        seeded_split(audio_dir=None, split_dir=None,**keys)
     
     #audio_dir not None, doesn't exist
     with pytest.raises(AssertionError):
-        seeded_split(audio_dir=audio_dir1)
+        seeded_split(audio_dir=audio_dir1,**keys)
     
     #audio_dir None, split_dir not None but doesn't exist
     with pytest.raises(AssertionError):
-        seeded_split(split_dir=split_dir1)
+        seeded_split(split_dir=split_dir1,**keys)
 
 
 def test_load_existing_success():
     _ , split_dir1 = create_directories(False, True, True)
-
+    keys = {'subject_key': 'subject', 'date_key':'incident_date', 'audio_key':'original_audio_id', 'task_key':'task_name'}
     #train/test only
     create_data(split_dir1, 'train')
     create_data(split_dir1, 'test')
-    out = seeded_split(split_dir=split_dir1, load_existing=True)
+    out = seeded_split(split_dir=split_dir1, load_existing=True,**keys)
     assert out[1] is None, 'Val is not none'
-    out = seeded_split(split_dir=split_dir1, load_existing=True, as_json=True)
+    out = seeded_split(split_dir=split_dir1, load_existing=True, as_json=True,**keys)
     assert out[1] is None, 'Val is not none'
     
     #train/val/test
     create_data(split_dir1, 'val')
-    out = seeded_split(split_dir=split_dir1, load_existing=True)
+    out = seeded_split(split_dir=split_dir1, load_existing=True,**keys)
     assert all([o is not None for o in out]), 'There should be no None outputs'
-    out = seeded_split(split_dir=split_dir1, load_existing=True, as_json=True)
+    out = seeded_split(split_dir=split_dir1, load_existing=True, as_json=True,**keys)
     assert all([o is not None for o in out]), 'There should be no None outputs'
 
     #more than train/test/val shouldn't fail
     create_data(split_dir1, 'other')
     
-    out = seeded_split(split_dir=split_dir1, load_existing=True)
+    out = seeded_split(split_dir=split_dir1, load_existing=True,**keys)
     assert all([o is not None for o in out]), 'There should be no None outputs'
-    out = seeded_split(split_dir=split_dir1, load_existing=True, as_json=True)
+    out = seeded_split(split_dir=split_dir1, load_existing=True, as_json=True,**keys)
     assert all([o is not None for o in out]), 'There should be no None outputs'
     
     remove_directories()
 
 def test_load_existing_failure():
     _, split_dir1 = create_directories(False, True, False)
-    
+    keys = {'subject_key': 'subject', 'date_key':'incident_date', 'audio_key':'original_audio_id', 'task_key':'task_name'}
     #No split dir and load existing
     with pytest.raises(AssertionError):
-        seeded_split(split_dir=split_dir1, load_existing=True)
+        seeded_split(split_dir=split_dir1, load_existing=True,**keys)
     
     #split dir exists but no files exist
     split_dir1.mkdir(exist_ok=True)
     with pytest.raises(AssertionError):
-        seeded_split(split_dir=split_dir1, load_existing=True)
+        seeded_split(split_dir=split_dir1, load_existing=True,**keys)
 
     #load with invalid files only
     create_data(split_dir1, 'other')
     with pytest.raises(AssertionError):
-        seeded_split(split_dir=split_dir1, load_existing=True)
+        seeded_split(split_dir=split_dir1, load_existing=True,**keys)
     with pytest.raises(AssertionError):
-        seeded_split(split_dir=split_dir1, load_existing=True, as_json=True)
+        seeded_split(split_dir=split_dir1, load_existing=True, as_json=True,**keys)
 
     remove_directories()
 
 def test_metadata_load():
     audio_dir1, split_dir1 = create_directories(True, True, True)
-
+    keys = {'subject_key': 'subject', 'date_key':'incident_date', 'audio_key':'original_audio_id', 'task_key':'task_name'}
     #test 1 - no metadata file in audio dir
     with pytest.raises(ValueError):
-        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False)
+        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False,**keys)
     with pytest.raises(ValueError):
-        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=True)
+        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=True,**keys)
 
     create_data(audio_dir1, 'metadata')
     
     #test 2 - load metadata from csv
-    out = seeded_split(audio_dir=audio_dir1, split_dir=None, as_json=False)
+    out = seeded_split(audio_dir=audio_dir1, split_dir=None, as_json=False,**keys)
     assert all([o is not None for o in out]), 'There should be no None outputs'
-    out = seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False)
+    out = seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False,**keys)
     assert all([o is not None for o in out]), 'There should be no None outputs'
 
     #test 3 - load metadata from json
-    out = seeded_split(audio_dir=audio_dir1, split_dir=None, as_json=True)
+    out = seeded_split(audio_dir=audio_dir1, split_dir=None, as_json=True,**keys)
     assert all([o is not None for o in out]), 'There should be no None outputs'
-    out = seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=True)
+    out = seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=True,**keys)
     assert all([o is not None for o in out]), 'There should be no None outputs'
 
     #test 4 - more than one metadatafile in audio dir
     create_data(audio_dir1, 'metadata1')
     with pytest.raises(ValueError):
-        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False)
+        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False,**keys)
     with pytest.raises(ValueError):
-        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=True)
+        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=True,**keys)
     
     os.remove(str(audio_dir1 / 'metadata1.csv'))
     os.remove(str(audio_dir1 / 'metadata1.json'))
 
     #test 5 - no date key
+    keys['date_key'] = 'date'
     with pytest.raises(AssertionError):
-        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, date_key="date")
+        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False,**keys)
     with pytest.raises(AssertionError):
-        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=True, date_key="date")
+        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=True,**keys)
 
     #test 6 - no subject key
+    keys['date_key'] = 'incident_date'
+    keys['subject_key'] = 'date'
     with pytest.raises(AssertionError):
-        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, subject_key="date")
+        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False,**keys)
     with pytest.raises(AssertionError):
-        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=True, subject_key="date")
+        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=True,**keys)
 
     #test 7 - no audio key
+    keys['subject_key'] = 'subject'
+    keys['audio_key'] = 'date'
     with pytest.raises(AssertionError):
-        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, audio_key="date")
+        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False,**keys)
     with pytest.raises(AssertionError):
-        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=True, audio_key="date")
+        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=True,**keys)
     
     #test 9 - target tasks not none, task key not in col
+    keys['audio_key'] = 'original_audio_id'
+    keys['task_key'] = 'date'
     with pytest.raises(AssertionError):
-        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, task_key="date", target_tasks=['sentence_repetition'])
+        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, target_tasks=['sentence_repetition'],**keys)
     with pytest.raises(AssertionError):
-        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=True, task_key="date", target_tasks=['sentence_repetition'])
+        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=True, target_tasks=['sentence_repetition'],**keys)
 
     remove_directories()
 
 def test_metadata_filtering():
     audio_dir1, split_dir1 = create_directories(True, True, True)
     create_data(audio_dir1, 'metadata')
-
+    keys = {'subject_key': 'subject', 'date_key':'incident_date', 'audio_key':'original_audio_id', 'task_key':'task_name'}
     #no target tasks
-    out = seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False)
+    out = seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False,**keys)
     vals = out[0]['task_name'].values.tolist()
     assert any([v == 'sentence_repetition' for v in vals]) and any([v == 'word_repetition' for v in vals]), f'Did not keep all tasks'
 
     #invalid task
     with pytest.raises(AssertionError):
-        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, target_tasks=['sentence'])
+        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, target_tasks=['sentence'],**keys)
     with pytest.raises(AssertionError):
-        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=True, target_tasks=['sentence'])
+        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=True, target_tasks=['sentence'],**keys)
 
     #valid task
-    out = seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, target_tasks=['sentence_repetition'])
+    out = seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, target_tasks=['sentence_repetition'],**keys)
     vals = out[0]['task_name'].values.tolist()
     assert all([v == 'sentence_repetition' for v in vals]), 'Missing target task'
-    out = seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, target_tasks=['sentence_repetition', 'word_repetition'])
+    out = seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, target_tasks=['sentence_repetition', 'word_repetition'],**keys)
     vals = out[0]['task_name'].values.tolist()
     assert any([v == 'sentence_repetition' for v in vals]) and any([v == 'word_repetition' for v in vals]), 'Missing target task'
 
     #no target features
-    out = seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False)
+    out = seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False,**keys)
     assert all([_FEATURES[0] in o.columns.to_list() for o in out]) and all([_FEATURES[2] in o.columns.to_list() for o in out])
     
     #invalid target feature
     with pytest.raises(AssertionError):
-        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, target_features = ['test'])
+        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, target_features = ['test'],**keys)
     with pytest.raises(AssertionError):
-        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=True, target_features = ['test'])
+        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=True, target_features = ['test'],**keys)
 
     #valid target features
-    out = seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, target_features=[_FEATURES[0]])
+    out = seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, target_features=[_FEATURES[0]],**keys)
     assert all([_FEATURES[0] in o.columns.to_list() for o in out]), 'Missing target features'
-    out = seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, target_features=[_FEATURES[0],_FEATURES[2]])
+    out = seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, target_features=[_FEATURES[0],_FEATURES[2]],**keys)
     assert all([_FEATURES[0] in o.columns.to_list() for o in out]) and all([_FEATURES[2] in o.columns.to_list() for o in out]), 'Missing target features'
 
     #target feature missing from column names
     with pytest.raises(AssertionError):
-        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, target_features = [_FEATURES[1]])
+        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, target_features = [_FEATURES[1]],**keys)
     with pytest.raises(AssertionError):
-        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=True, target_features = [_FEATURES[1]])
+        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=True, target_features = [_FEATURES[1]],**keys)
 
     # random 
     # give audio dir only + load existing
-    out = seeded_split(audio_dir=audio_dir1, load_existing=True)
+    out = seeded_split(audio_dir=audio_dir1, load_existing=True,**keys)
     assert all([o is not None for o in out]), 'There should be no None outputs'
-    out = seeded_split(audio_dir=audio_dir1, load_existing=False)
+    out = seeded_split(audio_dir=audio_dir1, load_existing=False,**keys)
     assert all([o is not None for o in out]), 'There should be no None outputs'
-    out = seeded_split(audio_dir=str(audio_dir1))
+    out = seeded_split(audio_dir=str(audio_dir1),**keys)
     assert all([o is not None for o in out]), 'There should be no None outputs'
 
     remove_directories()
@@ -291,60 +299,60 @@ def test_metadata_filtering():
 def test_proportions():
     audio_dir1, split_dir1 = create_directories(True, True, True)
     create_data(audio_dir1, 'metadata')
-
+    keys = {'subject_key': 'subject', 'date_key':'incident_date', 'audio_key':'original_audio_id', 'task_key':'task_name'}
     #more than 3 proportions, less than 3 proportions
     with pytest.raises(AssertionError):
-        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, proportions=[.7,.1,.1,.1])
+        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, proportions=[.7,.1,.1,.1],**keys)
     with pytest.raises(AssertionError):
-        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=True, proportions=[.7,.1,.1,.1])
+        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=True, proportions=[.7,.1,.1,.1],**keys)
 
     with pytest.raises(ValueError):
-        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, proportions=[0,.7,.3])
+        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, proportions=[0,.7,.3],**keys)
     with pytest.raises(ValueError):
-        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=True, proportions=[0,.7,.3])
+        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=True, proportions=[0,.7,.3],**keys)
     
     #train, test, or val only
-    out = seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, proportions=[1,0,0])
+    out = seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, proportions=[1,0,0],**keys)
     assert out[0] is not None and out[1] is None and out[2] is None, 'Only one output should have values'
     size0 = len(out[0])
-    out = seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, proportions=[0,1,0])
+    out = seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, proportions=[0,1,0],**keys)
     assert out[0] is None and out[1] is not None and out[2] is None,'Only one output should have values'
     size1 = len(out[1])
-    out = seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, proportions=[0,0,1])
+    out = seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, proportions=[0,0,1],**keys)
     assert out[0] is None and out[1] is None and out[2] is not None,'Only one output should have values'
     size2 = len(out[2])
     assert size0 == size1 and size1 == size2, 'All outputs should have the same size'
     
     #train/test only or train/val only
-    out = seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, proportions=[.7,.3,0])
+    out = seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, proportions=[.7,.3,0],**keys)
     assert out[0] is not None and out[1] is not None and out[2] is None, 'Only one ouput should be None'
     size_big0 = len(out[0])
     size_small0 = len(out[1])
 
-    out = seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, proportions=[.7,0,.3])
+    out = seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, proportions=[.7,0,.3],**keys)
     assert out[0] is not None and out[1] is None and out[2] is not None, 'Only one ouput should be None'
     size_big1 = len(out[0])
     size_small1 = len(out[2])
     assert size_big0 == size_big1 and size_small0 == size_small1, 'Output sizes should match'
     
     #train/test/val 
-    out = seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, proportions=[.7,.15,.15])
+    out = seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, proportions=[.7,.15,.15],**keys)
     assert all([o is not None for o in out]), 'There should be no None outputs'
 
     #proportions add up to 1 
     with pytest.raises(AssertionError):
-        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, proportions=[.7,.1,.1])
+        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, proportions=[.7,.1,.1],**keys)
     with pytest.raises(AssertionError):
-        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=True, proportions=[.7,.1,.1])
+        seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=True, proportions=[.7,.1,.1],**keys)
     
     remove_directories()
 
 def test_output():
     audio_dir1, split_dir1 = create_directories(True, True, True)
     create_data(audio_dir1, 'metadata')
-
+    keys = {'subject_key': 'subject', 'date_key':'incident_date', 'audio_key':'original_audio_id', 'task_key':'task_name'}
     #test 21 - all expected columns in final dataframes (NEED ORIGINAL AUDIO ID TO BE ADDED!!!! something off with pooled annotations)
-    out = seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, proportions=[.7,.15,.15])
+    out = seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, proportions=[.7,.15,.15],**keys)
     size = len(data_dictionary()['subject'])
     tr_size = int(size*.7)
     v_size = int(size*.15)
@@ -374,12 +382,12 @@ def test_output():
 def test_saving():
     audio_dir1, split_dir1 = create_directories(True, True, True)
     create_data(audio_dir1, 'metadata')
-
+    keys = {'subject_key': 'subject', 'date_key':'incident_date', 'audio_key':'original_audio_id', 'task_key':'task_name'}
     #test 22 - test saving
     name = f'{audio_dir1.name}_seed{42}_tr{.7}v{.15}te{.15}_ntasks2_nfeats2'
     search_dir = split_dir1 / name
     
-    out = seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=True, save=True, seed=42, proportions=[.7,.15,.15], target_features=[_FEATURES[0],_FEATURES[2]], target_tasks=["sentence_repetition", "word_repetition"])
+    out = seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=True, save=True, seed=42, proportions=[.7,.15,.15], target_features=[_FEATURES[0],_FEATURES[2]], target_tasks=["sentence_repetition", "word_repetition"],**keys)
     assert search_dir.exists(), 'Save dir does not exist'
     
     df_compare(search_dir, 'train.json',out[0])
@@ -390,7 +398,7 @@ def test_saving():
     split_dir1.mkdir(exist_ok=True)
     
     #csv
-    out = seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, save=True, seed=42, proportions=[.7,.15,.15], target_features=[_FEATURES[0],_FEATURES[2]], target_tasks=["sentence_repetition", "word_repetition"])
+    out = seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, save=True, seed=42, proportions=[.7,.15,.15], target_features=[_FEATURES[0],_FEATURES[2]], target_tasks=["sentence_repetition", "word_repetition"],**keys)
     assert search_dir.exists(), 'Save dir does not exist'
     df_compare(search_dir, 'train.csv',out[0], False)
     df_compare(search_dir, 'val.csv', out[1], False)
@@ -401,12 +409,12 @@ def test_saving():
 def test_seeding():
     audio_dir1, split_dir1 = create_directories(True, True, True)
     create_data(audio_dir1, 'metadata')
-
-    out42_1 = seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, save=True, seed=42, proportions=[.7,.15,.15], target_features=[_FEATURES[0],_FEATURES[2]], target_tasks=["sentence_repetition", "word_repetition"])
-    out42_2 = seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, save=True, seed=42, proportions=[.7,.15,.15], target_features=[_FEATURES[0],_FEATURES[2]], target_tasks=["sentence_repetition", "word_repetition"])
+    keys = {'subject_key': 'subject', 'date_key':'incident_date', 'audio_key':'original_audio_id', 'task_key':'task_name'}
+    out42_1 = seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, save=True, seed=42, proportions=[.7,.15,.15], target_features=[_FEATURES[0],_FEATURES[2]], target_tasks=["sentence_repetition", "word_repetition"],**keys)
+    out42_2 = seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, save=True, seed=42, proportions=[.7,.15,.15], target_features=[_FEATURES[0],_FEATURES[2]], target_tasks=["sentence_repetition", "word_repetition"],**keys)
     
-    out100_1 = seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, save=True, seed=100, proportions=[.7,.15,.15], target_features=[_FEATURES[0],_FEATURES[2]], target_tasks=["sentence_repetition", "word_repetition"])
-    out100_2 = seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, save=True, seed=100, proportions=[.7,.15,.15], target_features=[_FEATURES[0],_FEATURES[2]], target_tasks=["sentence_repetition", "word_repetition"])
+    out100_1 = seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, save=True, seed=100, proportions=[.7,.15,.15], target_features=[_FEATURES[0],_FEATURES[2]], target_tasks=["sentence_repetition", "word_repetition"],**keys)
+    out100_2 = seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=False, save=True, seed=100, proportions=[.7,.15,.15], target_features=[_FEATURES[0],_FEATURES[2]], target_tasks=["sentence_repetition", "word_repetition"],**keys)
 
     for i in range(len(out42_1)):
         assert out42_1[i].equals(out42_2[i]), 'Same seed not producing same results'

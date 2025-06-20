@@ -22,16 +22,17 @@ from summer25.transforms import *
 from ._base_dataset import BaseDataset
      
 class WavDataset(BaseDataset):
-    def __init__(self, data:pd.DataFrame,  prefix:str, model_type:str,
-                 config:dict,target_labels:str, bucket=None, feature_extractor=None, 
+    def __init__(self, data:pd.DataFrame, prefix:str, model_type:str, uid_col:str,
+                 config:dict, target_labels:str, bucket=None, feature_extractor=None, 
                  transforms=None, extension:str='wav', structured:bool=False):
         '''
         Dataset that manages audio recordings. 
 
         :param data: dataframe with uids as index and annotations in the columns
-        :param prefix: location of files to download (compatible with gcs)
+        :param prefix: location of audio files (compatible with gcs)
         :param model_type: type of model this Dataset will be used with (e.g. w2v2, whisper)
-        :param config:dictionary with transform parameters (ones not specified in _MODELS)
+        :param uid_col: str, specify which column is the uid col
+        :param config: dictionary with transform parameters (ones not specified in _MODELS)
         :param target_labels: str list of targets to extract from data. Can be none only for 'asr'.
         :param bucket: gcs bucket (default=None)
         :param feature_extractor: initialized feature extractor (default=Nonse)

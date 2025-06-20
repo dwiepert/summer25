@@ -19,16 +19,22 @@ class BaseDataset(Dataset):
     Simple audio dataset
     '''
     
-    def __init__(self, data:Union[pd.DataFrame], target_labels:Union[List[str]], transforms=None):
+    def __init__(self, data:Union[pd.DataFrame], uid_col:str, target_labels:Union[List[str]], transforms=None):
         '''
         Initialize dataset with dataframe, target labels, and list of transforms
         :param data: pd.DataFrame, table with all annotation values
+        :param uid_col: str, specify which column is the uid col
         :param target_labels: List[str], list of target columns in data
         :param transforms: torchvision transforms function to run on data (default=None)
         '''
         super(BaseDataset, self).__init__()
 
         self.data = data.copy()
+        self.uid_col = uid_col
+        if self.data.index.name != uid_col:
+            assert self.uid_col in self.data, 'UID column must be present in dataset.'
+            self.data = self.data.set_index(self.uid_col)
+        
         self.transforms= transforms
         self.target_labels = target_labels
         

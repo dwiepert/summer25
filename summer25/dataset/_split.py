@@ -78,13 +78,17 @@ def _sklearn_split(split_table:pd.DataFrame, subject_key:str, size:float, seed:i
     test_subjects = X_test[subject_key].values
     return train_subjects, test_subjects
 
-def seeded_split(audio_dir:Union[Path, str]=None, split_dir:Union[Path,str]=None, proportions:List[float]=[.7, .15, .15], seed:int=42,
+def seeded_split(subject_key:str, date_key:str, audio_key:str, task_key:str, audio_dir:Union[Path, str]=None, split_dir:Union[Path,str]=None, proportions:List[float]=[.7, .15, .15], seed:int=42,
           save:bool=False, load_existing:bool=False, as_json:bool=False,
           target_tasks:List[str]=None, target_features:List[str] = None, stratify_threshold:int=10,
-          subject_key:str="subject", date_key:str="incident_date", audio_key:str="original_audio_id", task_key:str="task_name") -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+            ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
     Create train/test/val splits
 
+    :param subject_key: str, name of column/key containing subject identifiers
+    :param date_key: str, name of column/key containing date
+    :param audio_key: str, name of column/key containing audio file names 
+    :param task_key: str, name of column/key containing tasks
     :param audio_dir: pathlike, path to directory containing audio files. A json or csv with audio metadata should exist in this directory (default = None)
     :param split_dir: pathlike, path to directory to save splits to. May have existing splits. (default = None)
     :param proportions: list of float, list with proportions for each split (default = [.7, .15, .15])
@@ -95,10 +99,6 @@ def seeded_split(audio_dir:Union[Path, str]=None, split_dir:Union[Path,str]=None
     :param target_tasks: List of target tasks to keep in split (default = None)
     :param target_features: List of target features to stratify on/keep (default = None)
     :param stratify_threshold: int, specify threshold for stratification of features (default = 10)
-    :param subject_key: str, name of column/key containing subject identifiers (default="subject")
-    :param date_key: str, name of column/key containing date (default="incident_date")
-    :param audio_key: str, name of column/key containing audio file names (default="original_audio_id")
-    :param task_key: str, name of column/key containing tasks (default="task_name")
     :return train_df: pd.DataFrame, train split
     :return val_df: pd.DataFrame, validation split
     :return test_df: pd.DataFrame, test split

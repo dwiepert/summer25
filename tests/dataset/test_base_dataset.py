@@ -58,43 +58,47 @@ def test_base_initialization():
     # create metadata in pd dataframe
     df = data_dictionary()
 
+
+
     with pytest.raises(AssertionError):
-        d = BaseDataset(data = df, target_labels=None, transforms=None)
+        d = BaseDataset(data = df, uid_col='original_audio_id', target_labels=None, transforms=None)
     
     with pytest.raises(AssertionError):
-        d = BaseDataset(data = np.array([0.0,0.1,1.0]), target_labels=[0,1], transforms=None)
+        d = BaseDataset(data = np.array([0.0,0.1,1.0]),uid_col='original_audio_id', target_labels=[0,1], transforms=None)
     
     #incorrect target labels - pandas
     target_labels = [0, 1]
     with pytest.raises(AssertionError):
-        d = BaseDataset(data = df, target_labels=target_labels, transforms=None)
+        d = BaseDataset(data = df, uid_col='original_audio_id',target_labels=target_labels, transforms=None)
     target_labels = [_FEATURES[0],_FEATURES[3]]
     with pytest.raises(AssertionError):
-        d = BaseDataset(data = df, target_labels=target_labels, transforms=None)
+        d = BaseDataset(data = df,uid_col='original_audio_id', target_labels=target_labels, transforms=None)
 
     target_labels = [_FEATURES[0],_FEATURES[2]]
-    best = BaseDataset(data = df, target_labels=target_labels, transforms=None)
+    best = BaseDataset(data = df, uid_col='original_audio_id',target_labels=target_labels, transforms=None)
     out_df = best.get_data()
 
     try:
         pd.testing.assert_frame_equal(df, out_df)
     except:
         raise ValueError(f'Data frames not equivalent. {out_df.columns}')
-
+    #invalid uid col
+    with pytest.raises(AssertionError):
+        d = BaseDataset(data = df, uid_col='random',target_labels=target_labels, transforms=None)
     #invalid data types
     np_data = df[[_FEATURES[0],_FEATURES[2]]].to_numpy()
     with pytest.raises(AssertionError):
-        d = BaseDataset(data = np_data, target_labels=target_labels, transforms=None)
+        d = BaseDataset(data = np_data, uid_col='original_audio_id',target_labels=target_labels, transforms=None)
 
     list_data = np_data.tolist()
     with pytest.raises(AssertionError):
-        d = BaseDataset(data = list_data, target_labels=target_labels, transforms=None)
+        d = BaseDataset(data = list_data, uid_col='original_audio_id',target_labels=target_labels, transforms=None)
 
 def test_get_items():
     #no transforms, try with idx that's too high
     df = data_dictionary()
     target_labels = [_FEATURES[0],_FEATURES[2]]
-    d = BaseDataset(data=df, target_labels=target_labels, transforms=None)
+    d = BaseDataset(data=df, uid_col='original_audio_id',target_labels=target_labels, transforms=None)
 
     #no transforms, try with idx that's too high
     with pytest.raises(IndexError):
@@ -134,7 +138,7 @@ def test_transforms():
     transforms = torchvision.transforms.Compose([Practice()])
     df = data_dictionary()
     target_labels = [_FEATURES[0],_FEATURES[2]]
-    d = BaseDataset(data=df, target_labels=target_labels, transforms=transforms)
+    d = BaseDataset(data=df, uid_col='original_audio_id',target_labels=target_labels, transforms=transforms)
 
     out = d[0]
     assert 'test' in out and all([v == 1 for v in out['test']]), 'Transform applied.'

@@ -11,10 +11,13 @@ import json
 from pathlib import Path
 from typing import List
 
+##third-party
+from torch.utils.data import DataLoader
+
 ##local
-from summer25.models import HFModel
-from summer25.dataset import seeded_split
-from summer25.constants import _MODELS
+from summer25.models import HFModel, HFExtractor
+from summer25.dataset import seeded_split, WavDataset, custom_collate
+from summer25.constants import _MODELS,_FREEZE
 
 _REQUIRED_MODEL_ARGS =['model_type']
 _REQUIRED_LOAD = ['output_dir', 'audio_dir', 'split_dir']
@@ -122,6 +125,25 @@ def zip_clf(args:argparse.Namespace) -> dict:
         clf_args['ckpt'] = args.clf_ckpt
     return clf_args
 
+def zip_extractor(args:argparse.Namespace) -> dict:
+    """
+    Zip arguments for extractor into a dictionary
+    :param args: argparse Namespace object
+    :return extractor_args: dict of model arguments
+    """
+    if args.hf_model:
+        extractor_args = {'model_type':args.model_type}
+    else:
+        raise NotImplementedError('Only compatible with huggingface models currently.')
+    
+    if args.delete_download:
+        extractor_args['delete_download'] = args.delete_download
+    if args.pt_ckpt:
+        extractor_args['pt_ckpt'] = args.pt_ckpt
+    
+    return extractor_args
+
+
 def zip_model(args:argparse.Namespace) -> dict:
     """
     Zip arguments for base model into a dictionary
@@ -129,7 +151,7 @@ def zip_model(args:argparse.Namespace) -> dict:
     :return model_args: dict of model arguments
     """
     if args.hf_model:
-        model_args = {'model_type':args.model_type,'out_dir':args.output_dir,'keep_extractor':args.keep_extractor, 
+        model_args = {'model_type':args.model_type,'out_dir':args.output_dir,
                     'freeze_method':args.freeze_method, 'pool_method':args.pool_method,
                     'seed':args.seed}
     else:
@@ -155,24 +177,45 @@ def zip_splits(args:argparse.Namespace) -> dict:
     split_args = {'audio_dir': args.audio_dir, 'split_dir': args.split_dir,
                   'seed': args.seed, 'save': args.save_split, 'load_existing': args.load_existing_split, 'as_json':args.as_json}
 
-    if args.proportions:
-        split_args['proportions'] = args.proportions
-    if args.target_tasks:
-        split_args['target_tasks'] = args.target_tasks
-    if args.target_features:
-        split_args['target_features'] = args.target_features
-    if args.stratify_threshold:
-        split_args['stratify_threshold'] = args.stratify_threshold
-    if args.subject_key:
-        split_args['subject_key'] = args.subject_key
-    if args.date_key:
-        split_args['date_key'] = args.date_key
-    if args.task_key:
-        split_args['task_key'] = args.task_key
-    if args.audio_key:
-        split_args['audio_key'] = args.audio_key
+    assert 'subject_key' in args
+    assert 'date_key' in args
+    assert 'task_key' in args
+    assert 'audio_key' in args
+    split_args['subject_key'] = args.subject_key
+    split_args['date_key'] = args.date_key
+    split_args['task_key'] = args.task_key
+    split_args['audio_key'] = args.audio_key
 
     return split_args
+
+def zip_dataset(args:argparse.Namespace) -> dict:
+    """
+    Zip arguments for dataset
+    :param args: argparse Namespace object
+    :return dataset_args: dict of split arguments
+    """
+    dataset_args = {'prefix': args.audio_dir, 'model_type': args.model_type, 'uid_col':args.audio_key, 'target_labels': args.target_features,
+                    'bucket': None, 'extension': args.extension, 'structured': args.structured}
+    
+    if args.transforms:
+        transforms = args.transforms
+    else:
+        transforms = {}
+
+    if args.use_librosa and 'use_librosa' not in transforms:
+        transforms['use_librosa'] = args.use_librosa
+
+    if 'truncate' not in transforms:
+        if args.clip_length:
+            truncate = {'length': args.clip_length}
+            transforms['truncate'] = truncate
+    
+    if 'trim_level' not in transforms:
+        if args.trim_level:
+            transforms['trim_level'] = args.trim_level
+
+    dataset_args['config'] = transforms
+    return dataset_args
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Main Parser")
@@ -184,6 +227,9 @@ if __name__ == "__main__":
     #I/O
     io_args = parser.add_argument_group('io', 'file related arguments')
     io_args.add_argument('--audio_dir', type=Path, help='Directory with audio files & a csv with information on speakers/task.')
+    io_args.add_argument('--audio_ext', type=str,default='wav', help='Audio extension.')
+    io_args.add_argument('--structured', action='store_true', help='Specify whether the audio directory stores audio in structured manner (uid/waveform.wav) or not (uid.wav)')
+    io_args.add_argument('--use_librosa', action='store_true', help='Specify whether to load audio with librosa')
     io_args.add_argument('--split_dir', type=Path, help='Directory with csv or jsons of file splits.')
     io_args.add_argument('--load_exisiting_split', action='store_true', help='Default to loading exisiting split.')
     io_args.add_argument('--as_json', action='store_true', help='True if loading/saving splits as json files.')
@@ -197,8 +243,8 @@ if __name__ == "__main__":
     io_args.add_argument('--task_key', type=str, help='Specify column/key name for tasks in dataset metadata table')
     io_args.add_argument('--audio_key', type=str, help='Specify column/key name for audio file names in dataset metadata table')
     io_args.add_argument('--proportions', nargs="+", type=List[float], help='Specify split proportions.')
-    #AUDIO
-    audio_args = parser.add_argument_group('audio', 'Audio file related args')
+    io_args.add_argument('--clip_length', type=float, help="Specify audio clip length in s.")
+    io_args.add_argument('--trim_level', type=float, help="Specify silence trim level (dB for use_librosa, trigger level for torchaudio)")
     #BASE MODEL
     model_args = parser.add_argument_group('model', 'model related arguments')
     model_args.add_argument('--model_type', type=str,
@@ -206,8 +252,7 @@ if __name__ == "__main__":
     model_args.add_argument('--pt_ckpt', type=Path, help='Specify local pretrained model path. Only required for hugging face models if issues loading from hub.')
     model_args.add_argument('--delete_download', action='store_true', help='Specify local pretrained model path. Only required for hugging face models if issues loading from hub.')
     model_args.add_argument('--seed', type=int, help='Specify random seed for model initialization.')
-    model_args.add_argument('--keep_extractor', action='store_true', help='Specify whether to keep weights of feature extractor.')
-    model_args.add_argument('--freeze_method', type=str, choices=['all', 'layer', 'none'], help='Specify what freeze method to use.')
+    model_args.add_argument('--freeze_method', type=str, choices=_FREEZE, help='Specify what freeze method to use.')
     model_args.add_argument('--unfreeze_layers', nargs="+", help="If freeze_method is `layer`, use this to specify which layers to freeze")
     model_args.add_argument('--ft_ckpt', type=Path, help='Specify finetuned model checkpoint')
     model_args.add_argument('--pool_method', type=str, choices=['mean', 'max', 'attn'], help='Specify pooling method prior to classification head.')
@@ -217,6 +262,10 @@ if __name__ == "__main__":
     clf_args.add_argument('--nlayers', type=int, help='Specify classification head size.')
     clf_args.add_argument('--activation', type=str, help='Specify type of activation function to use in the classifier.')
     clf_args.add_argument('--clf_ckpt', type=Path, help="Specify classification checkpoint.")
+    #TRAINING ARGS
+    train_args = parser.add_argument_group('train', 'training/testing related arguments')
+    train_args.add_argument('--batch_sz', default=1, type=int, help='Set batch size.')
+    train_args.add_argument('--num_workers', default=None, type=int, help='Set num workers for DataLoader.')
     
     args = parser.parse_args()
     args_dict = vars(args)
@@ -224,15 +273,30 @@ if __name__ == "__main__":
     args_dict_m = check_model(args_dict_l)
     updated_args = save_path(argparse.Namespace(**args_dict_m))
 
-    s = zip_splits(updated_args)
-    train_df, val_df, test_df = seeded_split(**s)
+    
 
+    ## INITIALIZE EXTRACTOR AND MODEL
+    ea = zip_extractor(updated_args)
     ma = zip_model(updated_args)
     ca = zip_clf(updated_args)
     ma.update(ca)
 
     if args.hf_model:
+        feature_extractor = HFExtractor(**ea)
         model = HFModel(**ma) #TODO: add sampling rate check
     else:
         raise NotImplementedError('Currently only compatible with hugging face models.')
-    print('pause')
+    
+    #DATA SPLIT
+    sa = zip_splits(updated_args)
+    train_df, val_df, test_df = seeded_split(**sa)
+
+    #DATASET
+    da = zip_dataset(updated_args)
+    train_dataset = WavDataset(data=train_df, feature_extractor=feature_extractor,**da)
+    test_dataset = WavDataset(data=test_df, feature_extractor=feature_extractor,**da)
+    val_dataset = WavDataset(data=val_df, feature_extractor=feature_extractor,**da)
+
+    train_dataloader = DataLoader(dataset=train_dataset,batch_size=args.batch_sz,shuffle=True,collate_fn=custom_collate, num_workers=args.num_workers)
+    val_dataloader = DataLoader(dataset=val_dataset,batch_size=args.batch_sz,shuffle=False,collate_fn=custom_collate, num_workers=args.num_workers)
+    test_dataloader = DataLoader(dataset=test_dataset,batch_size=args.batch_sz,shuffle=False,collate_fn=custom_collate, num_workers=args.num_workers)
