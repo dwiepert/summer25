@@ -79,6 +79,7 @@ def test_base_initialization():
     out_df = best.get_data()
 
     try:
+        df = df.set_index('original_audio_id')
         pd.testing.assert_frame_equal(df, out_df)
     except:
         raise ValueError(f'Data frames not equivalent. {out_df.columns}')
@@ -107,7 +108,7 @@ def test_get_items():
     #try with single value
     out = d[0]
     test_uid = out['uid']
-    assert out['uid'] == 'sub0', f'{test_uid}'
+    assert out['uid'] == 'wav0', f'{test_uid}'
     vals1 = out['targets']
     vals2 = df[target_labels].iloc[0].values
     assert all([vals1[i] == vals2[i] for i in range(len(vals1))]), 'Incorrect values grabbed.'
@@ -119,7 +120,7 @@ def test_get_items():
     #try with torch tensor
     out = d[torch.tensor([0])]
     given = out['uid']
-    expected = 'sub0'
+    expected = 'wav0'
     assert given == expected, 'Incorrect items grabbed.'
 
     vals1 = out['targets']

@@ -41,7 +41,7 @@ class WavDataset(BaseDataset):
         :param structured: bool, indicate whether audio files are in structured format (prefix/uid/waveform.wav) or not (default=False)
         '''
 
-        super().__init__(data=data, target_labels=target_labels, transforms=None)
+        super().__init__(data=data, uid_col=uid_col, target_labels=target_labels, transforms=None)
 
         self.model_type = model_type
         self.config = config

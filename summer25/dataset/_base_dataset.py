@@ -31,14 +31,15 @@ class BaseDataset(Dataset):
 
         self.data = data.copy()
         self.uid_col = uid_col
-        if self.data.index.name != uid_col:
-            assert self.uid_col in self.data, 'UID column must be present in dataset.'
-            self.data = self.data.set_index(self.uid_col)
         
         self.transforms= transforms
         self.target_labels = target_labels
         
         assert isinstance(self.data, pd.DataFrame), 'Must give dataframe'
+        if self.data.index.name != uid_col:
+            assert self.uid_col in self.data, 'UID column must be present in dataset.'
+            self.data = self.data.set_index(self.uid_col)
+            
         assert self.target_labels is not None, 'Must give target labels.'
         if isinstance(self.data, pd.DataFrame):
             assert all([isinstance(v,str) for v in self.target_labels]), 'Must give string column names if using a data frame.'
