@@ -32,6 +32,9 @@ def load_waveform_from_local(input_dir:Union[str,Path], uid:str, extension:str='
     else:
         waveform_path = input_dir / f'{uid}.{extension}'
     
+    if not waveform_path.exists():
+        raise FileNotFoundError('File does not exist')
+    
     if not lib:
         waveform, sr = torchaudio.load(waveform_path, format=extension)
     else:

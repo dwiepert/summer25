@@ -13,11 +13,16 @@ class Truncate(object):
     Cut audio to specified length with optional offset
     :param length: float, length to trim to in terms of s
     :param offset: float, offset for clipping in terms of s (default = 0)
+    :param pad: boolean, indicate whether to pad with truncation
+    :param pad_method: str, indicate whether to pad with mean or pad with 0
     '''
-    def __init__(self, length:float, offset:float = 0):
+    def __init__(self, length:float, offset:float = 0, pad:bool=False, pad_method:str='mean'):
         
         self.length = length
         self.offset = offset
+        self.pad = pad
+        self.pad_method = pad_method
+        assert self.pad_method in ['mean', 'zero']
         
     def __call__(self, sample:dict) -> dict:
         """
@@ -36,12 +41,17 @@ class Truncate(object):
         
         if n_samples_remaining >= frames:
             waveform_trunc = waveform_offset[:, :frames]
-        else:
+        elif self.pad:
             n_channels = waveform_offset.shape[0]
             n_pad = frames - n_samples_remaining
-            channel_means = waveform_offset.mean(axis = 1).unsqueeze(1)
-            waveform_trunc = torch.cat([waveform_offset, torch.ones([n_channels, n_pad])*channel_means], dim = 1)
-            
+            if self.pad_method == 'mean':
+                channel_means = waveform_offset.mean(axis = 1).unsqueeze(1)
+                add = torch.ones([n_channels, n_pad])*channel_means
+            else:
+                add = torch.zeros([n_channels, n_pad])
+            waveform_trunc = torch.cat([waveform_offset, add], dim = 1)
+        else:
+            waveform_trunc = waveform_offset    
         clipsample['waveform'] = waveform_trunc
         
         return clipsample

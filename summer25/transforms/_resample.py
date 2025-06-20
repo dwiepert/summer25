@@ -13,12 +13,10 @@ class ResampleAudio(object):
     '''
     Resample a waveform
     :param resample_rate:int, rate to resample to (default=16000)
-    :param librosa: boolean indicating whether to use librosa (default=False)
     '''
-    def __init__(self, resample_rate: int = 16000, librosa: bool = False):
+    def __init__(self, resample_rate: int = 16000):
         
         self.resample_rate = resample_rate
-        self.librosa = librosa
         
     def __call__(self, sample: dict) -> dict:
         """
@@ -29,11 +27,9 @@ class ResampleAudio(object):
         resampled = sample.copy()    
         waveform, sample_rate = resampled['waveform'], resampled['sample_rate']
         if sample_rate != self.resample_rate:
-            if self.librosa:
-                transformed = librosa.resample(waveform, orig_sr=sample_rate, target_sr=self.resample_rate)
-            else:
-                transformed = torchaudio.transforms.Resample(sample_rate, self.resample_rate)(waveform)
-            resampled['waveform'] = transformed
+            transform = torchaudio.transforms.Resample(sample_rate, self.resample_rate)
+            new_waveform = transform(waveform)
+            resampled['waveform'] = new_waveform
             resampled['sample_rate'] = self.resample_rate
         
         return resampled

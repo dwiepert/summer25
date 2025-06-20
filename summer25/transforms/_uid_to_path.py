@@ -50,8 +50,6 @@ class UidToPath(object):
         pathsample = sample.copy()
         uid = pathsample['uid']
         
-        cache_uid = []
-        cache_waveform = []
         if uid not in self.cache:
             if self.structured:
                 temp_path = self.prefix / uid

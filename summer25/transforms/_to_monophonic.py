@@ -13,9 +13,11 @@ class ToMonophonic(object):
     Convert to monochannel with a reduce function (can alter based on how waveform is loaded)
     :param reduce_fn: function to use for reducing channels (default = channel sum)
     '''
-    def __init__(self, reduce_fn=lambda w: torch.sum(w, axis = 0).unsqueeze(0)):
-        
-        self.reduce_fn = reduce_fn
+    def __init__(self, reduce_fn=None):
+        if reduce_fn is None:
+            self.reduce_fn = lambda w: torch.sum(w, axis = 0).unsqueeze(0)
+        else:
+            self.reduce_fn = reduce_fn
         
     def __call__(self, sample:dict) -> dict:
         """

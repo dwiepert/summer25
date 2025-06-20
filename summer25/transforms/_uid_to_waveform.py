@@ -24,7 +24,7 @@ class UidToWaveform(object):
     
         self.bucket = bucket
         self.prefix = prefix #either gcs_prefix or input_dir prefix
-        if not isinstance(self.prefix, Path): self.prefix, Path(self.prefix)
+        if not isinstance(self.prefix, Path): self.prefix = Path(self.prefix)
         self.cache = {}
         self.extension = extension
         self.lib = lib

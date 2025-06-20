@@ -93,6 +93,9 @@ class BaseModel(nn.Module):
             self.unfreeze_layers = kwargs.pop('unfreeze_layers')
             assert isinstance(self.unfreeze_layers, list), 'Unfreeze layers expects a list.'
             assert all([isinstance(l,str) for l in self.unfreeze_layers]) or all([isinstance(l,int) for l in self.unfreeze_layers]), 'Unfreeze layers expects a list of str or list of ints.'
+        else: 
+            self.unfreeze_layers = None # OTHER UNFREEZE METHODS REQUIRE MODEL INFO
+
         assert self.pool_method in _POOL, f'{self.pool_method} is not a valid pooling method. Choose one of {_POOL}.'
         if self.pool_method in ['mean', 'max']:
             assert 'pool_dim' in kwargs, 'Pooling dimensions not given for mean or max pooling'
@@ -177,14 +180,14 @@ class BaseModel(nn.Module):
         for param in self.base_model.parameters():
             param.requires_grad = False 
 
-    def _unfreeze_by_layer(self):
+    def _unfreeze_by_layer(self, unfreeze_layers):
         """
         Unfreeze specific model layers
         May need to be overwritten depending on how each model stores layers
         """
-        assert all([isinstance(v, str) for v in self.unfreeze_layers]), f'Freeze layers should be given as a string layer name.'
+        assert all([isinstance(v, str) for v in unfreeze_layers]), f'Freeze layers should be given as a string layer name.'
         for name, param in self.base_model.named_parameters():
-            for s in self.unfreeze_layers:
+            for s in unfreeze_layers:
                 if s in name:
                     param.requires_grad=True
             #print(f"{name}: requires_grad={param.requires_grad}")

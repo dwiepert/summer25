@@ -16,7 +16,7 @@ from typing import Union, Dict, Optional
 ##third-party
 from huggingface_hub import snapshot_download
 import torch
-from transformers import AutoModel, AutoFeatureExtractor, WhisperModel
+from transformers import AutoModel, WhisperModel
 
 ##local
 from ._base_model import BaseModel
@@ -72,18 +72,15 @@ class HFModel(BaseModel):
             self.delete_download = False
         #TODO: try this and see if it works
         self.keep_extractor = keep_extractor
-        self.use_featext = _MODELS[self.model_type]['use_featext']
         self.from_hub = from_hub
 
         if not self.from_hub: 
             assert self.pt_ckpt is not None, 'Must give pt_ckpt if not loading from the hub'
             assert self.pt_ckpt.exists(), 'Given pt_ckpt does not exist.'
         
-        if self.pt_ckpt is not None: #hugging face models don't require pt ckpt but could be used as a backup
-            if not isinstance(self.pt_ckpt,str): self.pt_ckpt = str(self.pt_ckpt)
-
         #INITIALIZE MODEL COMPONENTS
         self._initialize_base_model(test_hub_fail=test_hub_fail, test_local_fail=test_local_fail)
+        self._freeze()
         self.base_model = self.base_model.to(self.device)
 
         # INITIALIZE CLASSIFIER (doesn't need to be overwritten)
@@ -100,7 +97,6 @@ class HFModel(BaseModel):
         self.config.update(self.base_config)
         self.config.update(self.clf.get_config())
         self.save_config()
- 
     
     def get_model_name(self) -> str:
         """
@@ -123,8 +119,6 @@ class HFModel(BaseModel):
             try: 
                 if test_hub_fail or test_local_fail: 
                     raise Exception()
-                if self.use_featext:
-                    self.feature_extractor = AutoFeatureExtractor.from_pretrained(self.hf_hub, trust_remote_code=True)
                 self.base_model = AutoModel.from_pretrained(self.hf_hub, output_hidden_states=True, trust_remote_code=True)
                 self.local_path = None
                 return None
@@ -137,8 +131,6 @@ class HFModel(BaseModel):
                     self.local_path = Path(f'./{self.hf_hub}').absolute()
                     self.local_path.mkdir(parents=True, exist_ok=True)
                     snapshot_download(repo_id=self.hf_hub, local_dir=str(self.local_path))
-                    if self.use_featext:
-                        self.feature_extractor = AutoFeatureExtractor.from_pretrained(str(self.local_path))
                     self.base_model = AutoModel.from_pretrained(str(self.local_path), output_hidden_states=True)
                     if self.delete_download:
                         print('Deleting local copy of checkpoint')
@@ -157,8 +149,6 @@ class HFModel(BaseModel):
                     print('Downloading from hub failed. Trying pt_ckpt.')
 
         try:
-            if self.use_featext:
-                self.feature_extractor = AutoFeatureExtractor.from_pretrained(str(self.pt_ckpt))
             self.base_model = AutoModel.from_pretrained(str(self.pt_ckpt), output_hidden_states=True)
             self.local_path = None
         except:
@@ -174,6 +164,8 @@ class HFModel(BaseModel):
 
         self._load_model(test_hub_fail=test_hub_fail, test_local_fail=test_local_fail)      
         self.is_whisper_model = isinstance(self.base_model, WhisperModel)
+        if self.is_whisper_model and self.freeze_method=='extractor':
+            print('Whisper model has no extractor. Model is not frozen.')
         
         if self.keep_extractor and not self.is_whisper_model:
             ext_state_dict = copy.deepcopy(self.base_model.feature_extractor.state_dict())
@@ -187,19 +179,47 @@ class HFModel(BaseModel):
 
         self._load_checkpoint(self.ft_ckpt)
 
-        #FREEZE MODEL LAYERS
-        if self.freeze_method != 'none':
+    def _freeze(self):
+        """
+        """
+         #FREEZE MODEL LAYERS
+        if self.freeze_method == 'extractor':
+            self._freeze_extractor()
+        elif self.freeze_method != 'none' or self.is_whisper_model:
             self._freeze_all()
-            if self.freeze_method == 'layer':
-                self._unfreeze_by_layer()
-
-        if self.use_featext:
-            self.feature_extractor_kwargs = {}
+            if self.freeze_method == 'exclude_last':
+                self.unfreeze_layers = self.layer_names[-1:]
+            elif self.freeze_method == 'half':
+                half = int(len(self.layer_names) / 2)
+                self.unfreeze_layers = self.layer_names[half:]
+            elif self.freeze_method == 'none' and self.is_whisper_model:
+                self.unfreeze_layers = self.layer_names
+            if self.unfreeze_layers:
+                if self.is_whisper_model:
+                    assert 'decoder' not in self.unfreeze_layers, 'Do not unfreeze decoder for Whisper.'
+                self._unfreeze_by_layer(self.unfreeze_layers)
+        else:
             if self.is_whisper_model:
-                self.features_key = 'input_features'
-                self.feature_extractor_kwargs['return_attention_mask'] = True
-            else:
-                self.features_key = 'input_values'
+                self._
+    
+    def _get_layer_names(self):
+        """
+        """
+        layer_names = []
+        for name, param in self.base_model.named_parameters():
+            if 'encoder' in name:
+                n = name.split(".")[1]
+                if n not in layer_names:
+                    layer_names.append(n)
+        self.layer_names = layer_names
+            
+    def _freeze_extractor(self):
+        """
+        TODO
+        """
+        for name, param in self.base_model.named_parameters():
+            if 'feature_extractor' in name:
+                param.requires_grad = False
     
     def forward(self, sample:Dict):
         """
@@ -209,12 +229,7 @@ class HFModel(BaseModel):
         :return: classifier output
         """
         print('Where to use processor??? here ok??? or needs to be outside?')
-        if self.use_featext:
-            preprocessed_wav = self.feature_extractor(list(sample['waveform']).cpu().numpy(),
-                                                        return_tensors='pt', 
-                                                        sampling_rate = self.feature_extractor.sampling_rate,
-                                                        **self.feature_extractor_kwargs)
-        
+        preprocessed_wav = sample['waveform']
         if self.is_whisper_model:
             output = self.base_model.encoder(preprocessed_wav[self.features_key].to(self.device))
         else:

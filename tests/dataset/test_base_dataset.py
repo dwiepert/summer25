@@ -1,15 +1,11 @@
 """
-Testing for data splits
+Testing for Base Dataset
 
 Author(s): Daniela Wiepert
 Last modified: 06/2025
 """
 #IMPORTS
 ##built-in
-import json
-import os
-from pathlib import Path
-import shutil
 
 ##third-party
 import numpy as np
@@ -19,7 +15,7 @@ import torch
 import torchvision
 
 ##local
-from summer25.dataset import BaseDataset, seeded_split
+from summer25.dataset import BaseDataset
 from summer25.constants import _FEATURES
 
 class Practice():
@@ -58,21 +54,15 @@ def data_dictionary():
     data_df = data_df.set_index('subject')
     return data_df
 
-def df_compare(df, out):
-    df['incident_date'] = pd.to_datetime(df['incident_date'])
-    out['incident_date'] = pd.to_datetime(out['incident_date'])
-    
-    try:
-        pd.testing.assert_frame_equal(df, out)
-    except:
-        pd.testing.assert_frame_equal(df.reset_index(drop=True), out.reset_index(drop=True))
-
 def test_base_initialization():
     # create metadata in pd dataframe
     df = data_dictionary()
 
     with pytest.raises(AssertionError):
         d = BaseDataset(data = df, target_labels=None, transforms=None)
+    
+    with pytest.raises(AssertionError):
+        d = BaseDataset(data = np.array([0.0,0.1,1.0]), target_labels=[0,1], transforms=None)
     
     #incorrect target labels - pandas
     target_labels = [0, 1]
@@ -93,11 +83,11 @@ def test_base_initialization():
 
     #invalid data types
     np_data = df[[_FEATURES[0],_FEATURES[2]]].to_numpy()
-    with pytest.raises(TypeError):
+    with pytest.raises(AssertionError):
         d = BaseDataset(data = np_data, target_labels=target_labels, transforms=None)
 
     list_data = np_data.tolist()
-    with pytest.raises(TypeError):
+    with pytest.raises(AssertionError):
         d = BaseDataset(data = list_data, target_labels=target_labels, transforms=None)
 
 def test_get_items():

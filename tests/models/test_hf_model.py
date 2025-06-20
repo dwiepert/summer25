@@ -5,7 +5,6 @@ Author(s): Daniela Wiepert
 Last modified: 06/2025
 """
 #IMPORTS
-import os
 from pathlib import Path
 import shutil
 
@@ -15,7 +14,8 @@ import pytest
 ##local
 from summer25.models import HFModel, Classifier
 
-@pytest.mark.slow
+
+@pytest.mark.hf
 def test_hfmodel_pretrained_base():
     params = {'out_dir':Path('./out_dir')}
 
@@ -188,7 +188,7 @@ def test_forward():
     #test forward pass works
     pass
 
-@pytest.mark.slow
+@pytest.mark.hf
 def test_load_hfmodels():
     #TODO: check that the base model for each of the possible hugging face models loads in properly with no errors
     pass

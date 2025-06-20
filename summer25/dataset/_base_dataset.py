@@ -32,6 +32,7 @@ class BaseDataset(Dataset):
         self.transforms= transforms
         self.target_labels = target_labels
         
+        assert isinstance(self.data, pd.DataFrame), 'Must give dataframe'
         assert self.target_labels is not None, 'Must give target labels.'
         if isinstance(self.data, pd.DataFrame):
             assert all([isinstance(v,str) for v in self.target_labels]), 'Must give string column names if using a data frame.'

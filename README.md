@@ -26,9 +26,11 @@ REQUIREMENTS:
     * ~~hugging face models~~
     * ~~classifier~~
     * ~~base model~~
-    * base dataset
-    * io
-    * transforms
+    * ~~base dataset~~
+    * ~~io/transforms - Non-GCS~~
+    * io/transforms - GCS
+    * ~~wav dataset~~
+    * ~~HF extractor~~
     * freeze/pool/forward
     * loops/metrics
 * unfreeze layers

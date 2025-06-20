@@ -1,4 +1,4 @@
-__version__ = '0.2.4'
+__version__ = '0.2.5'
 
 #change log:
 # 0.0.0: initial commit
@@ -9,3 +9,4 @@ __version__ = '0.2.4'
 # 0.2.2: round 1 of model tests added
 # 0.2.3: untested dataset class/waveform loading added
 # 0.2.4: untested transforms/io added
+# 0.2.5: tested implementations of dataset/transforms/io

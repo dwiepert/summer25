@@ -4,9 +4,6 @@ Convert waveform to numpy
 Author(s): Daniela Wiepert
 Last modified: 06/2025
 """
-#IMPORTS
-##third-party
-import numpy as np
 
 class ToNumpy(object):
     """
@@ -19,6 +16,6 @@ class ToNumpy(object):
         """
         npsample = sample.copy()
         waveform = npsample['waveform']
-        npsample['waveform'] = np.array(waveform)
+        npsample['waveform'] = waveform.numpy()
 
         return npsample
