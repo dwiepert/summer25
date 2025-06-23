@@ -200,8 +200,9 @@ def seeded_split(subject_key:str, date_key:str, audio_key:str, task_key:str, aud
     # binarize the columns
     possible_cols = [c for c in table.columns if c in _FEATURES]
 
-    print("TODO: change this for features")
-    table = table[[subject_key]+possible_cols].replace([-1, 1, 1.5,2], [float("nan"), 0, 0, 1]).dropna().copy()
+    table = table[[subject_key]+possible_cols].copy()
+    table[possible_cols] = table[possible_cols].replace([-1.0, 1.0, 1.5,2.0,3.0,4.0,5.0,6.0], [float("nan"), 0.0, 0.0, 1.0, 1.0,1.0,1.0, float("nan")])
+    table = table.dropna().copy()
 
     table['stratify']=table[target_features].apply(lambda x: x.astype(str).str.cat(sep='_'), axis=1)
     group_counts = table[[subject_key,'stratify']].groupby('stratify').aggregate('count').reset_index()
@@ -255,10 +256,16 @@ def seeded_split(subject_key:str, date_key:str, audio_key:str, task_key:str, aud
 
     print(f'split results:\n train size = {len(train_subjects)} speakers\n val size = {len(val_subjects)} speakers\n test size = {len(test_subjects)} speakers')
 
-    #POOLED FEATURE ANNOTATIONS
-    print("TODO: change this for features")
-    table=metadata_df[[subject_key,date_key,task_key,audio_key]+target_features].replace([-1, 1, 1.5,2,], [float("nan"), 0, 0, 1]).dropna().copy()
-    
+    table = metadata_df[[subject_key, date_key, task_key, audio_key]+target_features].join(metadata_df[target_features].add_prefix('rank_')).copy()
+    rank_cols = ['rank_'+c for c in target_features].copy()
+    table_binary = table[[subject_key,date_key, task_key, audio_key]+target_features].copy()
+    table_binary[target_features] = table_binary[target_features].replace([-1.0, 1.0, 1.5,2.0,3.0,4.0,5.0,6.0], [float("nan"), 0.0, 0.0, 1.0, 1.0,1.0,1.0, float("nan")])
+    table_binary = table_binary.dropna().copy()
+    table_rank =  table[[audio_key]+rank_cols].copy()
+    table_rank[rank_cols] = table_rank[rank_cols].replace([-1.0, 1.5, 6.0], [float("nan"), 1.0, float("nan")])
+    table_rank = table_rank.dropna().copy()
+    table = table_binary.merge(table_rank).copy()
+
     if list(train_subjects) != []:
         train_df = table[table[subject_key].isin(train_subjects)].sort_values([subject_key,date_key]).drop_duplicates().reset_index(drop=True).copy()
         train_df[date_key] = train_df[date_key].dt.strftime('%Y-%m-%d')

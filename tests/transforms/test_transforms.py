@@ -236,7 +236,23 @@ def test_uid_to_waveform():
     outsample = u(sample1)
     assert isinstance(outsample['waveform'],  torch.Tensor), 'Waveform not loaded'
     assert outsample['sample_rate'] == 16000, 'Incorrectly loaded sample rate'
-   
+
+def test_pad():
+    sample1, _ = load_audio()
+    with pytest.raises(AssertionError):
+        Pad(pad_method='other')
+
+    max_len = sample1['waveform'].shape[1] + 1000
+    p = Pad(pad_method='mean')
+    outsample = p(sample1, max_len=max_len)
+    assert outsample['waveform'].shape[1] == max_len, 'Not padded to proper len'
+    #assert outsample['waveform'][-1000:]
+
+    p2 = Pad(pad_method='zeros')
+    outsample2 = p2(sample1, max_len=max_len)
+    assert outsample2['waveform'].shape[1] == max_len, 'Not padded to proper len'
+    assert torch.equal(outsample2['waveform'][:,-1000:], torch.zeros((1,1000))), 'Not padded with proper values.'
+
 @pytest.mark.gcs
 def test_uid_to_waveform_bucket():
     #BUCKET - unstructured and structured, librosa

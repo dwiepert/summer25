@@ -138,7 +138,7 @@ _MODELS = {  "wavlm-base": {
             }
 }
 
-_POOL = ['mean', 'max', 'attn']
+_POOL = ['mean', 'max', 'attention']
 _FREEZE = ['half', 'exclude-last', 'layer', 'optional', 'required-only']
 
 _TASKS = ['sentence_repetition', 'word_repetition']

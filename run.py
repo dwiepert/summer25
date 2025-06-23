@@ -16,8 +16,8 @@ from torch.utils.data import DataLoader
 
 ##local
 from summer25.models import HFModel, HFExtractor
-from summer25.dataset import seeded_split, WavDataset, custom_collate
-from summer25.constants import _MODELS,_FREEZE
+from summer25.dataset import seeded_split, WavDataset, collate_features, collate_wrapper
+from summer25.constants import _MODELS,_FREEZE, _FEATURES
 
 _REQUIRED_MODEL_ARGS =['model_type']
 _REQUIRED_LOAD = ['output_dir', 'audio_dir', 'split_dir']
@@ -115,8 +115,10 @@ def zip_clf(args:argparse.Namespace) -> dict:
     :return clf_args: dict of classifier arguments
     """
     clf_args = {}
-    if args.out_features:
-        clf_args['out_features'] = args.out_features
+    if args.target_features:
+        clf_args['out_features'] = len(args.target_features)
+    else:
+        clf_args['out_features'] = len(_FEATURES)
     if args.nlayers:
         clf_args['nlayers'] = args.nlayers
     if args.activation:
@@ -195,7 +197,7 @@ def zip_dataset(args:argparse.Namespace) -> dict:
     :return dataset_args: dict of split arguments
     """
     dataset_args = {'prefix': args.audio_dir, 'model_type': args.model_type, 'uid_col':args.audio_key, 'target_labels': args.target_features,
-                    'bucket': None, 'extension': args.extension, 'structured': args.structured}
+                    'bucket': None, 'extension': args.audio_ext, 'structured': args.structured}
     
     if args.transforms:
         transforms = args.transforms
@@ -245,6 +247,8 @@ if __name__ == "__main__":
     io_args.add_argument('--proportions', nargs="+", type=List[float], help='Specify split proportions.')
     io_args.add_argument('--clip_length', type=float, help="Specify audio clip length in s.")
     io_args.add_argument('--trim_level', type=float, help="Specify silence trim level (dB for use_librosa, trigger level for torchaudio)")
+    io_args.add_argument('--pad', action='store_true', help='Specify whether to pad audio by batch.')
+    io_args.add_argument('--pad_method', default='mean', help='Specify whether to pad with 0s or mean of waveform')
     #BASE MODEL
     model_args = parser.add_argument_group('model', 'model related arguments')
     model_args.add_argument('--model_type', type=str,
@@ -258,14 +262,13 @@ if __name__ == "__main__":
     model_args.add_argument('--pool_method', type=str, choices=['mean', 'max', 'attn'], help='Specify pooling method prior to classification head.')
     #CLASSIFIER
     clf_args = parser.add_argument_group('classifier', 'classifier related arguments')
-    clf_args.add_argument('--out_features', type=int, help='Specify number of classification categories (output features).')
     clf_args.add_argument('--nlayers', type=int, help='Specify classification head size.')
     clf_args.add_argument('--activation', type=str, help='Specify type of activation function to use in the classifier.')
     clf_args.add_argument('--clf_ckpt', type=Path, help="Specify classification checkpoint.")
     #TRAINING ARGS
     train_args = parser.add_argument_group('train', 'training/testing related arguments')
     train_args.add_argument('--batch_sz', default=1, type=int, help='Set batch size.')
-    train_args.add_argument('--num_workers', default=None, type=int, help='Set num workers for DataLoader.')
+    train_args.add_argument('--num_workers', default=0, type=int, help='Set num workers for DataLoader.')
     
     args = parser.parse_args()
     args_dict = vars(args)
@@ -293,10 +296,21 @@ if __name__ == "__main__":
 
     #DATASET
     da = zip_dataset(updated_args)
-    train_dataset = WavDataset(data=train_df, feature_extractor=feature_extractor,**da)
-    test_dataset = WavDataset(data=test_df, feature_extractor=feature_extractor,**da)
+    train_dataset = WavDataset(data=train_df,feature_extractor=feature_extractor, **da)
+    test_dataset = WavDataset(data=test_df,feature_extractor=feature_extractor,**da)
     val_dataset = WavDataset(data=val_df, feature_extractor=feature_extractor,**da)
+    
+    #using custom collate
+    if model.is_whisper_model:
+        train_dataloader = DataLoader(dataset=train_dataset,batch_size=args.batch_sz,shuffle=True,collate_fn=collate_features, num_workers=args.num_workers)
+        val_dataloader = DataLoader(dataset=val_dataset,batch_size=args.batch_sz,shuffle=False,collate_fn=collate_features, num_workers=args.num_workers)
+        test_dataloader = DataLoader(dataset=test_dataset,batch_size=args.batch_sz,shuffle=False,collate_fn=collate_features, num_workers=args.num_workers)
+    else:
+        collate_fn = collate_wrapper(pad=args.pad, pad_method=args.pad_method)
+        train_dataloader = DataLoader(dataset=train_dataset,batch_size=args.batch_sz,shuffle=True,collate_fn=collate_fn, num_workers=args.num_workers)
+        val_dataloader = DataLoader(dataset=val_dataset,batch_size=args.batch_sz,shuffle=False,collate_fn=collate_fn, num_workers=args.num_workers)
+        test_dataloader = DataLoader(dataset=test_dataset,batch_size=args.batch_sz,shuffle=False,collate_fn=collate_fn, num_workers=args.num_workers)
+        
 
-    train_dataloader = DataLoader(dataset=train_dataset,batch_size=args.batch_sz,shuffle=True,collate_fn=custom_collate, num_workers=args.num_workers)
-    val_dataloader = DataLoader(dataset=val_dataset,batch_size=args.batch_sz,shuffle=False,collate_fn=custom_collate, num_workers=args.num_workers)
-    test_dataloader = DataLoader(dataset=test_dataset,batch_size=args.batch_sz,shuffle=False,collate_fn=custom_collate, num_workers=args.num_workers)
+    item = next(iter(test_dataloader))
+    output = model(item)

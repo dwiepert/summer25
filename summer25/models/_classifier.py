@@ -105,8 +105,6 @@ class Classifier(nn.Module):
     def _load_checkpoint(self):
         """
         Load a checkpoint for the model from a state_dict
-        
-        :param ckpt: pathlike object, model checkpoint - path to state dict
         """
         if self.ckpt is not None:
             try:

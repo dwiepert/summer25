@@ -33,8 +33,12 @@ def data_dictionary():
         aud_list.append(f'wav{i}')
         date_list.append('2025-01-01')
         task_name.append('sentence_repetition')
-        feat1_list.append(2.0)
-        feat2_list.append(2.0)
+        if i%2 == 0:
+            feat1_list.append(3.0)
+            feat2_list.append(2.0)
+        else:
+            feat1_list.append(1.0)
+            feat2_list.append(1.0)
 
     sub_list[10] = sub_list[9]
     date_list[10] = '2024-01-01'
@@ -348,6 +352,7 @@ def test_proportions():
     remove_directories()
 
 def test_output():
+    #TODO: make sure rank cols are included and have values beyond 0,1,nan + ensure values aren't lost
     audio_dir1, split_dir1 = create_directories(True, True, True)
     create_data(audio_dir1, 'metadata')
     keys = {'subject_key': 'subject', 'date_key':'incident_date', 'audio_key':'original_audio_id', 'task_key':'task_name'}
@@ -362,7 +367,8 @@ def test_output():
     assert (tr_size+v_size+te_size) == size
 
     assert all([o is not None for o in out]), 'There should be no None outputs'
-    expected_columns = ['subject', 'original_audio_id', 'task_name', 'incident_date', _FEATURES[0], _FEATURES[2]]
+    rank_features = [f'rank_{feat}' for feat in [_FEATURES[0],_FEATURES[2]]]
+    expected_columns = ['subject', 'original_audio_id', 'task_name', 'incident_date', _FEATURES[0], _FEATURES[2]] + rank_features
     tasks = []
     for o in out:
         for e in expected_columns:
@@ -371,7 +377,11 @@ def test_output():
         tasks.extend(vals)
         #check features are binarized
         vals2 = o[_FEATURES[0]].values.tolist()
+        feat = _FEATURES[0]
+        vals3 = o[f'rank_{feat}'].values.tolist()
         assert all([(v == 0 or v == 1) for v in vals2]), 'Unrecognized value in feature column'
+        #check 3s maintained for rank cols
+        assert all([(v==1.0 or v == 3.0) for v in vals3]), 'Unrecognized value in feature column'
     assert any([v == 'sentence_repetition' for v in tasks]) and any([v == 'word_repetition' for v in tasks]), f'Did not keep all tasks'
     assert len(out[0]) == tr_size
     assert len(out[1]) == v_size

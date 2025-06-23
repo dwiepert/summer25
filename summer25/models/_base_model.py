@@ -19,6 +19,7 @@ import torch.nn as nn
 
 ##local
 from summer25.constants import _MODELS, _FREEZE, _POOL
+from ._attention_pooling import SelfAttentionPooling
 
 class BaseModel(nn.Module):
     """
@@ -97,12 +98,15 @@ class BaseModel(nn.Module):
             self.unfreeze_layers = None # OTHER UNFREEZE METHODS REQUIRE MODEL INFO
 
         assert self.pool_method in _POOL, f'{self.pool_method} is not a valid pooling method. Choose one of {_POOL}.'
+        assert 'pool_dim' in kwargs, 'Pooling dimensions not given for mean or max pooling'
         if self.pool_method in ['mean', 'max']:
-            assert 'pool_dim' in kwargs, 'Pooling dimensions not given for mean or max pooling'
             assert isinstance(kwargs['pool_dim'], int) or (isinstance(kwargs['pool_dim'], tuple)), 'Pooling dimensions must be single integer or tuple of integers'
             if isinstance(kwargs['pool_dim'], tuple):
                 assert all(isinstance(i,int) for i in kwargs['pool_dim']), 'All pooling dimensions in a tuple must be integers.'
             self.pool_dim = kwargs.pop('pool_dim') #should be an int or a tuple of ints
+        else:
+            assert isinstance(kwargs['pool_dim'], int) and kwargs['pool_dim'] == 1, 'Self attention pooling only works with a pooling dimension of 1.'
+            self.attention_pooling = SelfAttentionPooling(input_dim=in_features)
         
         self.base_config = self._base_config()
 
@@ -201,8 +205,8 @@ class BaseModel(nn.Module):
         elif self.pool_method == 'max': 
             return torch.max(x, self.pool_dim)
         else:
-            raise NotImplementedError(f'{self.pool_method} not yet implemented.')
-
+            return self.attention_pooling(x)
+    
     ### FORWARD METHOD ###
     def forward(self, x:torch.Tensor) -> torch.Tensor:
         """

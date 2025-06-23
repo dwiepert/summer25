@@ -227,12 +227,13 @@ class HFModel(BaseModel):
         :return: classifier output
         """
         print('Where to use processor??? here ok??? or needs to be outside?')
-        preprocessed_wav = sample['waveform']
+        features = sample['waveform']
         if self.is_whisper_model:
-            output = self.base_model.encoder(preprocessed_wav[self.features_key].to(self.device))
+            output = self.base_model.encoder(features.to(self.device))
         else:
-            output = self.base_model(preprocessed_wav[self.features_key].to(self.device))
-
+            output = self.base_model(features.to(self.device))
+        output = output['last_hidden_state']
+        
         pooled = self.pooling(output)
  
         return self.clf(pooled)

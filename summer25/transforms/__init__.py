@@ -7,6 +7,7 @@ from ._to_tensor import ToTensor
 from ._uid_to_waveform import UidToWaveform
 from ._uid_to_path import UidToPath
 from ._to_numpy import ToNumpy
+from ._pad import Pad
 
 __all__ = [
     'ResampleAudio',
@@ -17,5 +18,6 @@ __all__ = [
     'ToNumpy',
     'ToTensor',
     'UidToWaveform',
-    'UidToPath'
+    'UidToPath', 
+    'Pad'
 ]
