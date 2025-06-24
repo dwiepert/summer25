@@ -16,6 +16,7 @@ class SelfAttentionPooling(nn.Module):
     def __init__(self, input_dim):
         super(SelfAttentionPooling, self).__init__()
         self.W = nn.Linear(input_dim, 1)
+        self.softmax = nn.functional.softmax
         
     def forward(self, batch_rep):
         """
@@ -28,8 +29,7 @@ class SelfAttentionPooling(nn.Module):
         return:
             utter_rep: size (N, H)
         """
-        softmax = nn.functional.softmax
-        att_w = softmax(self.W(batch_rep).squeeze(-1)).unsqueeze(-1)
+        att_w = self.softmax(self.W(batch_rep).squeeze(-1), dim=1).unsqueeze(-1)
         utter_rep = torch.sum(batch_rep * att_w, dim=1)
 
         return utter_rep

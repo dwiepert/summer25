@@ -43,6 +43,11 @@ def data_dictionary():
     sub_list[10] = sub_list[9]
     date_list[10] = '2024-01-01'
     task_name[20] = 'word_repetition'
+    task_name[25] = 'word_repetition'
+    task_name[31] = 'word_repetition'
+    task_name[40] = 'word_repetition'
+    task_name[59] = 'word_repetition'
+    task_name[60] = 'word_repetition'
     data_dict = {'subject': sub_list, 
                 'task_name': task_name,
                 'incident_date': date_list, 

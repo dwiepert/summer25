@@ -15,7 +15,7 @@ class Pad(object):
     '''
     def __init__(self, pad_method:str='mean'):
         self.pad_method = pad_method
-        assert self.pad_method in ['mean', 'zero'], 'Pad method must be one of `zero` or `mean`'
+        assert self.pad_method in ['mean', 'zero'], f'Given {pad_method} but pad method must be one of `zero` or `mean`'
         
     def __call__(self, sample:dict, max_len:int) -> dict:
         """

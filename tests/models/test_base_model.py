@@ -82,9 +82,12 @@ def test_basemodel_params():
         m = BaseModel(**params)
     
     #no pool dim + attn 
-    params['pool_method'] = 'attn'
+    params['pool_method'] = 'attention'
+    with pytest.raises(AssertionError):
+        m = BaseModel(**params)
+    params['pool_dim'] = 1
     m = BaseModel(**params)
-    assert 'pool_dim' not in m.base_config, 'Pool dim incorrectly added to base config'
+    #assert 'pool_dim' not in m.base_config, 'Pool dim incorrectly added to base config'
     params['pool_dim'] = 1
     del params['pool_method']
 

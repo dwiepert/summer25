@@ -10,9 +10,10 @@ import shutil
 
 ##third-party
 import pytest
+import torchaudio
 
 ##local
-from summer25.models import HFModel, Classifier
+from summer25.models import HFModel, Classifier, HFExtractor
 
 
 @pytest.mark.hf
@@ -245,18 +246,80 @@ def test_freeze():
 
     shutil.rmtree(params['out_dir'])
 
+def load_audio():
+    path = Path('./tests/audio_examples/')
+    audio_files = path.rglob('*.flac')
+    audio_files = [a for a in audio_files]
+
+    wav1, sr = torchaudio.load(audio_files[0])
+    sample1 = {'waveform': wav1, 'sample_rate':sr, 'targets':[1.0,1.0,1.0,0.0]}
+    
+    wav2, sr = torchaudio.load(audio_files[1])
+    sample2 = {'waveform': wav2, 'sample_rate':sr, 'targets':[0.0,0.0,0.0,1.0]}
+
+    return sample1, sample2 
 
 def test_pooling():
-    #TODO:
-    #test pooling works properly
-    pass
+    sample1, _ = load_audio()
+    params = {'out_dir':Path('./out_dir'), 'model_type':'wavlm-base', 'pool_method': 'max'}
+    e = HFExtractor(model_type='wavlm-base')
+    sample = e(sample1)
+    features = sample['waveform']
+    
+    #MAX POOL
+    m = HFModel(**params)
+    output = m.base_model(features.to(m.device))
+    output = output['last_hidden_state']
 
-def test_forward():
-    #TODO:
-    #test forward pass works
-    pass
+    pool_max = m.pooling(output).detach()
+    assert pool_max.ndim == 2 and pool_max.shape[0] == 1 and pool_max.shape[1] == output.shape[-1], 'Max pooling not outputting proper shape'
+
+    #MEAN POOL
+    params['pool_method'] = 'mean'
+    m = HFModel(**params)
+    output = m.base_model(features.to(m.device))
+    output = output['last_hidden_state']
+
+    pool_mean = m.pooling(output)
+    assert pool_mean.ndim == 2 and pool_mean.shape[0] == 1 and pool_mean.shape[1] == output.shape[-1], 'Mean pooling not outputting proper shape'
+
+    #ATTENTION POOL
+    params['pool_method'] = 'attention'
+    m = HFModel(**params)
+    output = m.base_model(features.to(m.device))
+    output = output['last_hidden_state']
+
+    pool_attn = m.pooling(output)
+    assert pool_attn.ndim == 2 and pool_attn.shape[0] == 1 and pool_attn.shape[1] == output.shape[-1], 'Attention pooling not outputting proper shape'
 
 @pytest.mark.hf
-def test_load_hfmodels():
-    #TODO: check that the base model for each of the possible hugging face models loads in properly with no errors
-    pass
+def test_forward():
+    sample1, _ = load_audio()
+    params = {'out_dir':Path('./out_dir'), 'model_type':'wavlm-base', 'pool_method': 'max'}
+
+    #test WavLM
+    wavlme = HFExtractor(model_type='wavlm-base')
+    wavlmsample = wavlme(sample1)
+    wavlmfeatures = wavlmsample['waveform']
+    wavlm = HFModel(**params)
+    output = wavlm(wavlmfeatures)
+    assert output.shape[0] == 1 and output.shape[1] == 1, 'outputs correct output features'
+
+    #test hubert
+    params['model_type'] = 'hubert-base'
+    huberte = HFExtractor(model_type='hubert-base')
+    hubertsample = huberte(sample1)
+    hubertfeatures = hubertsample['waveform']
+    hubert = HFModel(**params)
+    output = hubert(hubertfeatures)
+    assert output.shape[0] == 1 and output.shape[1] == 1, 'outputs correct output features'
+
+    #test whisper
+    whispere = HFExtractor(model_type='whisper-tiny')
+    whispersample = whispere(sample1)
+    whisperfeatures = whispersample['waveform']
+    params['model_type'] = 'whisper-tiny'
+    whisper = HFModel(**params)
+    output = whisper(whisperfeatures)
+    assert output.shape[0] == 1 and output.shape[1] == 1, 'outputs correct output features'
+

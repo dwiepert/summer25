@@ -11,18 +11,16 @@ CONFIG FILES:
 * Extra layer norm in whisper????
 * We don't actually want to re-initialize any weights except to randomly initialize classifier weights, correct? 
 * safe for features to be public? tasks to be public?
-* What’s 1.5 vs 2 for our purposes in features: Binarize - but 1.5 to 0, 2> will be 1 (MAKE SURE TO GET BOTH >2 and also regular 1,2,3, etc). Leland - for one of the models that he trained, he came up with a combo loss that is BCE and w/in each batch, used more finegrained ratings to get the rank of the samples in that batch correctly (mildest to most severe, can learn mild to severe). Get splits that aren't yet binarized, add transform to binarize. 
-* why pooled feature annotations?^^ how do we pool this over annotator. Max abnormality (whichever is highest)***
 * which features to use for debugging
 * what are our metrics of interest, just accuracy? balanced accuracy? anything else'
-* figure out the feature extractor for WavLM - don't unfreeze it? add option to unfreeze? Double checkrequires.grad =False or True for model as in. 
-* Always freeze whisper decoder, keep
 * LOSS FUNCTION - BCE 
 * key and query in LoRA. common things - figure out what the standard things are for HuBERT/WavLM/Whisper. 
 * don't pool over Padding tokens!!!!!!! in any pooling!!! how do we ensure that? what does that mean. 
+* Leland - for one of the models that he trained, he came up with a combo loss that is BCE and w/in each batch, used more finegrained ratings to get the rank of the samples in that batch correctly (mildest to most severe, can learn mild to severe). Get splits that aren't yet binarized, add transform to binarize. 
 
 ## ACTIVE DEBUGGING/TASKS
 * update splits
+* normalize data?
 * test custom collate
 * TEST SUITE - ALL ASSERTIONS!
     * ~~split~~
@@ -35,9 +33,10 @@ CONFIG FILES:
     * ~~wav dataset~~
     * ~~HF extractor~~ (load all options? load smallest of each type and clear cache afterwards)
     * ~~freeze~~
-    * pad transform/custom collate fn
-    * pool
-    * forward
+    * ~~pad transform~~/custom collate fn
+    * ~~pool~~
+    * ~~custom collate~~
+    * ~~forward~~
     * loops/metrics
 
 ## All TODO
@@ -70,23 +69,23 @@ CONFIG FILES:
 * Add soft prompting option 
 * ~~Flexibly create data splits - each seed has a different split?~~ 
 * Load data into a dataset
-    * transform to 16000 if not done
-    * optional trim (FOR WHISPER!!)
-    * convert to tensor
-    * normalize data?
-    * check batching collate_fn
-    * use model specific processors????
-* pooling strategies
+    * ~~transform to 16000 if not done~~
+    * ~~optional trim (FOR WHISPER!!)~~
+    * ~~convert to tensor~~
+    * normalize data?^^
+    * ~~check batching collate_fn~~
+    * ~~use model specific processors????~~
+* ~~pooling strategies~~
     * ~~mean~~
     * ~~max~~
     * ~~attention~~
-    * tests
-* test run forward pass of models
-    * do we need model-specific feature processors????
+    * ~~tests~~
+* ~~test run forward pass of models~~
+    * ~~do we need modsel-specific feature processors????~~
     * ~~wavlm~~
     * ~~hubert~~
     * ~~whisper~~
-    * tests (include classifier only)
+    * ~~tests (include classifier only)~~
 * CONFIRM METRICS
 * model loops
     * training + logging options - WHAT IS THE BEST LOSS? OPTIMIZER? ETC.

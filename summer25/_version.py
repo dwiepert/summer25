@@ -1,4 +1,4 @@
-__version__ = '0.2.7'
+__version__ = '0.2.8'
 
 #change log:
 # 0.0.0: initial commit
@@ -11,4 +11,5 @@ __version__ = '0.2.7'
 # 0.2.4: untested transforms/io added
 # 0.2.5: tested implementations of dataset/transforms/io
 # 0.2.6: tested model freezing options
-# 0.2.7: tested model pooling/forward pass/padding
+# 0.2.7: untested model pooling/forward pass/padding
+# 0.2.7: tests for model pooling/forward pass/padding

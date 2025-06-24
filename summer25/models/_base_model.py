@@ -203,7 +203,7 @@ class BaseModel(nn.Module):
         if self.pool_method == 'mean':
             return torch.mean(x, self.pool_dim)
         elif self.pool_method == 'max': 
-            return torch.max(x, self.pool_dim)
+            return torch.max(x, self.pool_dim).values
         else:
             return self.attention_pooling(x)
     
