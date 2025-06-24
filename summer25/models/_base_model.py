@@ -235,14 +235,15 @@ class BaseModel(nn.Module):
             json.dump(self.config, outfile)
 
 
-    def save_base_model(self):
+    def save_base_model(self, name:str):
         """
         Save the model components
+        :param name: str, save name for model
         """
         bm_path = self.out_dir / 'weights'
 
         bm_path.mkdir(exist_ok=True)
-        bm_path = bm_path / (self.model_name+'.pt')
+        bm_path = bm_path / (name+'.pt')
 
         if bm_path.exists(): print(f'Overwriting existing model at {str(bm_path)}')
         torch.save(self.base_model.state_dict(), bm_path)

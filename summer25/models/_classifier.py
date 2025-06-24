@@ -138,14 +138,15 @@ class Classifier(nn.Module):
             model_name += '_ct'
         return model_name
     
-    def save_classifier(self, out_dir:Union[Path, str]):
+    def save_classifier(self, name:str, out_dir:Union[Path, str]):
         """
         Save the model components
+        :param name: str, name to save classifier to
         :param out_dir: pathlike, location to save model to
         """
         if not isinstance(out_dir, Path): out_dir=Path(out_dir)
         clf_path = out_dir / 'weights' 
         clf_path.mkdir(exist_ok=True)
-        clf_path = clf_path / (self.config['clf_name']+'.pt')
+        clf_path = clf_path / (name+'.pt')
         if clf_path.exists(): print(f'Overwriting existing classifier head at {str(clf_path)}')
         torch.save(self.classifier.state_dict(), clf_path)

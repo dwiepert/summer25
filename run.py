@@ -18,7 +18,7 @@ from torch.utils.data import DataLoader
 from summer25.models import HFModel, HFExtractor
 from summer25.dataset import seeded_split, WavDataset, collate_features, collate_wrapper
 from summer25.constants import _MODELS,_FREEZE, _FEATURES
-
+from summer25.loops import finetune, evaluate
 _REQUIRED_MODEL_ARGS =['model_type']
 _REQUIRED_LOAD = ['output_dir', 'audio_dir', 'split_dir']
 
@@ -194,7 +194,7 @@ def zip_dataset(args:argparse.Namespace) -> dict:
     """
     Zip arguments for dataset
     :param args: argparse Namespace object
-    :return dataset_args: dict of split arguments
+    :return dataset_args: dict of dataset arguments
     """
     dataset_args = {'prefix': args.audio_dir, 'model_type': args.model_type, 'uid_col':args.audio_key, 'target_labels': args.target_features,
                     'bucket': None, 'extension': args.audio_ext, 'structured': args.structured}
@@ -218,6 +218,21 @@ def zip_dataset(args:argparse.Namespace) -> dict:
 
     dataset_args['config'] = transforms
     return dataset_args
+
+def zip_finetune(args):
+    """
+    Zip arguments for finetuning
+    :param args: argparse Namespace object
+    :return finetune_args: dict of finetune arguments
+    """
+    finetune_args = {'optim_type': args.optim_type, 'learning_rate':args.learning_rate, 'loss_type':args.loss_type,
+                     'scheduler_type': args.scheduler_type, 'epochs': args.epochs, 'early_stop':args.early_stop,
+                     'patience': args.patience, 'logging': args.logging}
+
+    if args.end_lr:
+        finetune_args['end_lr'] = args.end_lr
+
+    return finetune_args
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Main Parser")
@@ -269,6 +284,15 @@ if __name__ == "__main__":
     train_args = parser.add_argument_group('train', 'training/testing related arguments')
     train_args.add_argument('--batch_sz', default=1, type=int, help='Set batch size.')
     train_args.add_argument('--num_workers', default=0, type=int, help='Set num workers for DataLoader.')
+    train_args.add_argument('--optim_type', type=str, default='adamw', help='Specify type of optimizer to use. (default = adamw)')
+    train_args.add_argument('--learning_rate', type=float, default=1e-3, help='Specify learning rate (default=1e-3)')
+    train_args.add_argument('--loss_type', type=str, default='bce', help='Specify type of optimizer to use. (default = bce)')
+    train_args.add_argument('--scheduler_type', type=str, help='Specify type of scheduler to use.')
+    train_args.add_argument('--end_lr', type=str, help='Specify end learning rate if using scheduelr')
+    train_args.add_argument('--early_stop', action='store_true', help='Specify whether to use early stopping.')
+    train_args.add_argument('--patience', type=int, default=5, help='Specify patience for early stopping. (default = 5)')
+    train_args.add_argument('--logging', action='store_true', help='Specify whether to save logs.')
+    train_args.add_argument('--epochs', type=int, default=1, help='Specify epochs for finetuning. (default = 1)')
     
     args = parser.parse_args()
     args_dict = vars(args)
@@ -276,13 +300,14 @@ if __name__ == "__main__":
     args_dict_m = check_model(args_dict_l)
     updated_args = save_path(argparse.Namespace(**args_dict_m))
 
-    
-
     ## INITIALIZE EXTRACTOR AND MODEL
     ea = zip_extractor(updated_args)
     ma = zip_model(updated_args)
     ca = zip_clf(updated_args)
     ma.update(ca)
+    sa = zip_splits(updated_args)
+    da = zip_dataset(updated_args)
+    fa = zip_finetune(updated_args) #don't forget extra scheduler args
 
     if args.hf_model:
         feature_extractor = HFExtractor(**ea)
@@ -291,26 +316,27 @@ if __name__ == "__main__":
         raise NotImplementedError('Currently only compatible with hugging face models.')
     
     #DATA SPLIT
-    sa = zip_splits(updated_args)
     train_df, val_df, test_df = seeded_split(**sa)
 
     #DATASET
-    da = zip_dataset(updated_args)
     train_dataset = WavDataset(data=train_df,feature_extractor=feature_extractor, **da)
     test_dataset = WavDataset(data=test_df,feature_extractor=feature_extractor,**da)
     val_dataset = WavDataset(data=val_df, feature_extractor=feature_extractor,**da)
     
     #using custom collate
     if model.is_whisper_model:
-        train_dataloader = DataLoader(dataset=train_dataset,batch_size=args.batch_sz,shuffle=True,collate_fn=collate_features, num_workers=args.num_workers)
-        val_dataloader = DataLoader(dataset=val_dataset,batch_size=args.batch_sz,shuffle=False,collate_fn=collate_features, num_workers=args.num_workers)
-        test_dataloader = DataLoader(dataset=test_dataset,batch_size=args.batch_sz,shuffle=False,collate_fn=collate_features, num_workers=args.num_workers)
+        train_loader = DataLoader(dataset=train_dataset,batch_size=args.batch_sz,shuffle=True,collate_fn=collate_features, num_workers=args.num_workers)
+        val_loader = DataLoader(dataset=val_dataset,batch_size=args.batch_sz,shuffle=False,collate_fn=collate_features, num_workers=args.num_workers)
+        test_loader = DataLoader(dataset=test_dataset,batch_size=args.batch_sz,shuffle=False,collate_fn=collate_features, num_workers=args.num_workers)
     else:
         collate_fn = collate_wrapper(pad=args.pad, pad_method=args.pad_method)
-        train_dataloader = DataLoader(dataset=train_dataset,batch_size=args.batch_sz,shuffle=True,collate_fn=collate_fn, num_workers=args.num_workers)
-        val_dataloader = DataLoader(dataset=val_dataset,batch_size=args.batch_sz,shuffle=False,collate_fn=collate_fn, num_workers=args.num_workers)
-        test_dataloader = DataLoader(dataset=test_dataset,batch_size=args.batch_sz,shuffle=False,collate_fn=collate_fn, num_workers=args.num_workers)
+        train_loader = DataLoader(dataset=train_dataset,batch_size=args.batch_sz,shuffle=True,collate_fn=collate_fn, num_workers=args.num_workers)
+        val_loader = DataLoader(dataset=val_dataset,batch_size=args.batch_sz,shuffle=False,collate_fn=collate_fn, num_workers=args.num_workers)
+        test_aloader = DataLoader(dataset=test_dataset,batch_size=args.batch_sz,shuffle=False,collate_fn=collate_fn, num_workers=args.num_workers)
         
+    if not args.eval_only:
+        model = finetune(train_loader=train_loader, val_loader=val_load, model=model,
+                         **fa)
+    
+    evaluate(test_loader=test_loader, model=model)
 
-    item = next(iter(test_dataloader))
-    output = model(item)

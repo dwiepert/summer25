@@ -236,10 +236,18 @@ class HFModel(BaseModel):
  
         return self.clf(pooled)
     
-    def save_model_components(self):
+    def save_model_components(self, name:str=None):
         """
         Save base model and classifier separately
+        :param name: str, base name for model and classifier (default = None)
         """
-        self.save_base_model()
-        self.clf.save_classifier(self.out_dir)
+        if name != None:
+            name_model = name + '_model'
+            name_clf = name + '_clf'
+        else:
+            name_model = self.model_name
+            name_clf = self.clf.config['clf_name']
+        
+        self.save_base_model(name = name_model)
+        self.clf.save_classifier(name = name_clf, self.out_dir)
     
