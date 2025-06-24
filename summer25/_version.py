@@ -1,4 +1,4 @@
-__version__ = '0.2.9'
+__version__ = '0.2.10'
 
 #change log:
 # 0.0.0: initial commit
@@ -14,3 +14,4 @@ __version__ = '0.2.9'
 # 0.2.7: untested model pooling/forward pass/padding
 # 0.2.8: tests for model pooling/forward pass/padding+attention pooling
 # 0.2.9: skeleton for finetune/val/evaluate loops
+# 0.2.10: refactor for training, loss option added

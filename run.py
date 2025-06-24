@@ -18,7 +18,8 @@ from torch.utils.data import DataLoader
 from summer25.models import HFModel, HFExtractor
 from summer25.dataset import seeded_split, WavDataset, collate_features, collate_wrapper
 from summer25.constants import _MODELS,_FREEZE, _FEATURES
-from summer25.loops import finetune, evaluate
+from summer25.training import Trainer
+
 _REQUIRED_MODEL_ARGS =['model_type']
 _REQUIRED_LOAD = ['output_dir', 'audio_dir', 'split_dir']
 
@@ -333,10 +334,12 @@ if __name__ == "__main__":
         train_loader = DataLoader(dataset=train_dataset,batch_size=args.batch_sz,shuffle=True,collate_fn=collate_fn, num_workers=args.num_workers)
         val_loader = DataLoader(dataset=val_dataset,batch_size=args.batch_sz,shuffle=False,collate_fn=collate_fn, num_workers=args.num_workers)
         test_aloader = DataLoader(dataset=test_dataset,batch_size=args.batch_sz,shuffle=False,collate_fn=collate_fn, num_workers=args.num_workers)
-        
-    if not args.eval_only:
-        model = finetune(train_loader=train_loader, val_loader=val_load, model=model,
-                         **fa)
     
-    evaluate(test_loader=test_loader, model=model)
+
+    model_trainer = Trainer(model=model, **fa)
+    if not args.eval_only:
+        model_trainer.fit(train_loader, val_loader, epochs=args.epochs)
+        
+    model_trainer.test(test_loader)
+   
 

@@ -21,7 +21,6 @@ CONFIG FILES:
 ## ACTIVE DEBUGGING/TASKS
 * update splits
 * normalize data?
-* test custom collate
 * TEST SUITE - ALL ASSERTIONS!
     * ~~split~~
     * ~~hugging face models~~ (load smallest of each type and clear cache afterwards)
@@ -31,9 +30,9 @@ CONFIG FILES:
     * ~~io/transforms - Non-GCS~~
     * io/transforms - GCS test google cloud things????? mark to run only sometimes
     * ~~wav dataset~~
-    * ~~HF extractor~~ (load all options? load smallest of each type and clear cache afterwards)
+    * ~~HF extractor~~
     * ~~freeze~~
-    * ~~pad transform~~/custom collate fn
+    * ~~pad transform~~
     * ~~pool~~
     * ~~custom collate~~
     * ~~forward~~
@@ -68,11 +67,11 @@ CONFIG FILES:
 * Add LoRA option
 * Add soft prompting option 
 * ~~Flexibly create data splits - each seed has a different split?~~ 
-* Load data into a dataset
+* ~~Load data into a dataset~~
     * ~~transform to 16000 if not done~~
     * ~~optional trim (FOR WHISPER!!)~~
     * ~~convert to tensor~~
-    * normalize data?^^
+    * ~~normalize data?^^~~
     * ~~check batching collate_fn~~
     * ~~use model specific processors????~~
 * ~~pooling strategies~~
@@ -88,9 +87,9 @@ CONFIG FILES:
     * ~~tests (include classifier only)~~
 * CONFIRM METRICS
 * model loops
-    * training + logging options - WHAT IS THE BEST LOSS? OPTIMIZER? ETC.
+    * training + logging options
     * validation + logging options
-    * save best model (see other code for tracking the best model) + final model? 
+    * ~~save best model (see other code for tracking the best model) + final model?~~ 
     * testing - what testing do we want to do 
 * ~~check finetuned checkpoint loading~~
     * ~~base model~~
