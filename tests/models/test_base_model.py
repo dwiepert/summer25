@@ -66,9 +66,11 @@ def test_basemodel_params():
 
     #no pool dim - mean pooling
     del params['pool_dim']
-    with pytest.raises(AssertionError):
+    params['model_type'] = 'test_model2'
+    with pytest.raises(ValueError):
         m = BaseModel(**params)
 
+    params['model_type'] = 'wavlm-base'
     #pool dim not int or tuple
     params['pool_dim'] = '1'
     with pytest.raises(AssertionError):
@@ -81,11 +83,9 @@ def test_basemodel_params():
     with pytest.raises(AssertionError):
         m = BaseModel(**params)
     
-    #no pool dim + attn 
+    #no pool dim (uses from _MODELS) + attn 
+    del params['pool_dim']
     params['pool_method'] = 'attention'
-    with pytest.raises(AssertionError):
-        m = BaseModel(**params)
-    params['pool_dim'] = 1
     m = BaseModel(**params)
     #assert 'pool_dim' not in m.base_config, 'Pool dim incorrectly added to base config'
     params['pool_dim'] = 1
@@ -115,6 +115,12 @@ def test_basemodel_params():
     ft_ckpt.mkdir(exist_ok=True)
     with pytest.raises(AssertionError):
         m = BaseModel(**params)
+
+    #TODO: test ft checkpoint that is a non empty directory 
+
+    #TODO: test ft checkpoint that is a non .pt .pth file
+
+    #TODO: test ft checkpoint that is a .pt file
 
     del params['ft_ckpt']
     shutil.rmtree(ft_ckpt)

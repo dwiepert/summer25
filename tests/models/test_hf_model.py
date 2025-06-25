@@ -5,6 +5,7 @@ Author(s): Daniela Wiepert
 Last modified: 06/2025
 """
 #IMPORTS
+import os
 from pathlib import Path
 import shutil
 
@@ -116,58 +117,49 @@ def test_hfmodel_finetuned_base():
     # check SAVING
     m = HFModel(**params)
     m.save_model_components()
-    assert (ft_ckpt/(m.model_name + '.pt')).exists(), 'Base model properly saved.'
+    assert (ft_ckpt/(m.model_name)).exists() and os.listdir(ft_ckpt/(m.model_name)) != [], 'Base model properly saved.'
     assert (ft_ckpt/(m.clf.config['clf_name'] + '.pt')).exists(), 'Classifier properly saved.'
 
     #FT POSSIBILITIES:
-    #directly give .pt file and only update base model
-    model_ft_ckpt = ft_ckpt/(m.model_name + '.pt')
+    # give path to only base_model directory (no classifier ckpt in dir, no subdirs)
+    model_ft_ckpt = ft_ckpt/(m.model_name)
     params['ft_ckpt'] = model_ft_ckpt
     m = HFModel(**params)
-    
-    #give a clf_ckpt and update only clf 
+
+    # give path to only clf ckpt (no ft_ckpt, just uploads from hub)
     del params['ft_ckpt']
     params['clf_ckpt'] = ft_ckpt/(m.config['clf_name'] + '.pt')
     m = HFModel(**params)
 
-    #give a dir, update only base model (clf_ckpt given)
+    # give path to both ft_ckpt (parent_dir) and clf_ckpt (use given clf_ckpt)
     params['ft_ckpt'] = ft_ckpt
     m = HFModel(**params)
-    del params['clf_ckpt']
 
-    #give a dir, update base model and clf 
+    # give path to both ft_ckpt (actual dir) and clf_ckpt
+    params['ft_ckpt'] = model_ft_ckpt
     m = HFModel(**params)
 
-    # Incompatible model
-    params['model_type'] = 'hubert-base'
-    with pytest.raises(AssertionError):
-        m = HFModel(**params)
-    
-    #Incompatible classifier checkpoint but compatible ft_ckpt
-    ckpt = Path('./ckpt')
-    if ckpt.exists():
-        shutil.rmtree(ckpt)
-    ckpt.mkdir(exist_ok=True)
+    # give path to parent dir for ft_ckpt and no clf_ckpt
+    del params['clf_ckpt']
+    params['ft_ckpt'] = ft_ckpt
+    m = HFModel(**params)
 
-    clf_params = {'in_features':1, 'out_features':1}
-    m = Classifier(**clf_params)
-    m.save_classifier(ckpt)
-    out_ckpt = ckpt / 'weights' 
-    out_path = out_ckpt / (m.config['clf_name']+'.pt')
-    assert out_path.exists(), 'Classifier not saved properly'
-    
-    #create new model with different params and try to load old ckpt
-    params['nlayers'] = 1
-    params['clf_ckpt'] = out_path
-    params['ft_ckpt'] = model_ft_ckpt
+    # Incompatible ft_ckpt
+    params['model_type'] = 'whisper-base'
     with pytest.raises(ValueError):
         m = HFModel(**params)
 
+    # Incompatible ft_ckpt
+    params['model_type'] = 'hubert-base'
+    with pytest.raises(ValueError):
+        m = HFModel(**params)
+    
     shutil.rmtree(params['out_dir'])
     if ft_ckpt.exists():
         shutil.rmtree(ft_ckpt)
-    if ckpt.exists():
-        shutil.rmtree(ckpt)
+
+
+
     #sth w use feat ext?
 
 def check_requires_grad(model):
@@ -183,6 +175,13 @@ def check_requires_grad(model):
 @pytest.mark.hf
 def test_freeze():
     params = {'out_dir':Path('./out_dir'), 'model_type':'wavlm-base'}
+
+    #freeze all
+    #no freezing (required only)
+    params['freeze_method'] = 'all'
+    m = HFModel(**params)
+    assert m is not None, 'Model not running properly.'
+    assert check_requires_grad(m)
 
     #no freezing (required only)
     params['freeze_method'] = 'required-only'

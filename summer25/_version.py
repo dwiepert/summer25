@@ -16,3 +16,4 @@ __version__ = '0.2.11'
 # 0.2.9: skeleton for finetune/val/evaluate loops
 # 0.2.10: refactor for training, loss option added
 # 0.2.11: draft of LoRA, classification head
+# 0.2.12: updated saving/loading for HF models (tested)

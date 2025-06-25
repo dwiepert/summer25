@@ -22,17 +22,17 @@ class Classifier(nn.Module):
     
     :param in_features: integer, input size
     :param out_features: integer, number of classes
-    :param bottleneck: int, TODO
     :param nlayers: integer, number of classifier layers (default=2)
-    :param layernorm: TODO
-    :param dropout: TODO
-    :param activation: str, activation function to use (default=sigmoid)
+    :param bottleneck: int, optional bottleneck parameter (default=None)
+    :param layernorm: bool, true for adding layer norm (default=False)
+    :param dropout: float, dropout level (default = 0.0)
+    :param activation: str, activation function to use (default=relu)
     :param ckpt: pathlike, optional path to trained classifier (default=none)
     :param seed: int, random seed (default = 42)
 
     """
-    def __init__(self, in_features:int, out_features:int, bottleneck:int, nlayers:int=2, layernorm:bool=False, dropout:float=0.0,
-                 activation:str='relue', ckpt:Optional[Union[str,Path]]=None, seed:int=42):
+    def __init__(self, in_features:int, out_features:int, nlayers:int=2, bottleneck:int=None, layernorm:bool=False, 
+                 dropout:float=0.0, activation:str='relu', ckpt:Optional[Union[str,Path]]=None, seed:int=42):
         
         super(Classifier, self).__init__()
         #INITIALIZE VARIABLES
@@ -41,7 +41,7 @@ class Classifier(nn.Module):
         self.bottleneck = bottleneck
         self.nlayers = nlayers
 
-        if self.nlayers = 2 and not self.bottleneck:
+        if self.nlayers == 2 and not self.bottleneck:
             self.bottleneck = self.in_feats 
 
         self.activation = activation 
@@ -70,10 +70,7 @@ class Classifier(nn.Module):
         self._params()
         model_dict = self._build_classifier()
         self.classifier = nn.Sequential(model_dict)
-        
-        #https://www.askpython.com/python-modules/initialize-model-weights-pytorch
-        print('TODO: random initialization of weights')
-        #self.classifier.apply(self.classifier._init_weights)
+        self.classifier.apply(self._init_weights)
         self._load_checkpoint()
 
         #SET UP CLF CONFIG
@@ -111,8 +108,11 @@ class Classifier(nn.Module):
         else:
             raise NotImplementedError(f'{self.activation} not yet implemented.')
 
-    def _build_classifier(self):
+    def _build_classifier(self) -> Dict[str, nn.Module]:
         """
+        Build classifier ordered dictionary
+
+        :return model dict: Dict[nn.Module], ordered dictionary with model layers
         """
         model_dict = OrderedDict()
         for i in range(self.nlayers):
@@ -126,7 +126,12 @@ class Classifier(nn.Module):
                     model_dict[f'dropout{i}'] = nn.Dropout(self.dropout)
         return model_dict 
     
-    def _init_weights(self, layer):
+    def _init_weights(self, layer:nn.Module):
+        """
+        Randomize classifier weights
+
+        :param layer: nn.Module, model layer
+        """
         if isinstance(layer, nn.Linear):
             nn.init.kaiming_uniform(layer.weight) #EXPLAIN WHY KAIMING
 
@@ -172,9 +177,8 @@ class Classifier(nn.Module):
         :param name: str, name to save classifier to
         :param out_dir: pathlike, location to save model to
         """
-        if not isinstance(out_dir, Path): out_dir=Path(out_dir)
-        clf_path = out_dir / 'weights' 
-        clf_path.mkdir(exist_ok=True)
-        clf_path = clf_path / (name+'.pt')
+        if not isinstance(out_dir, Path): out_dir = Path(out_dir)
+        out_dir.mkdir(exist_ok = True)
+        clf_path = out_dir / (name+'.pt')
         if clf_path.exists(): print(f'Overwriting existing classifier head at {str(clf_path)}')
         torch.save(self.classifier.state_dict(), clf_path)

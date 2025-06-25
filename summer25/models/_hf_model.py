@@ -37,30 +37,52 @@ class HFModel(BaseModel):
     :param ft_ckpt: pathlike, path to finetuned base model checkpoint (default=None)
     :param out_features: int, number of output features from classifier (number of classes) (default = 1)
     :param nlayers: int, number of layers in classification head (default = 2)
-    :param activation: str, activation function to use in classification head (default = 'sigmoid')
-    :param seed: int, specify random seed for ensuring reproducibility
-    :param device: torch device
-    :param from_hub: bool, specify whether to load from hub or from existing pt_ckpt
-    :param test_hub_fail: bool, TESTING ONLY
-    :param test_local_fail: bool, TESTING ONLY
+    :param activation: str, activation function to use in classification head (default = 'relu')
+    :param bottleneck: int, optional bottleneck parameter (default=None)
+    :param layernorm: bool, true for adding layer norm (default=False)
+    :param dropout: float, dropout level (default = 0.0)
+    :param seed: int, specify random seed for ensuring reproducibility (default = 42)
+    :param device: torch device (default = cuda)
+    :param from_hub: bool, specify whether to load from hub or from existing pt_ckpt (default = True)
+    :param test_hub_fail: bool, TESTING ONLY (default = False)
+    :param test_local_fail: bool, TESTING ONLY (default = False)
     :param kwargs: additional arguments for optional parameters (e.g., unfreeze_layers if freeze_method is layer, delete_download if you want to remove local versions of checkpoints after downloading, clf_ckpt if wanting to load checkpoint for classifier, lora values)
     """
     def __init__(self, 
                  out_dir:Union[Path, str], model_type:str, finetune_method:str='none', freeze_method:str = 'required-only', 
                  pool_method:str = 'mean',pt_ckpt:Optional[Union[Path,str]]=None, ft_ckpt:Optional[Union[Path,str]]=None, 
-                 out_features:int=1, nlayers:int=2, activation:str='sigmoid',
+                 out_features:int=1, nlayers:int=2, activation:str='relu', bottleneck:int=None, layernorm:bool=False, dropout:float=0.0,
                  seed:int=42, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
                  from_hub:bool=True, test_hub_fail:bool=False, test_local_fail:bool=False, **kwargs):
 
         self.out_dir = out_dir 
         if not isinstance(self.out_dir, Path): self.out_dir = Path(self.out_dir)
         
+        #optionally split ft_ckpt into base_model ckpt and clf_ckpt
+        if ft_ckpt:
+            if not isinstance(ft_ckpt, Path): ft_ckpt = ft_ckpt(Path)
+            assert ft_ckpt.is_dir(), 'Hugging face finetuned model checkpoints should be directories.'
+            #check first if there is a given clf_ckpt already
+            if 'clf_ckpt' not in kwargs:
+                poss_ckpts = [r for r in ft_ckpt.glob('Classifier*')]
+                if poss_ckpts != [] and 'clf_ckpt' not in kwargs:
+                    kwargs['clf_ckpt'] = poss_ckpts[0]
+
+            base_ckpt = None
+            for entry in ft_ckpt.iterdir():
+                if entry.is_dir():
+                    base_ckpt = entry
+            if base_ckpt is not None:
+                ft_ckpt = base_ckpt
+
+                    
+                
         super().__init__(model_type=model_type, out_dir=out_dir, finetune_method=finetune_method,
                          freeze_method=freeze_method, pool_method=pool_method, 
                          pt_ckpt=pt_ckpt,ft_ckpt=ft_ckpt,
                          in_features=_MODELS[model_type]['in_features'], out_features=out_features, nlayers=nlayers, activation=activation, 
-                         device=device, seed=seed,
-                         pool_dim=_MODELS[model_type]['pool_dim'],**kwargs)
+                         bottleneck=bottleneck, layernorm=layernorm, dropout=dropout,
+                         device=device, seed=seed, pool_dim=_MODELS[model_type]['pool_dim'],**kwargs)
 
         #HF ARGS
         #handle some hugging face model specific parameters
@@ -81,21 +103,21 @@ class HFModel(BaseModel):
             self.from_hub = False
 
         if not self.from_hub: 
-            try:
-                assert self.pt_ckpt is not None, 'Must give pt_ckpt if not loading from the hub'
+            if self.pt_ckpt:
                 assert self.pt_ckpt.exists(), 'Given pt_ckpt does not exist.'
-            except:
-                assert self.ft_ckpt is not None, 'Must give pt_ckpt if not loading from the hub'
-                assert self.ft_ckpt.exists(), 'Given pt_ckpt does not exist.'
+                assert self.pt_ckpt.is_dir(), 'Expects a directory for hugging face model checkpoints'
+            else:
+                assert self.ft_ckpt is not None, 'Must give pt_ckpt or ft_ckpt if not loading from the hub.'
+                assert self.ft_ckpt.exists(), 'Given ft_ckpt does not exist.'
+                assert self.ft_ckpt.is_dir(), 'Expects a directory for hugging face model checkpoints'
         
         #INITIALIZE MODEL COMPONENTS
         print(f'Loading model {self.model_type} from Hugging Face Hub...')
+        ckpt = None
         if self.ft_ckpt:
             ckpt = self.ft_ckpt
         elif self.pt_ckpt:
             ckpt = self.pt_ckpt
-        else:
-            ckpt = self.hf_hub 
 
         self._load_model(ckpt=ckpt, test_hub_fail=test_hub_fail, test_local_fail=test_local_fail)      
         self.is_whisper_model = isinstance(self.base_model, WhisperModel)
@@ -124,9 +146,11 @@ class HFModel(BaseModel):
         Update for new model classes
         :return model_name: str with model name
         """
-        model_name = f'{self.model_type}_seed{self.seed}_f{self.freeze_method}_{self.pool_method}'
+        model_name = f'{self.model_type}_seed{self.seed}_{self.freeze_method}_{self.pool_method}'
         if self.ft_ckpt is not None:
             model_name += '_ft'
+        if self.finetune_method != 'none':
+            model_name += f'_{self.finetune_method}'
         return model_name
 
     def _load_model(self, ckpt, test_hub_fail:bool=False, test_local_fail:bool=False):
@@ -141,7 +165,7 @@ class HFModel(BaseModel):
             try: 
                 if test_hub_fail or test_local_fail: 
                     raise Exception()
-                self.base_model = AutoModel.from_pretrained(ckpt, output_hidden_states=True, trust_remote_code=True)
+                self.base_model = AutoModel.from_pretrained(self.hf_hub, output_hidden_states=True, trust_remote_code=True)
                 self.local_path = None
                 return
             except:
@@ -150,9 +174,9 @@ class HFModel(BaseModel):
                         raise Exception()
                     
                     print('Loading directly from hugging face hub failed. Downloading model locally...')
-                    self.local_path = Path(f'./{ckpt}').absolute()
+                    self.local_path = Path(f'./{self.hf_hub}').absolute()
                     self.local_path.mkdir(parents=True, exist_ok=True)
-                    snapshot_download(repo_id=ckpt, local_dir=str(self.local_path))
+                    snapshot_download(repo_id=self.hf_hub, local_dir=str(self.local_path))
                     self.base_model = AutoModel.from_pretrained(str(self.local_path), output_hidden_states=True)
                     if self.delete_download:
                         print('Deleting local copy of checkpoint')
@@ -165,17 +189,18 @@ class HFModel(BaseModel):
                             temp = curr_parent.parent 
                             curr_parent = temp
                     return
-
                 except: 
                     assert ckpt is not None, 'Downloading from hub failed, but backup pt_ckpt not available.'
                     print('Downloading from hub failed. Trying pt_ckpt.')
 
         try:
             self.base_model = AutoModel.from_pretrained(str(ckpt), output_hidden_states=True)
-            self.local_path = self.ckpt
+            self.local_path = ckpt
         except:
-            raise ValueError('Pretrained checkpoint is incompatible with HuggingFace models. Confirm this is a path to a local hugging face checkpoint.')
+            raise ValueError('Checkpoint is incompatible with HuggingFace models. Confirm this is a path to a local hugging face checkpoint.')
         
+        if not isinstance(self.base_model, _MODELS[self.model_type]['model_instance']):
+            raise ValueError('Loaded model is not the expected model type. Please check that your checkpoint points to the correct model type.')
         return
                    
     def _freeze(self):
@@ -184,7 +209,8 @@ class HFModel(BaseModel):
         """
         #FREEZE MODEL LAYERS
         self._freeze_all()
-        
+        self.unfreeze = []
+
         if self.freeze_method != 'all':
             if self.freeze_method == 'required-only': #only case where optional freeze layers should be unfrozen
                 layer_names = self._get_unfreezable_layers(self.unfreeze_prefixes+self.optional_freeze)
@@ -295,13 +321,14 @@ class HFModel(BaseModel):
  
         return self.clf(pooled)
     
-    def save_base_model(self, name):
+    def save_base_model(self, name, save_dir):
         """
+        TODO
         """
-        save_dir = self.out_dir / 'weights'
+        if not isinstance(save_dir, Path): save_dir = Path(save_dir)
         save_dir.mkdir(exist_ok=True)
         save_dir = save_dir / name
-        self.base_model.save_pretrained()
+        self.base_model.save_pretrained(save_dir)
         #if self.finetune_method == 'lora':
         #    self.base_model.save_pretrained()
         #else:
@@ -318,10 +345,9 @@ class HFModel(BaseModel):
         else:
             name_model = self.model_name
             name_clf = self.clf.config['clf_name']
-
-        if self.finetune_method == 'lora':
-            name_model += '_lora'
         
-        self.save_base_model(name_model)
-        self.clf.save_classifier(name_clf, self.out_dir)
+        out_path = self.out_dir / 'weights'
+        out_path.mkdir(exist_ok=True)
+        self.save_base_model(name_model, out_path)
+        self.clf.save_classifier(name_clf, out_path)
     

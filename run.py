@@ -128,6 +128,12 @@ def zip_clf(args:argparse.Namespace) -> dict:
         clf_args['activation'] = args.activation
     if args.clf_ckpt:
         clf_args['ckpt'] = args.clf_ckpt
+    if args.bottleneck:
+        clf_args['bottleneck'] = args.bottleneck
+    if args.layernorm:
+        clf_args['layernorm'] = args.layernorm
+    if args.dropout:
+        clf_args['dropout'] = args.dropout
     return clf_args
 
 def zip_extractor(args:argparse.Namespace) -> dict:
@@ -286,6 +292,9 @@ if __name__ == "__main__":
     clf_args = parser.add_argument_group('classifier', 'classifier related arguments')
     clf_args.add_argument('--nlayers', type=int, help='Specify classification head size.')
     clf_args.add_argument('--activation', type=str, help='Specify type of activation function to use in the classifier.')
+    clf_args.add_argument('--bottleneck', type=int, help='Specify optional bottleneck if nlayers >= 2.')
+    clf_args.add_argument('--dropout', type=float, help='Specify optional dropout rate.')
+    clf_args.add_argument('--layernorm', action='store_true', help='Specify whether to add layernorm to classifier.')
     clf_args.add_argument('--clf_ckpt', type=Path, help="Specify classification checkpoint.")
     #TRAINING ARGS
     train_args = parser.add_argument_group('train', 'training/testing related arguments')

@@ -10,6 +10,7 @@ Last modified: 06/2025
 from abc import abstractmethod
 from collections import OrderedDict
 import json
+import os
 from pathlib import Path
 from typing import List, Union, Dict, Optional
 
@@ -36,15 +37,18 @@ class BaseModel(nn.Module):
     :param in_features: int, number of input features to classifier (based on output layers of the base model) (default = 768)
     :param out_features: int, number of output features (number of classes) (default = 1)
     :param nlayers: int, number of layers in classification head (default = 2)
-    :param device: torch device
-    :param activation: str, activation function to use for classification head
-    :param seed: int, random seed
+    :param bottleneck: int, optional bottleneck parameter (default=None)
+    :param layernorm: bool, true for adding layer norm (default=False)
+    :param dropout: float, dropout level (default = 0.0)
+    :param activation: str, activation function to use for classification head (default=relu)
+    :param seed: int, random seed (default = 42)
+    :param device: torch device (default = cuda)
     :param kwargs: additional arguments for optional parameters (e.g., pool_dim for mean/max pooling and unfreeze_layers if freeze_method is layer, clf_ckpt)
     """
     def __init__(self, model_type:str, out_dir:Union[Path, str], finetune_method:str='none', freeze_method:str = 'required-only', pool_method:str = 'mean',
                  pt_ckpt:Optional[Union[Path, str]]=None, ft_ckpt:Optional[Union[Path,str]]=None, 
-                 in_features:int=768, out_features:int=1, nlayers:int=2, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
-                 activation:str='sigmoid', seed:int=42,
+                 in_features:int=768, out_features:int=1, nlayers:int=2, bottleneck:int=None, layernorm:bool=False, dropout:float=0.0,
+                 activation:str='relu', seed:int=42, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
                  **kwargs):
         
         super(BaseModel, self).__init__()
@@ -65,7 +69,9 @@ class BaseModel(nn.Module):
         #SET SEED
         torch.manual_seed(self.seed)
 
-        self.clf_args = {'in_features':in_features, 'out_features':out_features, 'nlayers':nlayers, 'activation':activation, 'seed': self.seed}
+        self.clf_args = {'in_features':in_features, 'out_features':out_features, 'nlayers':nlayers,
+                        'activation':activation, 'bottleneck':bottleneck, 'layernorm':layernorm, 
+                        'dropout':dropout, 'seed': self.seed}
         if 'clf_ckpt' in kwargs:
             self.clf_args['ckpt'] = kwargs.pop('clf_ckpt')
         
@@ -77,19 +83,10 @@ class BaseModel(nn.Module):
         if self.ft_ckpt is not None:
             if not isinstance(self.ft_ckpt, Path): self.ft_ckpt = Path(self.ft_ckpt)
             assert self.ft_ckpt.exists(), f'Finetuned model path {self.ft_ckpt} does not exist.'
-
-            if self.ft_ckpt.suffix != '.pt' and self.ft_ckpt.suffix != '.pth':
-                poss_files = [p for p in self.ft_ckpt.rglob("*.pt")]
-                poss_files += [p for p in self.ft_ckpt.rglob("*.pth")]
-
-                assert poss_files != [], 'No finetuned paths exist in given checkpoint.'
-                model_path = [p for p in poss_files if self.model_type in str(p)]
-                assert model_path != [], f'{self.model_type} checkpoint does not exist in given directory.'
-                clf_path = [p for p in poss_files if 'Classifier' in str(p)]
-                self.ft_ckpt = model_path[0]
-                if 'ckpt' not in self.clf_args and clf_path != []:
-                    self.clf_args['ckpt'] = clf_path[0]
-
+            if self.ft_ckpt.is_dir(): 
+                assert os.listdir(self.ft_ckpt) != [], 'Finetuned checkpoint must be a non-empty directory'
+            else: 
+                assert '.pt' in str(self.ft_ckpt) or '.pth' in str(self.ft_ckpt), 'Must give .pt or .pth if not giving a directory'
         ### finetune method 
         assert self.finetune_method in _FINETUNE, f'self.finetune_method is not a valid finetuning method. Choose one of {_FINETUNE}.'
         if self.finetune_method == 'lora':
@@ -117,14 +114,19 @@ class BaseModel(nn.Module):
             self.unfreeze_layers = None # OTHER UNFREEZE METHODS REQUIRE MODEL INFO
 
         assert self.pool_method in _POOL, f'{self.pool_method} is not a valid pooling method. Choose one of {_POOL}.'
-        assert 'pool_dim' in kwargs, 'Pooling dimensions not given for mean or max pooling'
-        if self.pool_method in ['mean', 'max']:
-            assert isinstance(kwargs['pool_dim'], int) or (isinstance(kwargs['pool_dim'], tuple)), 'Pooling dimensions must be single integer or tuple of integers'
-            if isinstance(kwargs['pool_dim'], tuple):
-                assert all(isinstance(i,int) for i in kwargs['pool_dim']), 'All pooling dimensions in a tuple must be integers.'
-            self.pool_dim = kwargs.pop('pool_dim') #should be an int or a tuple of ints
+        if 'pool_dim' in kwargs: 
+            self.pool_dim = kwargs.pop('pool_dim')
+        elif 'pool_dim' in _MODELS[model_type]:
+            self.pool_dim = _MODELS[model_type]['pool_dim']
         else:
-            assert isinstance(kwargs['pool_dim'], int) and kwargs['pool_dim'] == 1, 'Self attention pooling only works with a pooling dimension of 1.'
+            raise ValueError('Pool dim not given.')
+        
+        if self.pool_method in ['mean', 'max']:
+            assert isinstance(self.pool_dim, int) or (isinstance(self.pool_dim, tuple)), 'Pooling dimensions must be single integer or tuple of integers'
+            if isinstance(self.pool_dim, tuple):
+                assert all(isinstance(i,int) for i in self.pool_dim), 'All pooling dimensions in a tuple must be integers.'
+        else:
+            assert isinstance(self.pool_dim, int) and self.pool_dim == 1, 'Self attention pooling only works with a pooling dimension of 1.'
             self.attention_pooling = SelfAttentionPooling(input_dim=in_features)
         
         self.base_config = self._base_config()

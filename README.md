@@ -19,9 +19,9 @@ CONFIG FILES:
 * normalize data?
 * TEST SUITE - ALL ASSERTIONS!
     * ~~split~~
-    * ~~hugging face models~~ TEST FINETUNE METHOD
-    * ~~classifier~~ TEST RANDOM WEIGHTS + NEWLY ADDED ARGUMENTS
-    * ~~base model~~ TEST FINETUNE METHOD
+    * ~~hugging face models~~ 
+    * ~~classifier~~
+    * ~~base model~~ 
     * ~~base dataset~~
     * ~~io/transforms - Non-GCS~~
     * io/transforms - GCS test google cloud things????? mark to run only sometimes
@@ -34,8 +34,6 @@ CONFIG FILES:
     * ~~forward~~
     * loops/metrics - make sure logging works correctly
     * lora
-    * new model saving method (save_pretrain)
-    * new model loading method
     * add learning rate scheduler with warmup?
 
 ## All TODO
@@ -62,8 +60,8 @@ CONFIG FILES:
 * Classification head 
     * ~~decide basic configurations/layer options~~
     * decide test features vs. all features? different groupings? what is the plan here
-    * random weight initialization for classifier - check seed
-    * tests
+    * ~~random weight initialization for classifier - check seed~~
+    * ~~tests~~
 * Add LoRA option
     * tests
 * Add soft prompting option 
