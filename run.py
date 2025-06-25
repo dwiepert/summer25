@@ -17,7 +17,7 @@ from torch.utils.data import DataLoader
 ##local
 from summer25.models import HFModel, HFExtractor
 from summer25.dataset import seeded_split, WavDataset, collate_features, collate_wrapper
-from summer25.constants import _MODELS,_FREEZE, _FEATURES
+from summer25.constants import _MODELS,_FREEZE, _FEATURES, _FINETUNE
 from summer25.training import Trainer
 
 _REQUIRED_MODEL_ARGS =['model_type']
@@ -99,6 +99,8 @@ def check_model(args:dict ) -> dict:
         
     assert 'freeze_method' in args, 'Freeze method not given. Check command line arguments or model configuration file.'
     if args['freeze_method'] == 'layer': assert 'unfreeze_layers' in args, 'unfreeze_layers must be given if freeze method is `layer`.'
+    
+    assert 'finetune_method' in args, 'Finetune method not given. Check command line arguments or model configuration file.'
     return args
 
 def save_path(args:argparse.Namespace) -> argparse.Namespace:
@@ -272,6 +274,10 @@ if __name__ == "__main__":
     model_args.add_argument('--pt_ckpt', type=Path, help='Specify local pretrained model path. Only required for hugging face models if issues loading from hub.')
     model_args.add_argument('--delete_download', action='store_true', help='Specify local pretrained model path. Only required for hugging face models if issues loading from hub.')
     model_args.add_argument('--seed', type=int, help='Specify random seed for model initialization.')
+    model_args.add_argument('--finetune_method', type=str, choices=_FINETUNE, help='Specify what finetuning method to use')
+    model_args.add_argument('--lora_rank', type=int, help='If finetuning with lora, give rank')
+    model_args.add_argument('--lora_alpha', type=int, help='If finetuning with lora, give alpha')
+    model_args.add_argument('--lora_dropout', type=float, help='If finetuning with lora, give dropout')
     model_args.add_argument('--freeze_method', type=str, choices=_FREEZE, help='Specify what freeze method to use.')
     model_args.add_argument('--unfreeze_layers', nargs="+", help="If freeze_method is `layer`, use this to specify which layers to freeze")
     model_args.add_argument('--ft_ckpt', type=Path, help='Specify finetuned model checkpoint')
@@ -335,7 +341,6 @@ if __name__ == "__main__":
         val_loader = DataLoader(dataset=val_dataset,batch_size=args.batch_sz,shuffle=False,collate_fn=collate_fn, num_workers=args.num_workers)
         test_aloader = DataLoader(dataset=test_dataset,batch_size=args.batch_sz,shuffle=False,collate_fn=collate_fn, num_workers=args.num_workers)
     
-
     model_trainer = Trainer(model=model, **fa)
     if not args.eval_only:
         model_trainer.fit(train_loader, val_loader, epochs=args.epochs)

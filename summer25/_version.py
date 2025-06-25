@@ -1,4 +1,4 @@
-__version__ = '0.2.10'
+__version__ = '0.2.11'
 
 #change log:
 # 0.0.0: initial commit
@@ -15,3 +15,4 @@ __version__ = '0.2.10'
 # 0.2.8: tests for model pooling/forward pass/padding+attention pooling
 # 0.2.9: skeleton for finetune/val/evaluate loops
 # 0.2.10: refactor for training, loss option added
+# 0.2.11: draft of LoRA, classification head

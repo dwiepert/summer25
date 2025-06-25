@@ -7,7 +7,8 @@ _MODELS = {  "wavlm-base": {
                   "monochannel": True,
                   "required_freeze": ['masked_spec_embed', 'feature_extractor', 'feature_projector'],
                   "optional_freeze": ['encoder.pos_conv_embed', 'encoder.layer_norm'],
-                  "unfreeze_prefixes": ['encoder.layers']
+                  "unfreeze_prefixes": ['encoder.layers'],
+                  "lora_layers": ['k_proj','v_proj','q_proj']
             },
             "wavlm-large": {
                   "hf_hub": "microsoft/wavlm-large",
@@ -18,7 +19,8 @@ _MODELS = {  "wavlm-base": {
                   "monochannel": True,
                   "required_freeze": ['masked_spec_embed', 'feature_extractor', 'feature_projector'],
                   "optional_freeze": ['encoder.pos_conv_embed', 'encoder.layer_norm'],
-                  "unfreeze_prefix": ['encoder.layers']
+                  "unfreeze_prefix": ['encoder.layers'],
+                  "lora_layers": ['k_proj','v_proj','q_proj']
             },
             "hubert-base": {
                   "hf_hub": "facebook/hubert-base-ls960",
@@ -29,7 +31,8 @@ _MODELS = {  "wavlm-base": {
                   "monochannel": True,
                   "required_freeze": ['masked_spec_embed', 'feature_extractor', 'feature_projector'],
                   "optional_freeze": ['encoder.pos_conv_embed', 'encoder.layer_norm'],
-                  "unfreeze_prefixes": ['encoder.layers']
+                  "unfreeze_prefixes": ['encoder.layers'],
+                  "lora_layers": ['k_proj','v_proj','q_proj']
             },
             "hubert-large": {
                   "hf_hub": "facebook/hubert-large-ll60k",
@@ -40,7 +43,8 @@ _MODELS = {  "wavlm-base": {
                   "monochannel": True,
                   "required_freeze": ['masked_spec_embed', 'feature_extractor', 'feature_projector'],
                   "optional_freeze": ['encoder.pos_conv_embed', 'encoder.layer_norm'],
-                  "unfreeze_prefixes": ['encoder.layers']
+                  "unfreeze_prefixes": ['encoder.layers'],
+                  "lora_layers": ['k_proj','v_proj','q_proj']
             },
             "hubert-xlarge": {
                   "hf_hub": "facebook/hubert-xlarge-ll60k",
@@ -51,7 +55,8 @@ _MODELS = {  "wavlm-base": {
                   "monochannel": True,
                   "required_freeze": ['masked_spec_embed', 'feature_extractor', 'feature_projector'],
                   "optional_freeze": ['encoder.pos_conv_embed', 'encoder.layer_norm'],
-                  "unfreeze_prefixes": ['encoder.layers']
+                  "unfreeze_prefixes": ['encoder.layers'],
+                  "lora_layers": ['k_proj','v_proj','q_proj']
             },
             "whisper-tiny": {
                   "hf_hub": "openai/whisper-tiny",
@@ -63,7 +68,8 @@ _MODELS = {  "wavlm-base": {
                   "monochannel": True,
                   "required_freeze": ['encoder.conv1', 'encoder.conv2', 'encoder.embed_positions', 'decoder'],
                   "optional_freeze": [],
-                  "unfreeze_prefixes": ['encoder.layers', 'encoder.layer_norm']
+                  "unfreeze_prefixes": ['encoder.layers', 'encoder.layer_norm'],
+                  "lora_layers": ['k_proj','v_proj','q_proj']
             },
             "whisper-base": {
                   "hf_hub": "openai/whisper-base",
@@ -75,7 +81,8 @@ _MODELS = {  "wavlm-base": {
                   "monochannel": True,
                   "required_freeze": ['encoder.conv1', 'encoder.conv2', 'encoder.embed_positions', 'decoder'],
                   "optional_freeze": [],
-                  "unfreeze_prefixes": ['encoder.layers', 'encoder.layer_norm']
+                  "unfreeze_prefixes": ['encoder.layers', 'encoder.layer_norm'],
+                  "lora_layers": ['k_proj','v_proj','q_proj']
             },
             "whisper-small": {
                   "hf_hub": "openai/whisper-small",
@@ -87,7 +94,8 @@ _MODELS = {  "wavlm-base": {
                   "monochannel": True,
                   "required_freeze": ['encoder.conv1', 'encoder.conv2', 'encoder.embed_positions', 'decoder'],
                   "optional_freeze": [],
-                  "unfreeze_prefixes": ['encoder.layers', 'encoder.layer_norm']
+                  "unfreeze_prefixes": ['encoder.layers', 'encoder.layer_norm'],
+                  "lora_layers": ['k_proj','v_proj','q_proj']
             },
             "whisper-medium": {
                   "hf_hub": "openai/whisper-medium",
@@ -99,7 +107,8 @@ _MODELS = {  "wavlm-base": {
                   "monochannel": True,
                   "required_freeze": ['encoder.conv1', 'encoder.conv2', 'encoder.embed_positions', 'decoder'],
                   "optional_freeze": [],
-                  "unfreeze_prefixes": ['encoder.layers', 'encoder.layer_norm']
+                  "unfreeze_prefixes": ['encoder.layers', 'encoder.layer_norm'],
+                  "lora_layers": ['k_proj','v_proj','q_proj']
             },
             "whisper-large": {
                   "hf_hub": "openai/whisper-large",
@@ -111,7 +120,8 @@ _MODELS = {  "wavlm-base": {
                   "monochannel": True,
                   "required_freeze": ['encoder.conv1', 'encoder.conv2', 'encoder.embed_positions', 'decoder'],
                   "optional_freeze": [],
-                  "unfreeze_prefixes": ['encoder.layers', 'encoder.layer_norm']
+                  "unfreeze_prefixes": ['encoder.layers', 'encoder.layer_norm'],
+                  "lora_layers": ['k_proj','v_proj','q_proj']
             },
             "whisper-large-v2": {
                   "hf_hub": "openai/whisper-large-v2",
@@ -123,7 +133,8 @@ _MODELS = {  "wavlm-base": {
                   "monochannel": True,
                   "required_freeze": ['encoder.conv1', 'encoder.conv2', 'encoder.embed_positions', 'decoder'],
                   "optional_freeze": [],
-                  "unfreeze_prefixes": ['encoder.layers', 'encoder.layer_norm']
+                  "unfreeze_prefixes": ['encoder.layers', 'encoder.layer_norm'],
+                  "lora_layers": ['k_proj','v_proj','q_proj']
             },
             "test_model": {
                   "use_featext": False,
@@ -139,8 +150,8 @@ _MODELS = {  "wavlm-base": {
 }
 
 _POOL = ['mean', 'max', 'attention']
-_FREEZE = ['half', 'exclude-last', 'layer', 'optional', 'required-only']
-
+_FREEZE = ['all', 'half', 'exclude-last', 'layer', 'optional', 'required-only']
+_FINETUNE = ['lora', 'soft-prompt', 'none']
 _TASKS = ['sentence_repetition', 'word_repetition']
 
 _FEATURES = ['abn_pitch_or_loudness_variability', 'abn_resonance',

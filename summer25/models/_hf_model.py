@@ -15,6 +15,7 @@ from typing import Union, Dict, Optional, List
 
 ##third-party
 from huggingface_hub import snapshot_download
+from peft import LoraConfig, LoraModel, get_peft_model, PeftModel, PromptTuningConfig
 import torch
 from transformers import AutoModel, WhisperModel
 
@@ -29,6 +30,7 @@ class HFModel(BaseModel):
 
     :param out_dir: Pathlike, output directory to save to
     :param model_type: str, hugging face model type for naming purposes
+    :param finetune_method: str, specify finetune method (default=None)
     :param freeze_method: str, freeze method for base pretrained model (default=required-only)
     :param pool_method: str, pooling method for base model output (default=mean)
     :param pt_ckpt: pathlike, path to pretrained model checkpoint (default=None)
@@ -41,10 +43,10 @@ class HFModel(BaseModel):
     :param from_hub: bool, specify whether to load from hub or from existing pt_ckpt
     :param test_hub_fail: bool, TESTING ONLY
     :param test_local_fail: bool, TESTING ONLY
-    :param kwargs: additional arguments for optional parameters (e.g., unfreeze_layers if freeze_method is layer, delete_download if you want to remove local versions of checkpoints after downloading, clf_ckpt if wanting to load checkpoint for classifier)
+    :param kwargs: additional arguments for optional parameters (e.g., unfreeze_layers if freeze_method is layer, delete_download if you want to remove local versions of checkpoints after downloading, clf_ckpt if wanting to load checkpoint for classifier, lora values)
     """
     def __init__(self, 
-                 out_dir:Union[Path, str], model_type:str, freeze_method:str = 'required-only', 
+                 out_dir:Union[Path, str], model_type:str, finetune_method:str='none', freeze_method:str = 'required-only', 
                  pool_method:str = 'mean',pt_ckpt:Optional[Union[Path,str]]=None, ft_ckpt:Optional[Union[Path,str]]=None, 
                  out_features:int=1, nlayers:int=2, activation:str='sigmoid',
                  seed:int=42, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
@@ -53,7 +55,7 @@ class HFModel(BaseModel):
         self.out_dir = out_dir 
         if not isinstance(self.out_dir, Path): self.out_dir = Path(self.out_dir)
         
-        super().__init__(model_type=model_type, out_dir=out_dir,
+        super().__init__(model_type=model_type, out_dir=out_dir, finetune_method=finetune_method,
                          freeze_method=freeze_method, pool_method=pool_method, 
                          pt_ckpt=pt_ckpt,ft_ckpt=ft_ckpt,
                          in_features=_MODELS[model_type]['in_features'], out_features=out_features, nlayers=nlayers, activation=activation, 
@@ -75,17 +77,31 @@ class HFModel(BaseModel):
             self.delete_download = False
 
         self.from_hub = from_hub
+        if self.ft_ckpt:
+            self.from_hub = False
 
         if not self.from_hub: 
-            assert self.pt_ckpt is not None, 'Must give pt_ckpt if not loading from the hub'
-            assert self.pt_ckpt.exists(), 'Given pt_ckpt does not exist.'
+            try:
+                assert self.pt_ckpt is not None, 'Must give pt_ckpt if not loading from the hub'
+                assert self.pt_ckpt.exists(), 'Given pt_ckpt does not exist.'
+            except:
+                assert self.ft_ckpt is not None, 'Must give pt_ckpt if not loading from the hub'
+                assert self.ft_ckpt.exists(), 'Given pt_ckpt does not exist.'
         
         #INITIALIZE MODEL COMPONENTS
         print(f'Loading model {self.model_type} from Hugging Face Hub...')
-        self._load_model(test_hub_fail=test_hub_fail, test_local_fail=test_local_fail)      
+        if self.ft_ckpt:
+            ckpt = self.ft_ckpt
+        elif self.pt_ckpt:
+            ckpt = self.pt_ckpt
+        else:
+            ckpt = self.hf_hub 
+
+        self._load_model(ckpt=ckpt, test_hub_fail=test_hub_fail, test_local_fail=test_local_fail)      
         self.is_whisper_model = isinstance(self.base_model, WhisperModel)
-        self._load_checkpoint(self.ft_ckpt)
         self._freeze()
+        if self.finetune_method == 'lora':
+            self._configure_lora()
         self.base_model = self.base_model.to(self.device)
 
         # INITIALIZE CLASSIFIER (doesn't need to be overwritten)
@@ -113,10 +129,11 @@ class HFModel(BaseModel):
             model_name += '_ft'
         return model_name
 
-    def _load_model(self, test_hub_fail:bool=False, test_local_fail:bool=False):
+    def _load_model(self, ckpt, test_hub_fail:bool=False, test_local_fail:bool=False):
         """
         Load pretrained model from hugging face
 
+        :param ckpt:
         :param test_hub_fail: bool, for testing purposes to confirm that non-hugging face functionality works (default=False)
         :param test_local_fail: bool, for testing purposes to confirm that failing a local load raises errors (default=False)
         """
@@ -124,7 +141,7 @@ class HFModel(BaseModel):
             try: 
                 if test_hub_fail or test_local_fail: 
                     raise Exception()
-                self.base_model = AutoModel.from_pretrained(self.hf_hub, output_hidden_states=True, trust_remote_code=True)
+                self.base_model = AutoModel.from_pretrained(ckpt, output_hidden_states=True, trust_remote_code=True)
                 self.local_path = None
                 return
             except:
@@ -133,9 +150,9 @@ class HFModel(BaseModel):
                         raise Exception()
                     
                     print('Loading directly from hugging face hub failed. Downloading model locally...')
-                    self.local_path = Path(f'./{self.hf_hub}').absolute()
+                    self.local_path = Path(f'./{ckpt}').absolute()
                     self.local_path.mkdir(parents=True, exist_ok=True)
-                    snapshot_download(repo_id=self.hf_hub, local_dir=str(self.local_path))
+                    snapshot_download(repo_id=ckpt, local_dir=str(self.local_path))
                     self.base_model = AutoModel.from_pretrained(str(self.local_path), output_hidden_states=True)
                     if self.delete_download:
                         print('Deleting local copy of checkpoint')
@@ -150,12 +167,12 @@ class HFModel(BaseModel):
                     return
 
                 except: 
-                    assert self.pt_ckpt is not None, 'Downloading from hub failed, but backup pt_ckpt not available.'
+                    assert ckpt is not None, 'Downloading from hub failed, but backup pt_ckpt not available.'
                     print('Downloading from hub failed. Trying pt_ckpt.')
 
         try:
-            self.base_model = AutoModel.from_pretrained(str(self.pt_ckpt), output_hidden_states=True)
-            self.local_path = self.pt_ckpt
+            self.base_model = AutoModel.from_pretrained(str(ckpt), output_hidden_states=True)
+            self.local_path = self.ckpt
         except:
             raise ValueError('Pretrained checkpoint is incompatible with HuggingFace models. Confirm this is a path to a local hugging face checkpoint.')
         
@@ -168,30 +185,31 @@ class HFModel(BaseModel):
         #FREEZE MODEL LAYERS
         self._freeze_all()
         
-        if self.freeze_method == 'required-only': #only case where optional freeze layers should be unfrozen
-            layer_names = self._get_unfreezable_layers(self.unfreeze_prefixes+self.optional_freeze)
-        else:
-            layer_names = self._get_unfreezable_layers(self.unfreeze_prefixes)
-        
-        #return layer names that can be unfrozen #only 
-        if self.freeze_method == 'required-only' or self.freeze_method == 'optional':
-            self.unfreeze = layer_names
-        elif self.freeze_method == 'half':   
-            if self.is_whisper_model:
-                ind = int((len(layer_names)-1)/2) #calculation needs to only consider encoder.layers and not encoder.layer_norm 
-                ind += 1
+        if self.freeze_method != 'all':
+            if self.freeze_method == 'required-only': #only case where optional freeze layers should be unfrozen
+                layer_names = self._get_unfreezable_layers(self.unfreeze_prefixes+self.optional_freeze)
             else:
-                ind = int(len(layer_names)/2)
-            self.unfreeze = layer_names[-ind:]
-        elif self.freeze_method == 'exclude-last':
-            ind = -1
-            if self.is_whisper_model: #calculations needs to exclude final encoder.layer_norm (unfreeze actual final encoder.layers) 
-                ind -= 1
-            self.unfreeze = layer_names[ind:]
-        elif self.freeze_method == 'layer':
-            self.unfreeze = self.unfreeze_layers
+                layer_names = self._get_unfreezable_layers(self.unfreeze_prefixes)
+            
+            #return layer names that can be unfrozen #only 
+            if self.freeze_method == 'required-only' or self.freeze_method == 'optional':
+                self.unfreeze = layer_names
+            elif self.freeze_method == 'half':   
+                if self.is_whisper_model:
+                    ind = int((len(layer_names)-1)/2) #calculation needs to only consider encoder.layers and not encoder.layer_norm 
+                    ind += 1
+                else:
+                    ind = int(len(layer_names)/2)
+                self.unfreeze = layer_names[-ind:]
+            elif self.freeze_method == 'exclude-last':
+                ind = -1
+                if self.is_whisper_model: #calculations needs to exclude final encoder.layer_norm (unfreeze actual final encoder.layers) 
+                    ind -= 1
+                self.unfreeze = layer_names[ind:]
+            elif self.freeze_method == 'layer':
+                self.unfreeze = self.unfreeze_layers
 
-        self._unfreeze_by_layer(self.unfreeze) 
+            self._unfreeze_by_layer(self.unfreeze) 
 
     def _get_unfreezable_layers(self, unfreezable_prefixes:List[str],group_level:int=1) -> List[str]:
         """
@@ -219,6 +237,47 @@ class HFModel(BaseModel):
 
         return layer_names
     
+    def _load_peft(self, ckpt):
+        if ckpt:
+            self.base_model = PeftModel.from_pretrained(self.base_model, 
+                                                        ckpt,
+                                                        is_trainable=True)
+
+    def _configure_lora(self):
+        """
+        """
+        ## load previous
+        if self.ft_ckpt:
+            self._load_peft(self.ft_ckpt)
+        else:
+            #init_lora_weights="guassian"?
+            assert 'lora_layers' in _MODELS[self.model_type], 'Model type incompatible with LoRA (no lora_layers specified).'
+            if self.is_whisper_model:
+                exclude_modules = ['decoder']
+            else:
+                exclude_modules = None
+
+            peft_config = LoraConfig(
+                r = self.lora_rank,
+                lora_alpha = self.lora_alpha,
+                target_modules=_MODELS[self.model_type]['lora_layers'],
+                exclude_modules = exclude_modules,
+                lora_dropout=self.lora_dropout,
+                bias="none", 
+                task_type="FEATURE_EXTRACTION"
+            )
+
+            self.base_model = get_peft_model(self.base_model, peft_config)
+            print('pause')
+
+    def _configure_soft_prompting(self):
+        if self.ft_ckpt:
+            self._load_peft(self.ft_ckpt)
+        else:
+            peft_config = PromptTuningConfig(task_type='FEATURE_EXTRACTION',
+                                             prompt_tuning_init=PromptTuningInit.RANDOM)
+
+
     def forward(self, x:torch.Tensor) -> torch.Tensor:
         """
         Overwritten forward loop. 
@@ -236,6 +295,18 @@ class HFModel(BaseModel):
  
         return self.clf(pooled)
     
+    def save_base_model(self, name):
+        """
+        """
+        save_dir = self.out_dir / 'weights'
+        save_dir.mkdir(exist_ok=True)
+        save_dir = save_dir / name
+        self.base_model.save_pretrained()
+        #if self.finetune_method == 'lora':
+        #    self.base_model.save_pretrained()
+        #else:
+        #    torch.save(self.base_model.state_dict(), str(save_dir + '.pt'))
+
     def save_model_components(self, name:str=None):
         """
         Save base model and classifier separately
@@ -247,7 +318,10 @@ class HFModel(BaseModel):
         else:
             name_model = self.model_name
             name_clf = self.clf.config['clf_name']
+
+        if self.finetune_method == 'lora':
+            name_model += '_lora'
         
-        self.save_base_model(name = name_model)
-        self.clf.save_classifier(name = name_clf, self.out_dir)
+        self.save_base_model(name_model)
+        self.clf.save_classifier(name_clf, self.out_dir)
     

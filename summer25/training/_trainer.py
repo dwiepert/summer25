@@ -14,7 +14,6 @@ from torchrl.record import CSVLogger
 from tqdm import tqdm
 ##local
 from summer25.models import HFModel
-from ._validate import validation
 from ._early_stop import EarlyStopping
 
 class Trainer():

@@ -18,7 +18,7 @@ import torch
 import torch.nn as nn
 
 ##local
-from summer25.constants import _MODELS, _FREEZE, _POOL
+from summer25.constants import _MODELS, _FREEZE, _POOL, _FINETUNE
 from ._attention_pooling import SelfAttentionPooling
 
 class BaseModel(nn.Module):
@@ -28,6 +28,7 @@ class BaseModel(nn.Module):
 
     :param model_type: str, type of model being initialized
     :param out_dir: pathlike, path to directory for saving all model information
+    :param finetune_method: str, specify finetune method (default=None)
     :param freeze_method: str, freeze method for base pretrained model (default=required-only)
     :param pool_method: str, pooling method for base model output (default=mean)
     :param pt_ckpt: pathlike, path to base pretrained model checkpoint (default=None)
@@ -40,7 +41,7 @@ class BaseModel(nn.Module):
     :param seed: int, random seed
     :param kwargs: additional arguments for optional parameters (e.g., pool_dim for mean/max pooling and unfreeze_layers if freeze_method is layer, clf_ckpt)
     """
-    def __init__(self, model_type:str, out_dir:Union[Path, str], freeze_method:str = 'required-only', pool_method:str = 'mean',
+    def __init__(self, model_type:str, out_dir:Union[Path, str], finetune_method:str='none', freeze_method:str = 'required-only', pool_method:str = 'mean',
                  pt_ckpt:Optional[Union[Path, str]]=None, ft_ckpt:Optional[Union[Path,str]]=None, 
                  in_features:int=768, out_features:int=1, nlayers:int=2, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
                  activation:str='sigmoid', seed:int=42,
@@ -55,6 +56,7 @@ class BaseModel(nn.Module):
         self.out_dir.mkdir(parents=True, exist_ok=True)
         self.pt_ckpt=pt_ckpt
         self.ft_ckpt=ft_ckpt
+        self.finetune_method = finetune_method
         self.freeze_method = freeze_method
         self.pool_method = pool_method
         self.seed = seed
@@ -87,6 +89,23 @@ class BaseModel(nn.Module):
                 self.ft_ckpt = model_path[0]
                 if 'ckpt' not in self.clf_args and clf_path != []:
                     self.clf_args['ckpt'] = clf_path[0]
+
+        ### finetune method 
+        assert self.finetune_method in _FINETUNE, f'self.finetune_method is not a valid finetuning method. Choose one of {_FINETUNE}.'
+        if self.finetune_method == 'lora':
+            self.freeze_method = 'all'
+            if 'lora_rank' in kwargs:
+                self.lora_rank = kwargs.pop('lora_rank')
+            else:
+                self.lora_rank = 8
+            if 'lora_alpha' in kwargs:
+                self.lora_alpha = kwargs.pop('lora_alpha')
+            else:
+                self.lora_alpha = 16
+            if 'lora_dropout' in kwargs:
+                self.lora_dropout = kwargs.pop('lora_dropout')
+            else:
+                self.lora_dropout = 0.0
 
         assert self.freeze_method in _FREEZE, f'{self.freeze_method} is not a valid freeze method. Choose one of {_FREEZE}.'
         if self.freeze_method == 'layer':

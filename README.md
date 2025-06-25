@@ -12,31 +12,31 @@ CONFIG FILES:
 * We don't actually want to re-initialize any weights except to randomly initialize classifier weights, correct? 
 * safe for features to be public? tasks to be public?
 * which features to use for debugging
-* what are our metrics of interest, just accuracy? balanced accuracy? anything else'
-* LOSS FUNCTION - BCE 
-* key and query in LoRA. common things - figure out what the standard things are for HuBERT/WavLM/Whisper. 
 * don't pool over Padding tokens!!!!!!! in any pooling!!! how do we ensure that? what does that mean. 
-* Leland - for one of the models that he trained, he came up with a combo loss that is BCE and w/in each batch, used more finegrained ratings to get the rank of the samples in that batch correctly (mildest to most severe, can learn mild to severe). Get splits that aren't yet binarized, add transform to binarize. 
+* i'm not sure soft prompting is what we want actually, and i'm not sure how to add it effectively
 
 ## ACTIVE DEBUGGING/TASKS
-* update splits
 * normalize data?
 * TEST SUITE - ALL ASSERTIONS!
     * ~~split~~
-    * ~~hugging face models~~ (load smallest of each type and clear cache afterwards)
-    * ~~classifier~~
-    * ~~base model~~
+    * ~~hugging face models~~ TEST FINETUNE METHOD
+    * ~~classifier~~ TEST RANDOM WEIGHTS + NEWLY ADDED ARGUMENTS
+    * ~~base model~~ TEST FINETUNE METHOD
     * ~~base dataset~~
     * ~~io/transforms - Non-GCS~~
     * io/transforms - GCS test google cloud things????? mark to run only sometimes
     * ~~wav dataset~~
     * ~~HF extractor~~
-    * ~~freeze~~
+    * ~~freeze~~ 
     * ~~pad transform~~
     * ~~pool~~
     * ~~custom collate~~
     * ~~forward~~
-    * loops/metrics
+    * loops/metrics - make sure logging works correctly
+    * lora
+    * new model saving method (save_pretrain)
+    * new model loading method
+    * add learning rate scheduler with warmup?
 
 ## All TODO
 * Make seeded_split compatible with gcs + run
@@ -49,8 +49,6 @@ CONFIG FILES:
     * ~~Check local checkpoint load~~
     * ~~confirm configuration is saving properly~~
     * ~~tests~~
-* random weight initialization for classifier - check seed
-    * tests
 * ~~processor - tokenizer needed?~~
     * ~~wavlm~~
     * ~~hubert~~
@@ -62,9 +60,12 @@ CONFIG FILES:
     * ~~set module names - can then just give layers? determine which modules to freeze~~
     * ~~tests~~
 * Classification head 
-    * decide basic configurations/layer options
+    * ~~decide basic configurations/layer options~~
     * decide test features vs. all features? different groupings? what is the plan here
+    * random weight initialization for classifier - check seed
+    * tests
 * Add LoRA option
+    * tests
 * Add soft prompting option 
 * ~~Flexibly create data splits - each seed has a different split?~~ 
 * ~~Load data into a dataset~~
@@ -87,8 +88,8 @@ CONFIG FILES:
     * ~~tests (include classifier only)~~
 * CONFIRM METRICS
 * model loops
-    * training + logging options
-    * validation + logging options
+    * ~~training + logging options~~
+    * ~~validation + logging options~~
     * ~~save best model (see other code for tracking the best model) + final model?~~ 
     * testing - what testing do we want to do 
 * ~~check finetuned checkpoint loading~~
