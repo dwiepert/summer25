@@ -133,7 +133,7 @@ class Classifier(nn.Module):
         :param layer: nn.Module, model layer
         """
         if isinstance(layer, nn.Linear):
-            nn.init.kaiming_uniform(layer.weight) #EXPLAIN WHY KAIMING
+            nn.init.kaiming_uniform_(layer.weight) #EXPLAIN WHY KAIMING
 
     def _load_checkpoint(self):
         """

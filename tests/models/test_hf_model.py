@@ -114,7 +114,7 @@ def test_hfmodel_finetuned_base():
     
     del params['ft_ckpt']
 
-    # check SAVING
+    # check SAVING - NOT LORA
     m = HFModel(**params)
     m.save_model_components()
     assert (ft_ckpt/(m.model_name)).exists() and os.listdir(ft_ckpt/(m.model_name)) != [], 'Base model properly saved.'
@@ -158,9 +158,85 @@ def test_hfmodel_finetuned_base():
     if ft_ckpt.exists():
         shutil.rmtree(ft_ckpt)
 
+def test_lora():
+    params = {'out_dir':Path('./out_dir')}
 
+    #base test
+    params['model_type'] = 'wavlm-base'
+    params['finetune_method'] = 'lora'
+    ft_ckpt = params['out_dir'] / 'weights'
 
-    #sth w use feat ext?
+    m = HFModel(**params)
+    m.save_model_components()
+    assert (ft_ckpt/(m.model_name)).exists() and os.listdir(ft_ckpt/(m.model_name)) != [], 'Base model properly saved.'
+    assert (ft_ckpt/(m.clf.config['clf_name'] + '.pt')).exists(), 'Classifier properly saved.'
+
+    #from hub = True 
+    params['ft_ckpt'] = ft_ckpt/(m.model_name)
+    m = HFModel(**params)
+
+    params['from_hub'] = False 
+    with pytest.raises(AssertionError):
+        m = HFModel(**params)
+
+    params['from_hub'] = True
+    m = HFModel(test_hub_fail=True, **params) #should work no issue - DON'T DELETE
+    assert m is not None, 'Model not running properly.'
+    assert m.local_path.exists(), 'Local path with copy of checkpoint does not exist.'
+    params['pt_ckpt'] = m.local_path 
+
+    params['from_hub'] = False
+    m = HFModel(**params)
+
+    params['delete_download'] = True
+    m = HFModel(test_hub_fail=True, **params)
+    
+    shutil.rmtree(params['out_dir'])
+    if ft_ckpt.exists():
+        shutil.rmtree(ft_ckpt)
+
+def test_softprompt():
+    params = {'out_dir':Path('./out_dir')}
+
+    #base test
+    params['model_type'] = 'wavlm-base'
+    params['finetune_method'] = 'soft-prompt'
+    ft_ckpt = params['out_dir'] / 'weights'
+
+    #TEST IT WORKS LOADING FROM HUB
+    m = HFModel(**params)
+    m.save_model_components()
+    assert (ft_ckpt/(m.model_name)).exists() and os.listdir(ft_ckpt/(m.model_name)) != [], 'Base model properly saved.'
+    assert (ft_ckpt/(m.clf.config['clf_name'] + '.pt')).exists(), 'Classifier properly saved.'
+
+    #TEST IT ALSO WORKS LOADING FROM LOCAL PT CKPT
+    params['from_hub'] = True
+    m = HFModel(test_hub_fail=True, **params) #should work no issue - DON'T DELETE
+    assert m is not None, 'Model not running properly.'
+    assert m.local_path.exists(), 'Local path with copy of checkpoint does not exist.'
+    params['pt_ckpt'] = m.local_path 
+
+    params['from_hub'] = False
+    m = HFModel(**params)   
+
+    #from hub = True AND FT checkpoint already exists
+    params['ft_ckpt'] = ft_ckpt/(m.model_name)
+    m = HFModel(**params)
+
+    params['from_hub'] = False 
+    del params['pt_ckpt']
+    with pytest.raises(AssertionError):
+        m = HFModel(**params)
+
+    params['pt_ckpt'] = m.local_path 
+    m = HFModel(**params)
+
+    params['delete_download'] = True
+    m = HFModel(test_hub_fail=True, **params)
+    
+    shutil.rmtree(params['out_dir'])
+    if ft_ckpt.exists():
+        shutil.rmtree(ft_ckpt)
 
 def check_requires_grad(model):
     unfrozen = model.unfreeze

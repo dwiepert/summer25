@@ -12,10 +12,11 @@ import os
 from pathlib import Path
 import shutil
 from typing import Union, Dict, Optional, List
+import warnings
 
 ##third-party
 from huggingface_hub import snapshot_download
-from peft import LoraConfig, LoraModel, get_peft_model, PeftModel, PromptTuningConfig
+from peft import LoraConfig, get_peft_model, PeftModel, PromptTuningConfig, PromptTuningInit
 import torch
 from transformers import AutoModel, WhisperModel
 
@@ -99,31 +100,44 @@ class HFModel(BaseModel):
             self.delete_download = False
 
         self.from_hub = from_hub
+        ckpt = None
+        #CHECK IF FINETUNED CKPT
         if self.ft_ckpt:
-            self.from_hub = False
-
-        if not self.from_hub: 
-            if self.pt_ckpt:
-                assert self.pt_ckpt.exists(), 'Given pt_ckpt does not exist.'
-                assert self.pt_ckpt.is_dir(), 'Expects a directory for hugging face model checkpoints'
+            assert self.ft_ckpt.exists(), 'Given ft_ckpt does not exist.'
+            assert self.ft_ckpt.is_dir(), 'Expects a directory for hugging face model checkpoints'
+            #CHECK IF LORA FT CHECKPOINT
+            if self.finetune_method == 'lora' or self.finetune_method == 'soft-prompt':
+                #IF NOT FROM HUB, CHECK THAT PT CKPT EXISTS
+                if not self.from_hub:
+                    assert self.pt_ckpt is not None, 'Must give a pt checkpoint'
+                    assert self.pt_ckpt.exists(), 'Given pt_ckpt does not exist.'
+                    assert self.pt_ckpt.is_dir(), 'Expects a directory for hugging face model checkpoints'
+                    ckpt = self.pt_ckpt
+                #IF FROM HUB, DO NOTHING IT'S FINE
             else:
-                assert self.ft_ckpt is not None, 'Must give pt_ckpt or ft_ckpt if not loading from the hub.'
-                assert self.ft_ckpt.exists(), 'Given ft_ckpt does not exist.'
-                assert self.ft_ckpt.is_dir(), 'Expects a directory for hugging face model checkpoints'
-        
+                #IF NOT LORA 
+                ckpt = self.ft_ckpt 
+                self.from_hub = False #must give false to load directly from FT checkpoint
+        elif not self.from_hub or self.pt_ckpt:
+            # IF NOT LOADING FROM HUB AND NOT FT MODEL PATH
+            assert self.pt_ckpt is not None, 'Must give a pt checkpoint'
+            assert self.pt_ckpt.exists(), 'Given pt_ckpt does not exist.'
+            assert self.pt_ckpt.is_dir(), 'Expects a directory for hugging face model checkpoints'
+            ckpt = self.pt_ckpt         
+
         #INITIALIZE MODEL COMPONENTS
         print(f'Loading model {self.model_type} from Hugging Face Hub...')
-        ckpt = None
-        if self.ft_ckpt:
-            ckpt = self.ft_ckpt
-        elif self.pt_ckpt:
-            ckpt = self.pt_ckpt
 
-        self._load_model(ckpt=ckpt, test_hub_fail=test_hub_fail, test_local_fail=test_local_fail)      
+        self._load_model(ckpt=ckpt, test_hub_fail=test_hub_fail, test_local_fail=test_local_fail) 
+        print('Model parameters pre-freezing:')
+        trainable, allp = self._trainable_parameters(print_output=True)
+
         self.is_whisper_model = isinstance(self.base_model, WhisperModel)
         self._freeze()
         if self.finetune_method == 'lora':
             self._configure_lora()
+        elif self.finetune_method == 'soft-prompt':
+            self._configure_softprompt()
         self.base_model = self.base_model.to(self.device)
 
         # INITIALIZE CLASSIFIER (doesn't need to be overwritten)
@@ -134,7 +148,7 @@ class HFModel(BaseModel):
             self.base_config['pt_ckpt'] = str(self.local_path)
 
         self.model_name = self.get_model_name()
-        self.config = {'model_name':self.model_name,'model_type':self.model_type,'seed':self.seed}
+        self.config = {'model_name':self.model_name,'model_type':self.model_type,'seed':self.seed, "finetune_method":self.finetune_method}
         
         self.config.update(self.base_config)
         self.config.update(self.clf.get_config())
@@ -201,6 +215,7 @@ class HFModel(BaseModel):
         
         if not isinstance(self.base_model, _MODELS[self.model_type]['model_instance']):
             raise ValueError('Loaded model is not the expected model type. Please check that your checkpoint points to the correct model type.')
+        #self.base_model.print_trainable_parameters()
         return
                    
     def _freeze(self):
@@ -237,6 +252,12 @@ class HFModel(BaseModel):
 
             self._unfreeze_by_layer(self.unfreeze) 
 
+        print('Model parameters post-freezing:')
+        trainable, allp = self._trainable_parameters(print_output=True)
+        
+        if self.freeze_method == 'all':
+            assert trainable == 0, 'Freezing did not work.'
+
     def _get_unfreezable_layers(self, unfreezable_prefixes:List[str],group_level:int=1) -> List[str]:
         """
         Get layer names that can be unfrozen
@@ -264,14 +285,49 @@ class HFModel(BaseModel):
         return layer_names
     
     def _load_peft(self, ckpt):
+        if self.finetune_method == 'soft-prompt':
+            is_trainable = False
+            warnings.warn('Finetuned soft prompting models can not be loaded and further trained. Note that only classifier head will train if fitting a model.')
+        else:
+            is_trainable = True
+
         if ckpt:
             self.base_model = PeftModel.from_pretrained(self.base_model, 
                                                         ckpt,
-                                                        is_trainable=True)
+                                                        is_trainable=is_trainable)
+
+    def _trainable_parameters(self, print_output:bool=False):
+        allp = sum(p.numel() for p in self.base_model.parameters())
+        trainable = sum(p.numel() for p in self.base_model.parameters() if p.requires_grad)
+        if print_output:
+            print(f'trainable params: {trainable} || all params: {allp} || trainable%: {trainable/allp}')
+        return trainable, allp
+    
+    def _configure_softprompt(self):
+        """
+        """
+        print('Configuring soft prompting ...')
+        if self.ft_ckpt:
+            self._load_peft(self.ft_ckpt)
+        else:
+            if self.from_hub:
+                ckpt = self.hf_hub
+            else:
+                ckpt = self.pt_ckpt
+            peft_config = PromptTuningConfig(
+                task_type="FEATURE_EXTRACTION", #This type indicates the model will generate text.
+                prompt_tuning_init=PromptTuningInit.RANDOM,  #The added virtual tokens are initializad with random numbers
+                num_virtual_tokens=self.virtual_tokens, #Number of virtual tokens to be added and trained.
+                tokenizer_name_or_path=ckpt #The pre-trained model.
+            )
+
+            self.base_model = get_peft_model(self.base_model, peft_config)
+        self.base_model.print_trainable_parameters()
 
     def _configure_lora(self):
         """
         """
+        print('Configuring LoRA ...')
         ## load previous
         if self.ft_ckpt:
             self._load_peft(self.ft_ckpt)
@@ -279,7 +335,10 @@ class HFModel(BaseModel):
             #init_lora_weights="guassian"?
             assert 'lora_layers' in _MODELS[self.model_type], 'Model type incompatible with LoRA (no lora_layers specified).'
             if self.is_whisper_model:
-                exclude_modules = ['decoder']
+                exclude_modules = []
+                for id, (name, param) in enumerate(self.base_model.named_modules()):
+                    if 'decoder' in name:
+                        exclude_modules.append(name)
             else:
                 exclude_modules = None
 
@@ -294,15 +353,7 @@ class HFModel(BaseModel):
             )
 
             self.base_model = get_peft_model(self.base_model, peft_config)
-            print('pause')
-
-    def _configure_soft_prompting(self):
-        if self.ft_ckpt:
-            self._load_peft(self.ft_ckpt)
-        else:
-            peft_config = PromptTuningConfig(task_type='FEATURE_EXTRACTION',
-                                             prompt_tuning_init=PromptTuningInit.RANDOM)
-
+        self.base_model.print_trainable_parameters()
 
     def forward(self, x:torch.Tensor) -> torch.Tensor:
         """
@@ -328,11 +379,8 @@ class HFModel(BaseModel):
         if not isinstance(save_dir, Path): save_dir = Path(save_dir)
         save_dir.mkdir(exist_ok=True)
         save_dir = save_dir / name
+        if save_dir.exists(): print('Overwriting existing base model file!')
         self.base_model.save_pretrained(save_dir)
-        #if self.finetune_method == 'lora':
-        #    self.base_model.save_pretrained()
-        #else:
-        #    torch.save(self.base_model.state_dict(), str(save_dir + '.pt'))
 
     def save_model_components(self, name:str=None):
         """

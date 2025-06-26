@@ -103,6 +103,12 @@ class BaseModel(nn.Module):
                 self.lora_dropout = kwargs.pop('lora_dropout')
             else:
                 self.lora_dropout = 0.0
+        elif self.finetune_method == 'soft-prompt':
+            self.freeze_method = 'all'
+            if 'virtual_tokens' in kwargs:
+                self.virtual_tokens = kwargs.pop('virtual_tokens')
+            else:
+                self.virtual_tokens = 4
 
         assert self.freeze_method in _FREEZE, f'{self.freeze_method} is not a valid freeze method. Choose one of {_FREEZE}.'
         if self.freeze_method == 'layer':

@@ -1,4 +1,4 @@
-__version__ = '0.2.11'
+__version__ = '0.3.0'
 
 #change log:
 # 0.0.0: initial commit
@@ -17,3 +17,4 @@ __version__ = '0.2.11'
 # 0.2.10: refactor for training, loss option added
 # 0.2.11: draft of LoRA, classification head
 # 0.2.12: updated saving/loading for HF models (tested)
+# 0.3.0: soft prompting/LoRA implemented and tested

@@ -161,10 +161,14 @@ def zip_model(args:argparse.Namespace) -> dict:
     :param args: argparse Namespace object
     :return model_args: dict of model arguments
     """
+    to_add = f'e{args.epochs}_lr{args.learning_rate}_{args.optim_type}_{args.scheduler_type}'
+    if args.early_stop:
+        to_add += f'_p{args.patience}'
+    args.output_dir = args.output_dir / to_add
     if args.hf_model:
         model_args = {'model_type':args.model_type,'out_dir':args.output_dir,
                     'freeze_method':args.freeze_method, 'pool_method':args.pool_method,
-                    'seed':args.seed}
+                    'seed':args.seed, 'finetune_method': args.finetune_method}
     else:
         raise NotImplementedError('Only compatible with huggingface models currently.')
     
@@ -240,6 +244,10 @@ def zip_finetune(args):
 
     if args.end_lr:
         finetune_args['end_lr'] = args.end_lr
+    if args.target_features:
+        finetune_args['target_features'] = args.target_features
+    else:
+        finetune_args['target_features'] = _FEATURES
 
     return finetune_args
 

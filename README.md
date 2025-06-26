@@ -11,30 +11,18 @@ CONFIG FILES:
 * Extra layer norm in whisper????
 * We don't actually want to re-initialize any weights except to randomly initialize classifier weights, correct? 
 * safe for features to be public? tasks to be public?
-* which features to use for debugging
+* which features to use for debugging decide test features vs. all features? different groupings? what is the plan here
 * don't pool over Padding tokens!!!!!!! in any pooling!!! how do we ensure that? what does that mean. 
 * i'm not sure soft prompting is what we want actually, and i'm not sure how to add it effectively
 
 ## ACTIVE DEBUGGING/TASKS
+* print extra clf params
 * normalize data?
-* TEST SUITE - ALL ASSERTIONS!
-    * ~~split~~
-    * ~~hugging face models~~ 
-    * ~~classifier~~
-    * ~~base model~~ 
-    * ~~base dataset~~
-    * ~~io/transforms - Non-GCS~~
+* add learning rate scheduler with warmup? more interesting learning rate options
+* TEST SUITE
     * io/transforms - GCS test google cloud things????? mark to run only sometimes
-    * ~~wav dataset~~
-    * ~~HF extractor~~
-    * ~~freeze~~ 
-    * ~~pad transform~~
-    * ~~pool~~
-    * ~~custom collate~~
-    * ~~forward~~
     * loops/metrics - make sure logging works correctly
-    * lora
-    * add learning rate scheduler with warmup?
+    * finetuning methods in trainer
 
 ## All TODO
 * Make seeded_split compatible with gcs + run
@@ -57,14 +45,14 @@ CONFIG FILES:
     * ~~whisper~~
     * ~~set module names - can then just give layers? determine which modules to freeze~~
     * ~~tests~~
-* Classification head 
+* ~~Classification head~~
     * ~~decide basic configurations/layer options~~
-    * decide test features vs. all features? different groupings? what is the plan here
     * ~~random weight initialization for classifier - check seed~~
     * ~~tests~~
-* Add LoRA option
-    * tests
-* Add soft prompting option 
+* ~~Add LoRA option~~
+    * ~~tests~~
+* ~~Add soft prompting option~~
+    * ~~test~~
 * ~~Flexibly create data splits - each seed has a different split?~~ 
 * ~~Load data into a dataset~~
     * ~~transform to 16000 if not done~~
@@ -100,3 +88,4 @@ CONFIG FILES:
     * outputs
 
 
+check soft prompt/lora loading with from hub = true and from hub = False
