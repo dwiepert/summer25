@@ -15,16 +15,18 @@ class EarlyStopping:
     Early stopping class
 
     :param patience: Number of epochs to wait before stopping if no improvement. (default = 5)
-    :param delta: Minimum change in the monitored quantity to qualify as an improvement. (default = 0)
+    :param delta: float, Minimum change in the monitored quantity to qualify as an improvement. (default = 0)
+    :param test: bool, DEBUGGING ONLY (default=False)
     """
-    def __init__(self, patience:int=5, delta:int=0):
+    def __init__(self, patience:int=5, delta:float=0.0, test:bool=False):
         self.patience = patience
         self.delta = delta
         self.best_score = None
         self.best_epoch = 0
         self.counter = 0
         self.best_model = None
-        self.early_stop
+        self.early_stop = False 
+        self.test = test
 
     def __call__(self, val_loss:float, model:Union[HFModel], epoch: int):
         """
@@ -48,6 +50,9 @@ class EarlyStopping:
             self.best_model = model
             self.best_epoch = epoch
             self.counter = 0
+        
+        if self.test:
+            self.early_stop=True
     
     def get_best_model(self) -> tuple[Union[HFModel],int,int]:
         """

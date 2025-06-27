@@ -15,7 +15,6 @@ import pandas as pd
 import torch
 import torchvision
 
-
 #local
 from summer25.constants import _MODELS
 from summer25.transforms import *
@@ -23,7 +22,7 @@ from ._base_dataset import BaseDataset
      
 class WavDataset(BaseDataset):
     def __init__(self, data:pd.DataFrame, prefix:str, model_type:str, uid_col:str,
-                 config:dict, target_labels:str, bucket=None, feature_extractor=None, 
+                 config:dict, target_labels:str, rank_prefix:str=None, bucket=None, feature_extractor=None, 
                  transforms=None, extension:str='wav', structured:bool=False):
         '''
         Dataset that manages audio recordings. 
@@ -34,6 +33,7 @@ class WavDataset(BaseDataset):
         :param uid_col: str, specify which column is the uid col
         :param config: dictionary with transform parameters (ones not specified in _MODELS)
         :param target_labels: str list of targets to extract from data. Can be none only for 'asr'.
+        :param rank_prefix: str, prefix for columns with rank target
         :param bucket: gcs bucket (default=None)
         :param feature_extractor: initialized feature extractor (default=Nonse)
         :param transforms: torchvision transforms function to run on data (default=None)
@@ -49,7 +49,11 @@ class WavDataset(BaseDataset):
         self.extension = extension
         self.structured = structured
         self.prefix = prefix
-
+        self.rank_prefix = rank_prefix
+        if self.rank_prefix:
+            #IF USING RANKS FOR TARGETS
+            self.target_labels = [self.rank_prefix + t for t in self.target_labels if self.rank_prefix not in t]
+        
         self.use_librosa = self._check_existence(self.config,'use_librosa')
         if self.use_librosa is None:
             self.use_librosa = False
@@ -131,7 +135,11 @@ class WavDataset(BaseDataset):
         """
         self.feature_extractor = feature_extractor
     
-    def audiomentation_options(self):
+    def audiomentation_options(self) -> List[str]:
+        """
+        Get a list of audiomentation options for helping purposes
+        :return: list of augmentation possibilities
+        """
         return list(self.augmentations.keys())
         
     def _get_audiomentation_transforms(self):

@@ -105,6 +105,9 @@ class HFExtractor(BaseExtractor):
             raise ValueError('Pretrained checkpoint is incompatible with HuggingFace models. Confirm this is a path to a local hugging face checkpoint.')
     
     def _set_kwargs(self):
+        """
+        Set kwargs for feature extractor
+        """
         self.feature_extractor_kwargs = {}
         if isinstance(self.feature_extractor, WhisperFeatureExtractor):
             self.features_key = 'input_features'

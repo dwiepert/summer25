@@ -129,8 +129,8 @@ class HFModel(BaseModel):
         print(f'Loading model {self.model_type} from Hugging Face Hub...')
 
         self._load_model(ckpt=ckpt, test_hub_fail=test_hub_fail, test_local_fail=test_local_fail) 
-        print('Model parameters pre-freezing:')
-        trainable, allp = self._trainable_parameters(print_output=True)
+        #print('Model parameters pre-freezing:')
+        #trainable, allp = self._trainable_parameters(print_output=True)
 
         self.is_whisper_model = isinstance(self.base_model, WhisperModel)
         self._freeze()
@@ -215,7 +215,6 @@ class HFModel(BaseModel):
         
         if not isinstance(self.base_model, _MODELS[self.model_type]['model_instance']):
             raise ValueError('Loaded model is not the expected model type. Please check that your checkpoint points to the correct model type.')
-        #self.base_model.print_trainable_parameters()
         return
                    
     def _freeze(self):
@@ -252,8 +251,8 @@ class HFModel(BaseModel):
 
             self._unfreeze_by_layer(self.unfreeze) 
 
-        print('Model parameters post-freezing:')
-        trainable, allp = self._trainable_parameters(print_output=True)
+        #print('Model parameters post-freezing:')
+        trainable, allp = self._trainable_parameters(print_output=False)
         
         if self.freeze_method == 'all':
             assert trainable == 0, 'Freezing did not work.'
@@ -297,6 +296,13 @@ class HFModel(BaseModel):
                                                         is_trainable=is_trainable)
 
     def _trainable_parameters(self, print_output:bool=False):
+        """
+        Calculate number of parameters, trainable or frozen
+
+        :param print_output: bool, specify whether to print parameter counts
+        :return trainable: int, number of trainable parameters
+        :return allp: int, total number of parameters
+        """
         allp = sum(p.numel() for p in self.base_model.parameters())
         trainable = sum(p.numel() for p in self.base_model.parameters() if p.requires_grad)
         if print_output:
@@ -305,6 +311,8 @@ class HFModel(BaseModel):
     
     def _configure_softprompt(self):
         """
+        Configure soft prompting finetuning
+        Creates soft prompting config and wraps the model using peft
         """
         print('Configuring soft prompting ...')
         if self.ft_ckpt:
@@ -322,10 +330,13 @@ class HFModel(BaseModel):
             )
 
             self.base_model = get_peft_model(self.base_model, peft_config)
+        print('Using soft prompting: ')
         self.base_model.print_trainable_parameters()
 
     def _configure_lora(self):
         """
+        Configure low rank adaptation finetuning
+        Creates lora config and wraps the model using peft
         """
         print('Configuring LoRA ...')
         ## load previous
@@ -353,6 +364,7 @@ class HFModel(BaseModel):
             )
 
             self.base_model = get_peft_model(self.base_model, peft_config)
+        print('Using LoRA: ')
         self.base_model.print_trainable_parameters()
 
     def forward(self, x:torch.Tensor) -> torch.Tensor:
@@ -372,9 +384,11 @@ class HFModel(BaseModel):
  
         return self.clf(pooled)
     
-    def save_base_model(self, name, save_dir):
+    def save_base_model(self, name:str, save_dir:Union[str,Path]):
         """
-        TODO
+        Save base model with hugging face specific method
+        :param name: str, name to save to
+        :param save_dir: pathlike, directory to save to
         """
         if not isinstance(save_dir, Path): save_dir = Path(save_dir)
         save_dir.mkdir(exist_ok=True)
@@ -382,18 +396,17 @@ class HFModel(BaseModel):
         if save_dir.exists(): print('Overwriting existing base model file!')
         self.base_model.save_pretrained(save_dir)
 
-    def save_model_components(self, name:str=None):
+    def save_model_components(self, name_prefix:str=None):
         """
         Save base model and classifier separately
-        :param name: str, base name for model and classifier (default = None)
+        :param name_prefix: str, name prefix for model and classifier (default = None)
         """
-        if name != None:
-            name_model = name + '_model'
-            name_clf = name + '_clf'
-        else:
-            name_model = self.model_name
-            name_clf = self.clf.config['clf_name']
-        
+        name_model = self.model_name
+        name_clf = self.clf.config['clf_name']
+        if name_prefix:
+            name_model = name_prefix + name_model
+            name_clf = name_prefix + name_clf
+       
         out_path = self.out_dir / 'weights'
         out_path.mkdir(exist_ok=True)
         self.save_base_model(name_model, out_path)

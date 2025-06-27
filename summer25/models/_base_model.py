@@ -40,6 +40,7 @@ class BaseModel(nn.Module):
     :param bottleneck: int, optional bottleneck parameter (default=None)
     :param layernorm: bool, true for adding layer norm (default=False)
     :param dropout: float, dropout level (default = 0.0)
+    :param binary:bool, specify whether output is making binary decisions (default=True)
     :param activation: str, activation function to use for classification head (default=relu)
     :param seed: int, random seed (default = 42)
     :param device: torch device (default = cuda)
@@ -47,7 +48,7 @@ class BaseModel(nn.Module):
     """
     def __init__(self, model_type:str, out_dir:Union[Path, str], finetune_method:str='none', freeze_method:str = 'required-only', pool_method:str = 'mean',
                  pt_ckpt:Optional[Union[Path, str]]=None, ft_ckpt:Optional[Union[Path,str]]=None, 
-                 in_features:int=768, out_features:int=1, nlayers:int=2, bottleneck:int=None, layernorm:bool=False, dropout:float=0.0,
+                 in_features:int=768, out_features:int=1, nlayers:int=2, bottleneck:int=None, layernorm:bool=False, dropout:float=0.0, binary:bool=True,
                  activation:str='relu', seed:int=42, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
                  **kwargs):
         
@@ -70,7 +71,7 @@ class BaseModel(nn.Module):
         torch.manual_seed(self.seed)
 
         self.clf_args = {'in_features':in_features, 'out_features':out_features, 'nlayers':nlayers,
-                        'activation':activation, 'bottleneck':bottleneck, 'layernorm':layernorm, 
+                        'activation':activation, 'bottleneck':bottleneck, 'layernorm':layernorm, 'binary':binary,
                         'dropout':dropout, 'seed': self.seed}
         if 'clf_ckpt' in kwargs:
             self.clf_args['ckpt'] = kwargs.pop('clf_ckpt')

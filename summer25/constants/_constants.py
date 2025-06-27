@@ -174,6 +174,7 @@ _POOL = ['mean', 'max', 'attention']
 _FREEZE = ['all', 'half', 'exclude-last', 'layer', 'optional', 'required-only']
 _FINETUNE = ['lora', 'soft-prompt', 'none']
 _TASKS = ['sentence_repetition', 'word_repetition']
+_LOSS = ['bce', 'rank']
 
 _FEATURES = ['abn_pitch_or_loudness_variability', 'abn_resonance',
        'accelerating_rate', 'audible_false_starts_or_restarts',

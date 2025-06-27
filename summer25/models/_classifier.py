@@ -27,12 +27,13 @@ class Classifier(nn.Module):
     :param layernorm: bool, true for adding layer norm (default=False)
     :param dropout: float, dropout level (default = 0.0)
     :param activation: str, activation function to use (default=relu)
+    :param binary:bool, specify whether output is making binary decisions (default=True)
     :param ckpt: pathlike, optional path to trained classifier (default=none)
     :param seed: int, random seed (default = 42)
 
     """
     def __init__(self, in_features:int, out_features:int, nlayers:int=2, bottleneck:int=None, layernorm:bool=False, 
-                 dropout:float=0.0, activation:str='relu', ckpt:Optional[Union[str,Path]]=None, seed:int=42):
+                 dropout:float=0.0, activation:str='relu', binary:bool=True, ckpt:Optional[Union[str,Path]]=None, seed:int=42):
         
         super(Classifier, self).__init__()
         #INITIALIZE VARIABLES
@@ -45,6 +46,7 @@ class Classifier(nn.Module):
             self.bottleneck = self.in_feats 
 
         self.activation = activation 
+        self.binary = binary
         self.layernorm = layernorm 
         self.dropout = dropout
         self.ckpt = ckpt
@@ -95,18 +97,18 @@ class Classifier(nn.Module):
         else:
             raise NotImplementedError(f'Classifier parameters not yet implemented for given inputs.')
         
-    def _get_activation_layer(self) -> nn.Module:
+    def _get_activation_layer(self, activation) -> nn.Module:
         """
         Create an activation layer based on specified activation function
 
         :return: nn.Module activation layer
         """
-        if self.activation == 'sigmoid':
+        if activation == 'sigmoid':
             return nn.Sigmoid()
-        elif self.activation == 'relu':
+        elif activation == 'relu':
             return nn.ReLU()
         else:
-            raise NotImplementedError(f'{self.activation} not yet implemented.')
+            raise NotImplementedError(f'{activation} not yet implemented.')
 
     def _build_classifier(self) -> Dict[str, nn.Module]:
         """
@@ -121,9 +123,11 @@ class Classifier(nn.Module):
                 if self.layernorm:
                     model_dict[f'layernorm{i}'] = nn.LayerNorm(self.params['out_feats'][i])
                 
-                model_dict[f'{self.activation}{i}'] = self._get_activation_layer()
+                model_dict[f'{self.activation}{i}'] = self._get_activation_layer(self.activation)
                 if self.dropout != 0.0:
                     model_dict[f'dropout{i}'] = nn.Dropout(self.dropout)
+        if self.binary:
+            model_dict['sigmoid'] = self._get_activation_layer('sigmoid')
         return model_dict 
     
     def _init_weights(self, layer:nn.Module):

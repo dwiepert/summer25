@@ -90,7 +90,8 @@ def test_hfmodel_pretrained_base():
     shutil.rmtree(params['out_dir'])
     if pt_ckpt.exists():
         shutil.rmtree(pt_ckpt)
-    
+
+@pytest.mark.hf    
 def test_hfmodel_finetuned_base():
     params = {'out_dir':Path('./out_dir')}
 
@@ -158,6 +159,7 @@ def test_hfmodel_finetuned_base():
     if ft_ckpt.exists():
         shutil.rmtree(ft_ckpt)
 
+@pytest.mark.hf
 def test_lora():
     params = {'out_dir':Path('./out_dir')}
 
@@ -195,6 +197,7 @@ def test_lora():
     if ft_ckpt.exists():
         shutil.rmtree(ft_ckpt)
 
+@pytest.mark.hf
 def test_softprompt():
     params = {'out_dir':Path('./out_dir')}
 

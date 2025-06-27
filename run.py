@@ -17,7 +17,7 @@ from torch.utils.data import DataLoader
 ##local
 from summer25.models import HFModel, HFExtractor
 from summer25.dataset import seeded_split, WavDataset, collate_features, collate_wrapper
-from summer25.constants import _MODELS,_FREEZE, _FEATURES, _FINETUNE
+from summer25.constants import _MODELS,_FREEZE, _FEATURES, _FINETUNE, _LOSS
 from summer25.training import Trainer
 
 _REQUIRED_MODEL_ARGS =['model_type']
@@ -54,6 +54,8 @@ def check_load(args:dict) -> dict:
     assert args['audio_dir'].exists(), 'Given audio directory does not exist.'
     args['split_dir'].mkdir(parents=True, exist_ok=True)
     args['output_dir'].mkdir(parents=True, exist_ok=True)
+
+    assert args['loss_type'] in _LOSS, 'Invalid loss type'
     
     return args
 
@@ -162,8 +164,7 @@ def zip_model(args:argparse.Namespace) -> dict:
     :return model_args: dict of model arguments
     """
     to_add = f'e{args.epochs}_lr{args.learning_rate}_{args.optim_type}_{args.scheduler_type}'
-    if args.early_stop:
-        to_add += f'_p{args.patience}'
+
     args.output_dir = args.output_dir / to_add
     if args.hf_model:
         model_args = {'model_type':args.model_type,'out_dir':args.output_dir,
@@ -172,6 +173,10 @@ def zip_model(args:argparse.Namespace) -> dict:
     else:
         raise NotImplementedError('Only compatible with huggingface models currently.')
     
+    if args.loss_type == 'rank':
+        model_args['binary'] = False
+    else:
+        model_args['binary'] = True
     if args.delete_download:
         model_args['delete_download'] = args.delete_download
     if args.pt_ckpt:
@@ -212,6 +217,9 @@ def zip_dataset(args:argparse.Namespace) -> dict:
     dataset_args = {'prefix': args.audio_dir, 'model_type': args.model_type, 'uid_col':args.audio_key, 'target_labels': args.target_features,
                     'bucket': None, 'extension': args.audio_ext, 'structured': args.structured}
     
+    if args.loss_type == 'rank':
+        dataset_args['rank_prefix'] = args.rank_prefix
+
     if args.transforms:
         transforms = args.transforms
     else:
@@ -240,8 +248,15 @@ def zip_finetune(args):
     """
     finetune_args = {'optim_type': args.optim_type, 'learning_rate':args.learning_rate, 'loss_type':args.loss_type,
                      'scheduler_type': args.scheduler_type, 'epochs': args.epochs, 'early_stop':args.early_stop,
-                     'patience': args.patience, 'logging': args.logging}
+                     'patience': args.patience}
+    
+    if args.delta:
+        finetune_args['delta'] = args.delta
 
+    if args.loss_type == 'rank':
+        finetune_args['rating_threshold'] = args.rating_threshold
+        finetune_args['margin'] = args.margin
+        finetune_args['bce_weight'] = args.bce_weight
     if args.end_lr:
         finetune_args['end_lr'] = args.end_lr
     if args.target_features:
@@ -311,12 +326,18 @@ if __name__ == "__main__":
     train_args.add_argument('--optim_type', type=str, default='adamw', help='Specify type of optimizer to use. (default = adamw)')
     train_args.add_argument('--learning_rate', type=float, default=1e-3, help='Specify learning rate (default=1e-3)')
     train_args.add_argument('--loss_type', type=str, default='bce', help='Specify type of optimizer to use. (default = bce)')
+    train_args.add_argument('--rank_prefix', type=str, default='rank_', help='Specify prefix for columns with rank targets if using rank loss.')
+    train_args.add_argument('--rating_threshold', type=float, help='Specify rating threshold for rank loss.')
+    train_args.add_argument('--margin', type=float,default=1.0, help='Specify margin for rank loss.')
+    train_args.add_argument('--bce_weight', type=float,default=0.5, help='Specify weighting of BCE for rank loss.')
     train_args.add_argument('--scheduler_type', type=str, help='Specify type of scheduler to use.')
     train_args.add_argument('--end_lr', type=str, help='Specify end learning rate if using scheduelr')
     train_args.add_argument('--early_stop', action='store_true', help='Specify whether to use early stopping.')
     train_args.add_argument('--patience', type=int, default=5, help='Specify patience for early stopping. (default = 5)')
-    train_args.add_argument('--logging', action='store_true', help='Specify whether to save logs.')
+    train_args.add_argument('--delta', type=float, help='Specify delta for early stopping.')
     train_args.add_argument('--epochs', type=int, default=1, help='Specify epochs for finetuning. (default = 1)')
+    train_args.add_argument('--eval_only', action='store_true', help='Specify whether to only run evaluation.')
+    train_args.add_argument('--debug', action='store_true')
     
     args = parser.parse_args()
     args_dict = vars(args)
@@ -342,10 +363,15 @@ if __name__ == "__main__":
     #DATA SPLIT
     train_df, val_df, test_df = seeded_split(**sa)
 
-    #DATASET
+    if args.debug:
+        train_df = train_df[:10]
+        val_df = val_df[:10]
+        test_df = test_df[:10]
+        
     train_dataset = WavDataset(data=train_df,feature_extractor=feature_extractor, **da)
     test_dataset = WavDataset(data=test_df,feature_extractor=feature_extractor,**da)
     val_dataset = WavDataset(data=val_df, feature_extractor=feature_extractor,**da)
+
     
     #using custom collate
     if model.is_whisper_model:

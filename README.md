@@ -13,16 +13,24 @@ CONFIG FILES:
 * safe for features to be public? tasks to be public?
 * which features to use for debugging decide test features vs. all features? different groupings? what is the plan here
 * don't pool over Padding tokens!!!!!!! in any pooling!!! how do we ensure that? what does that mean. 
-* i'm not sure soft prompting is what we want actually, and i'm not sure how to add it effectively
 
 ## ACTIVE DEBUGGING/TASKS
-* print extra clf params
 * normalize data?
 * add learning rate scheduler with warmup? more interesting learning rate options
+* avg loss?
+* metrics
 * TEST SUITE
     * io/transforms - GCS test google cloud things????? mark to run only sometimes
     * loops/metrics - make sure logging works correctly
     * finetuning methods in trainer
+    * test giving no rating threshold (assertion error)
+    * test scheduler - determine good values for it
+    * test early stop (add param for optional delta) (force early stopping?)
+    * test giving non-existent loss (NotImplementedError)
+    * test ranked classification loss
+    * test new classifier params
+    * try to load hubert checkpoint to wavlm model
+* determine what classifier build to use with Rankings? It's not going to work the same as BCE loss...not entirely sure how to predict rank - multiclass/multicategory? ask leland what he did
 
 ## All TODO
 * Make seeded_split compatible with gcs + run
@@ -72,7 +80,6 @@ CONFIG FILES:
     * ~~hubert~~
     * ~~whisper~~
     * ~~tests (include classifier only)~~
-* CONFIRM METRICS
 * model loops
     * ~~training + logging options~~
     * ~~validation + logging options~~
@@ -87,5 +94,3 @@ CONFIG FILES:
     * any kind of attention heads during pooling?
     * outputs
 
-
-check soft prompt/lora loading with from hub = true and from hub = False

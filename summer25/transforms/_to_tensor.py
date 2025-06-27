@@ -20,5 +20,5 @@ class ToTensor(object):
         
         tensample = sample.copy()
         tensample['targets'] = torch.from_numpy(tensample['targets']).type(torch.float32)
-        
+
         return tensample

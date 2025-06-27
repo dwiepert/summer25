@@ -1,15 +1,23 @@
 """
-TODO
+Custom ranked classification loss
 
 Author(s): Leland Barnard
 Last modified: 06/2025
 """
+#IMPORTS
+##third-party
 import torch
 import torch.nn as nn
  
 class RankedClassificationLoss(nn.Module):
- 
-    def __init__(self, rating_threshold, margin=1.0, bce_weight=0.5):
+    """
+    Ranked classification loss class
+
+    :param rating_threshold: float, value for determining whether a rating (rank) is 1 or 0
+    :param margin: float, margin value for nn.MarginRankingLoss (default = 1.0)
+    :param bce_weight: float, weight to apply to BCE loss (default = 0.5)
+    """
+    def __init__(self, rating_threshold:float, margin:float=1.0, bce_weight:float=0.5):
         super().__init__()
         self.rating_threshold = rating_threshold
         self.margin = margin
@@ -17,12 +25,16 @@ class RankedClassificationLoss(nn.Module):
         self.bce_criterion = nn.BCEWithLogitsLoss()
         self.mr_criterion = nn.MarginRankingLoss(margin=self.margin)
        
- 
-    def forward(self, logits, ratings):
-       
+    def forward(self, logits: torch.Tensor, ratings:torch.Tensor) -> torch.Tensor:
+        """
+        Calculate loss 
+
+        :param logits: torch.Tensor, model prediction (N, # classes)
+        :param ratings: torch.Tensor, target ratings (N, # classes)
+        :return: torch.Tensor, calculated loss TODO: is this actually a torch tensor
+        """
         # Convert ratings to binary labels for BCE loss
         binary_labels = (ratings >= self.rating_threshold).float()
- 
         mr_loss_entries = []
         # Iterate over each target to calculate pairwise margin ranking loss
         for c in range(ratings.shape[1]):
