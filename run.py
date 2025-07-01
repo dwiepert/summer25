@@ -186,6 +186,16 @@ def zip_model(args:argparse.Namespace) -> dict:
     if args.unfreeze_layers:
         model_args['unfreeze_layers'] = args.unfreeze_layers
 
+    if args.lora_rank:
+        model_args['lora_rank'] = args.lora_rank
+    if args.lora_alpha:
+        model_args['lora_alpha'] = args.lora_alpha
+    if args.lora_dropout:
+        model_args['lora_dropout'] = args.lora_dropout
+    
+    if args.virtual_tokens:
+        model_args['virtual_tokens'] = args.virtual_tokens
+
     return model_args
 
 def zip_splits(args:argparse.Namespace) -> dict:
@@ -304,9 +314,10 @@ if __name__ == "__main__":
     model_args.add_argument('--delete_download', action='store_true', help='Specify local pretrained model path. Only required for hugging face models if issues loading from hub.')
     model_args.add_argument('--seed', type=int, help='Specify random seed for model initialization.')
     model_args.add_argument('--finetune_method', type=str, choices=_FINETUNE, help='Specify what finetuning method to use')
-    model_args.add_argument('--lora_rank', type=int, help='If finetuning with lora, give rank')
-    model_args.add_argument('--lora_alpha', type=int, help='If finetuning with lora, give alpha')
-    model_args.add_argument('--lora_dropout', type=float, help='If finetuning with lora, give dropout')
+    model_args.add_argument('--lora_rank', type=int, help='If finetuning with lora, optionally give rank (default = 8)')
+    model_args.add_argument('--lora_alpha', type=int, help='If finetuning with lora, optionally give alpha (default = 16)')
+    model_args.add_argument('--lora_dropout', type=float, help='If finetuning with lora, optionally give dropout (default = 0.0)')
+    model_args.add_argument('--virtual_tokens', type=int, help='If finetuning with soft prompting, optionally give number of tokens (default = 4)')
     model_args.add_argument('--freeze_method', type=str, choices=_FREEZE, help='Specify what freeze method to use.')
     model_args.add_argument('--unfreeze_layers', nargs="+", help="If freeze_method is `layer`, use this to specify which layers to freeze")
     model_args.add_argument('--ft_ckpt', type=Path, help='Specify finetuned model checkpoint')

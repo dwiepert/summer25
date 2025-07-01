@@ -2,7 +2,7 @@
 Early stopping
 
 Source: https://www.geeksforgeeks.org/how-to-handle-overfitting-in-pytorch-models-using-early-stopping/
-Last modified: 02/10/2025
+Last modified: 07/2025
 """
 # IMPORTS
 ## built-in
@@ -54,9 +54,10 @@ class EarlyStopping:
         if self.test:
             self.early_stop=True
     
-    def get_best_model(self) -> tuple[Union[HFModel],int,int]:
+    def get_best_model(self) -> tuple[Union[HFModel],int,float]:
         """
         :return self.best_model: best model during training
         :return self.best_epoch: best epoch
+        :return self.best_score: best loss value
         """
         return self.best_model, self.best_epoch, self.best_score

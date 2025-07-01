@@ -172,10 +172,12 @@ def test_lora():
     m.save_model_components()
     assert (ft_ckpt/(m.model_name)).exists() and os.listdir(ft_ckpt/(m.model_name)) != [], 'Base model properly saved.'
     assert (ft_ckpt/(m.clf.config['clf_name'] + '.pt')).exists(), 'Classifier properly saved.'
+    assert check_lora(m)
 
     #from hub = True 
     params['ft_ckpt'] = ft_ckpt/(m.model_name)
     m = HFModel(**params)
+    assert check_lora(m)
 
     params['from_hub'] = False 
     with pytest.raises(AssertionError):
@@ -186,12 +188,25 @@ def test_lora():
     assert m is not None, 'Model not running properly.'
     assert m.local_path.exists(), 'Local path with copy of checkpoint does not exist.'
     params['pt_ckpt'] = m.local_path 
+    assert check_lora(m)
 
     params['from_hub'] = False
     m = HFModel(**params)
+    assert check_lora(m)
 
     params['delete_download'] = True
     m = HFModel(test_hub_fail=True, **params)
+    assert check_lora(m)
+
+    # TEST WHIS{ER
+    del params['ft_ckpt']
+    params['model_type'] = 'whisper-tiny'
+    params['from_hub'] = True
+    del params['delete_download']
+    del params['pt_ckpt']
+    m = HFModel(**params)
+    assert check_lora(m)
+    assert check_exclude_decoder(m)
     
     shutil.rmtree(params['out_dir'])
     if ft_ckpt.exists():
@@ -211,6 +226,7 @@ def test_softprompt():
     m.save_model_components()
     assert (ft_ckpt/(m.model_name)).exists() and os.listdir(ft_ckpt/(m.model_name)) != [], 'Base model properly saved.'
     assert (ft_ckpt/(m.clf.config['clf_name'] + '.pt')).exists(), 'Classifier properly saved.'
+    assert check_softprompt(m)
 
     #TEST IT ALSO WORKS LOADING FROM LOCAL PT CKPT
     params['from_hub'] = True
@@ -218,13 +234,16 @@ def test_softprompt():
     assert m is not None, 'Model not running properly.'
     assert m.local_path.exists(), 'Local path with copy of checkpoint does not exist.'
     params['pt_ckpt'] = m.local_path 
+    assert check_softprompt(m)
 
     params['from_hub'] = False
     m = HFModel(**params)   
+    assert check_softprompt(m)
 
     #from hub = True AND FT checkpoint already exists
     params['ft_ckpt'] = ft_ckpt/(m.model_name)
     m = HFModel(**params)
+    assert check_softprompt(m)
 
     params['from_hub'] = False 
     del params['pt_ckpt']
@@ -233,9 +252,20 @@ def test_softprompt():
 
     params['pt_ckpt'] = m.local_path 
     m = HFModel(**params)
+    assert check_softprompt(m)
 
     params['delete_download'] = True
     m = HFModel(test_hub_fail=True, **params)
+    assert check_softprompt(m)
+
+    del params['ft_ckpt']
+    params['model_type'] = 'whisper-tiny'
+    params['from_hub'] = True
+    del params['delete_download']
+    del params['pt_ckpt']
+    m = HFModel(**params)
+    assert check_softprompt(m)
+    assert check_exclude_decoder(m)
     
     shutil.rmtree(params['out_dir'])
     if ft_ckpt.exists():
@@ -250,6 +280,34 @@ def check_requires_grad(model):
         else:
             check.append(param.requires_grad is False)
     return all(check)
+
+def check_exclude_decoder(model):
+    check = []
+    for name, param in model.base_model.named_parameters():
+        if any(['decoder' in name]):
+            check.append(param.requires_grad is False)
+    return all(check)
+
+def check_lora(model):
+    check = []
+    for name, param in model.base_model.named_parameters():
+        if 'lora' in name and 'encoder' in name and ('k_proj' in name or 'v_proj' in name or 'q_proj' in name):
+            check.append(param.requires_grad)
+        else:
+            check.append(param.requires_grad is False)
+    return all(check)
+
+def check_softprompt(model):
+    check = []
+    for name, param in model.base_model.named_parameters():
+        if 'prompt_encoder' in name:
+            check.append(param.requires_grad)
+            check.append(param.shape[0] == 4)
+        else:
+            check.append(param.requires_grad is False)
+    return all(check)
+
+
 
 @pytest.mark.hf
 def test_freeze():
@@ -308,6 +366,7 @@ def test_freeze():
     m6 = HFModel(**params)
     assert m6 is not None, 'Model not running properly.'
     assert check_requires_grad(m6)
+    assert check_exclude_decoder(m6)
 
     #Check whisper with half and exclude last 
     params['freeze_method'] = 'half'
@@ -315,12 +374,14 @@ def test_freeze():
     assert m7 is not None, 'Model not running properly.'
     assert check_requires_grad(m7)
     assert len(m7.unfreeze) == 3 
+    assert check_exclude_decoder(m7)
 
     params['freeze_method'] = 'exclude-last'
     m8 = HFModel(**params)
     assert m8 is not None, 'Model not running properly.'
     assert check_requires_grad(m8)
     assert len(m8.unfreeze) == 2
+    assert check_exclude_decoder(m7)
 
     shutil.rmtree(params['out_dir'])
 

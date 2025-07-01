@@ -386,7 +386,7 @@ def test_output():
         vals3 = o[f'rank_{feat}'].values.tolist()
         assert all([(v == 0 or v == 1) for v in vals2]), 'Unrecognized value in feature column'
         #check 3s maintained for rank cols
-        assert all([(v==1.0 or v == 3.0) for v in vals3]), 'Unrecognized value in feature column'
+        assert all([(v==0.0 or v == 3.0) for v in vals3]), 'Unrecognized value in feature column'
     assert any([v == 'sentence_repetition' for v in tasks]) and any([v == 'word_repetition' for v in tasks]), f'Did not keep all tasks'
     assert len(out[0]) == tr_size
     assert len(out[1]) == v_size

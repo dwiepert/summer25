@@ -26,7 +26,7 @@ def collate_features(batch: List[dict]) -> dict:
 
     return sample
 
-def collate_waveform(batch:List[dict], pad:bool=False, pad_method:str='mean'):
+def collate_waveform(batch:List[dict], pad:bool=False, pad_method:str='mean') -> dict:
     '''
     Collate function for waveforms - can specify padding
 
@@ -64,6 +64,6 @@ def collate_wrapper(pad:bool, pad_method:str):
     Wrapper for collate function
     :param pad: bool, indicate whether to pad waveforms within a batch
     :param pad_method: str, indicate whether to pad by 'mean' or 'zeros'
-    :return: collate_waveform with pad/pad_method given but batch not given
+    :return: collate_waveform function with pad/pad_method given but batch not given 
     """
     return lambda b: collate_waveform(batch=b, pad=pad, pad_method=pad_method)

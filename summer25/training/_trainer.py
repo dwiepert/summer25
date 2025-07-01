@@ -2,26 +2,48 @@
 Custom model trainer
 
 Author(s): Daniela Wiepert
-Last modified: 06/2025
+Last modified: 07/2025
 """
 #IMPORTS
 ##built-in
 import json
-from pathlib import Path
 from typing import Union, List
-import time
+
 ##third party
 from sklearn.metrics import balanced_accuracy_score, accuracy_score, roc_auc_score
 import torch
 from torch.utils.data import DataLoader
-from torch.optim.lr_scheduler import ExponentialLR
+from torch.optim.lr_scheduler import ExponentialLR, SequentialLR, LambdaLR, MultiStepLR
 import torch.nn as nn
 from tqdm import tqdm
+
 ##local
 from summer25.models import HFModel
 from ._early_stop import EarlyStopping
 from ._ranked_clf_loss import RankedClassificationLoss
 
+#HELPER FOR SCHEDULER
+def warmup_lr_lambda(epoch:int, warmup_epochs:int = 5) -> float:
+    """
+    Function for warmup scheduler that defines when to stop warmup
+    :param epoch: int, current epoch
+    :param warmup_epochs: int, number of warmup epochs (default = 5)
+    :return: fraction of warmup epochs completed
+    """
+    if epoch < warmup_epochs:
+        return (epoch + 1) / warmup_epochs
+    return 1.0
+
+def warmup_wrapper(warmup_epochs:int = 5):
+    """
+    Wraper for warmup to flexibly set the number of warmup epochs
+    
+    :param warmup_epochs: int, number of warmup epochs (default = 5)
+    :return: lambda function
+    """
+    return lambda w: warmup_lr_lambda(w, warmup_epochs=warmup_epochs)
+
+#MAIN CLASS
 class Trainer():
     """
     Custom model training class
@@ -32,21 +54,23 @@ class Trainer():
     :param learning_rate: float, learning rate (default = 1e-3)
     :param loss_type: str, loss type (default = bce)
     :param scheduler_type: str, scheduler type (default = None)
-    :param early_stop: bool, specify whether to use early stopping
+    :param early_stop: bool, specify whether to use early stopping (default = False)
+    :param save_checkpoints: bool, specify whether to save checkpoints (default = True)
     :param patience: int, patience for early stopping (default = 5)
-    :param delta: float, minimum change for early stopping
+    :param delta: float, minimum change for early stopping (default = 0.0)
     :param kwargs: additional values for rank classification loss or schedulers (e.g., rating_threshold/margin/bce_weight for rank loss and end_lr/epochs for Exponential scheduler)
     """
     def __init__(self, model:Union[HFModel], target_features:List[str], optim_type:str="adamw", 
                  learning_rate:float=1e-3, loss_type:str="bce", scheduler_type:str=None,
-                 early_stop:bool=True,  patience:int=5, delta:float=0.0, **kwargs):
+                 early_stop:bool=False, save_checkpoints:bool=True, patience:int=5, delta:float=0.0, **kwargs):
         self.model = model
         self.target_features = target_features
         self.learning_rate = learning_rate
+        self.save_checkpoints = save_checkpoints
         if optim_type == 'adamw':
             self.optim = torch.optim.AdamW(params=self.model.parameters(),lr=self.learning_rate)
         else:
-            return NotImplementedError(f'{optim_type} not implemented.')
+            raise NotImplementedError(f'{optim_type} not implemented.')
         
         #loss
         if loss_type == 'bce':
@@ -61,22 +85,39 @@ class Trainer():
 
             self.criterion = RankedClassificationLoss(**args)
         else:
-            return NotImplementedError(f'{loss_type} not implemented.')
+            raise NotImplementedError(f'{loss_type} not implemented.')
         
         #scheduler
         if scheduler_type == 'exponential':
-            assert 'end_lr' in kwargs, 'Must give end_lr if using exponential learning rate decay scheduler'
+            assert 'end_lr' in kwargs, 'Must give end_lr if using exponential learning rate decay scheduler.'
+            assert 'epochs' in kwargs, 'Must give epochs if using exponential learning rate decay scheduler.'
             end_lr = kwargs['end_lr']
             epochs = kwargs['epochs']
             gamma = end_lr / (learning_rate**(1/epochs))
             print(f'LR scheduler gamma: {gamma}')
             self.scheduler = ExponentialLR(self.optim, gamma=gamma)
+        elif scheduler_type == 'warmup-multistep':
+            assert 'warmup_epochs' in kwargs,'Must give warmup_epochs if using warmup.'
+            assert 'multistep_milestones' in kwargs, 'Must give multistep_milestones if using multistep lr.'
+            assert 'gamma' in kwargs, 'Must give gamma if use multistep lr.'
+            warmup = LambdaLR(self.optim, lr_lambda=warmup_wrapper(kwargs['warmup_epochs']))
+            multistep = MultiStepLR(self.optim, milestones=kwargs['multistep_milestones'], gamma=kwargs['gamma'])
+            self.scheduler = SequentialLR(self.optim, schedulers=[warmup, multistep], milestones=[kwargs['warmup_epochs']])
+        elif scheduler_type == 'multistep':
+            assert 'multistep_milestones' in kwargs, 'Must give multistep_milestones if using multistep lr.'
+            assert 'gamma' in kwargs, 'Must give gamma if use multistep lr.'
+            self.scheduler = MultiStepLR(self.optim, milestones=kwargs['multistep_milestones'], gamma=kwargs['gamma'])
+        elif scheduler_type is not None:
+            raise NotImplementedError(f'{scheduler_type} not implemented.')
         else:
             self.scheduler = None
         
         #es 
         if early_stop:
-            self.early_stop = EarlyStopping(patience=patience, delta=delta)
+            es_params = {'patience':patience, 'delta':delta}
+            if 'test' in kwargs:
+                es_params['test'] = kwargs.pop('test')
+            self.early_stop = EarlyStopping(**es_params)
         else:
             self.early_stop = None
 
@@ -148,18 +189,19 @@ class Trainer():
             
             if self.early_stop:
                 if self.early_stop.early_stop:
-                    self.early_stop.best_model.save_model_components(f'best{self.early_stop.best_epoch}')
+                    best_model, best_epoch, _ = self.early_stop.get_best_model()
+                    best_model.save_model_components(f'best{best_epoch}_')
                     break
             
             #checkpointing
-            if (e ==0 or e % 5 == 0) and e != epochs - 1:
+            if (e ==0 or e % 5 == 0) and (e != epochs - 1) and self.save_checkpoints:
                 self.model.save_model_components(f'checkpoint{e}_')
             
             if self.scheduler:
                 self.scheduler.step()
         
-        if e == epochs - 1:
-            self.model.save_model_components(f'final{e}_')
+            if e == epochs - 1:
+                self.model.save_model_components(f'final{e}_')
 
     def test(self, test_loader:DataLoader):
         """

@@ -262,7 +262,7 @@ def seeded_split(subject_key:str, date_key:str, audio_key:str, task_key:str, aud
     table_binary[target_features] = table_binary[target_features].replace([-1.0, 1.0, 1.5,2.0,3.0,4.0,5.0,6.0], [float("nan"), 0.0, 0.0, 1.0, 1.0,1.0,1.0, float("nan")])
     table_binary = table_binary.dropna().copy()
     table_rank =  table[[audio_key]+rank_cols].copy()
-    table_rank[rank_cols] = table_rank[rank_cols].replace([-1.0, 1.5, 6.0], [float("nan"), 1.0, float("nan")])
+    table_rank[rank_cols] = table_rank[rank_cols].replace([-1.0,1.0, 1.5, 6.0], [float("nan"), 0.0, 1.0, float("nan")])
     table_rank = table_rank.dropna().copy()
     table = table_binary.merge(table_rank).copy()
 

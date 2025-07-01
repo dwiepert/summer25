@@ -31,9 +31,11 @@ class BaseModel(nn.Module):
     :param out_dir: pathlike, path to directory for saving all model information
     :param finetune_method: str, specify finetune method (default=None)
     :param freeze_method: str, freeze method for base pretrained model (default=required-only)
+    :param unfreeze_layers: List[str], optionally give list of layers to unfreeze (default = None)
     :param pool_method: str, pooling method for base model output (default=mean)
     :param pt_ckpt: pathlike, path to base pretrained model checkpoint (default=None)
     :param ft_ckpt: pathlike, path to finetuned base model checkpoint (default=None)
+    :param clf_ckpt: pathlike, path to finetuned classifier checkpoint (default = None)
     :param in_features: int, number of input features to classifier (based on output layers of the base model) (default = 768)
     :param out_features: int, number of output features (number of classes) (default = 1)
     :param nlayers: int, number of layers in classification head (default = 2)
@@ -44,13 +46,13 @@ class BaseModel(nn.Module):
     :param activation: str, activation function to use for classification head (default=relu)
     :param seed: int, random seed (default = 42)
     :param device: torch device (default = cuda)
-    :param kwargs: additional arguments for optional parameters (e.g., pool_dim for mean/max pooling and unfreeze_layers if freeze_method is layer, clf_ckpt)
     """
-    def __init__(self, model_type:str, out_dir:Union[Path, str], finetune_method:str='none', freeze_method:str = 'required-only', pool_method:str = 'mean',
-                 pt_ckpt:Optional[Union[Path, str]]=None, ft_ckpt:Optional[Union[Path,str]]=None, 
+    def __init__(self, model_type:str, out_dir:Union[Path, str], finetune_method:str='none', 
+                 freeze_method:str = 'required-only', unfreeze_layers:Optional[List[str]]=None, 
+                 pool_method:str = 'mean', pool_dim:Optional[Union[int, tuple]] = None,
+                 pt_ckpt:Optional[Union[Path, str]]=None, ft_ckpt:Optional[Union[Path,str]]=None, clf_ckpt:Optional[Union[Path,str]]=None,  
                  in_features:int=768, out_features:int=1, nlayers:int=2, bottleneck:int=None, layernorm:bool=False, dropout:float=0.0, binary:bool=True,
-                 activation:str='relu', seed:int=42, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
-                 **kwargs):
+                 activation:str='relu', seed:int=42, device=torch.device("cuda" if torch.cuda.is_available() else "cpu")):
         
         super(BaseModel, self).__init__()
 
@@ -61,6 +63,7 @@ class BaseModel(nn.Module):
         self.out_dir.mkdir(parents=True, exist_ok=True)
         self.pt_ckpt=pt_ckpt
         self.ft_ckpt=ft_ckpt
+        self.clf_ckpt = clf_ckpt
         self.finetune_method = finetune_method
         self.freeze_method = freeze_method
         self.pool_method = pool_method
@@ -72,9 +75,7 @@ class BaseModel(nn.Module):
 
         self.clf_args = {'in_features':in_features, 'out_features':out_features, 'nlayers':nlayers,
                         'activation':activation, 'bottleneck':bottleneck, 'layernorm':layernorm, 'binary':binary,
-                        'dropout':dropout, 'seed': self.seed}
-        if 'clf_ckpt' in kwargs:
-            self.clf_args['ckpt'] = kwargs.pop('clf_ckpt')
+                        'dropout':dropout, 'seed': self.seed, 'ckpt': self.clf_ckpt}
         
         # ASSERTIONS
         assert self.model_type in list(_MODELS.keys()), f'{self.model_type} is an invalid model type. Choose one of {list(_MODELS.keys())}.'
@@ -90,39 +91,17 @@ class BaseModel(nn.Module):
                 assert '.pt' in str(self.ft_ckpt) or '.pth' in str(self.ft_ckpt), 'Must give .pt or .pth if not giving a directory'
         ### finetune method 
         assert self.finetune_method in _FINETUNE, f'self.finetune_method is not a valid finetuning method. Choose one of {_FINETUNE}.'
-        if self.finetune_method == 'lora':
-            self.freeze_method = 'all'
-            if 'lora_rank' in kwargs:
-                self.lora_rank = kwargs.pop('lora_rank')
-            else:
-                self.lora_rank = 8
-            if 'lora_alpha' in kwargs:
-                self.lora_alpha = kwargs.pop('lora_alpha')
-            else:
-                self.lora_alpha = 16
-            if 'lora_dropout' in kwargs:
-                self.lora_dropout = kwargs.pop('lora_dropout')
-            else:
-                self.lora_dropout = 0.0
-        elif self.finetune_method == 'soft-prompt':
-            self.freeze_method = 'all'
-            if 'virtual_tokens' in kwargs:
-                self.virtual_tokens = kwargs.pop('virtual_tokens')
-            else:
-                self.virtual_tokens = 4
-
+        ### freeze method
         assert self.freeze_method in _FREEZE, f'{self.freeze_method} is not a valid freeze method. Choose one of {_FREEZE}.'
+        self.unfreeze_layers = unfreeze_layers
         if self.freeze_method == 'layer':
-            assert 'unfreeze_layers' in kwargs, 'Layers to unfreeze not given as input'
-            self.unfreeze_layers = kwargs.pop('unfreeze_layers')
+            assert unfreeze_layers is not None, 'Layers to unfreeze not given as input'
             assert isinstance(self.unfreeze_layers, list), 'Unfreeze layers expects a list.'
             assert all([isinstance(l,str) for l in self.unfreeze_layers]) or all([isinstance(l,int) for l in self.unfreeze_layers]), 'Unfreeze layers expects a list of str or list of ints.'
-        else: 
-            self.unfreeze_layers = None # OTHER UNFREEZE METHODS REQUIRE MODEL INFO
 
         assert self.pool_method in _POOL, f'{self.pool_method} is not a valid pooling method. Choose one of {_POOL}.'
-        if 'pool_dim' in kwargs: 
-            self.pool_dim = kwargs.pop('pool_dim')
+        if pool_dim is not None:
+            self.pool_dim = pool_dim
         elif 'pool_dim' in _MODELS[model_type]:
             self.pool_dim = _MODELS[model_type]['pool_dim']
         else:

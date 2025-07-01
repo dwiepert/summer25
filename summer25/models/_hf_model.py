@@ -7,11 +7,10 @@ Last modified: 06/2025
 
 #IMPORT
 ##built-in
-import copy
 import os
 from pathlib import Path
 import shutil
-from typing import Union, Dict, Optional, List
+from typing import Union, Optional, List
 import warnings
 
 ##third-party
@@ -33,28 +32,36 @@ class HFModel(BaseModel):
     :param model_type: str, hugging face model type for naming purposes
     :param finetune_method: str, specify finetune method (default=None)
     :param freeze_method: str, freeze method for base pretrained model (default=required-only)
+    :param unfreeze_layers: List[str], optionally give list of layers to unfreeze (default = None)
     :param pool_method: str, pooling method for base model output (default=mean)
     :param pt_ckpt: pathlike, path to pretrained model checkpoint (default=None)
     :param ft_ckpt: pathlike, path to finetuned base model checkpoint (default=None)
+    :param clf_ckpt: pathlike, path to finetuned classifier checkpoint (default = None)
     :param out_features: int, number of output features from classifier (number of classes) (default = 1)
     :param nlayers: int, number of layers in classification head (default = 2)
     :param activation: str, activation function to use in classification head (default = 'relu')
     :param bottleneck: int, optional bottleneck parameter (default=None)
     :param layernorm: bool, true for adding layer norm (default=False)
     :param dropout: float, dropout level (default = 0.0)
+    :param binary:bool, specify whether output is making binary decisions (default=True)
+    :param lora_rank: int, optional value when using LoRA - set rank (default = 8)
+    :param lora_alpha: int, optional value when using LoRA - set alpha (default = 16)
+    :param lora_dropout: float, optional value when using LoRA - set dropout (default = 0.0)
+    :param virtual_tokens: int, optional value when using soft prompting - set num tokens (default = 4)
     :param seed: int, specify random seed for ensuring reproducibility (default = 42)
     :param device: torch device (default = cuda)
     :param from_hub: bool, specify whether to load from hub or from existing pt_ckpt (default = True)
+    :param delete_download: bool, specify whether to delete any local downloads from hugging face (default = False)
     :param test_hub_fail: bool, TESTING ONLY (default = False)
     :param test_local_fail: bool, TESTING ONLY (default = False)
-    :param kwargs: additional arguments for optional parameters (e.g., unfreeze_layers if freeze_method is layer, delete_download if you want to remove local versions of checkpoints after downloading, clf_ckpt if wanting to load checkpoint for classifier, lora values)
     """
     def __init__(self, 
-                 out_dir:Union[Path, str], model_type:str, finetune_method:str='none', freeze_method:str = 'required-only', 
-                 pool_method:str = 'mean',pt_ckpt:Optional[Union[Path,str]]=None, ft_ckpt:Optional[Union[Path,str]]=None, 
-                 out_features:int=1, nlayers:int=2, activation:str='relu', bottleneck:int=None, layernorm:bool=False, dropout:float=0.0,
+                 out_dir:Union[Path, str], model_type:str, finetune_method:str='none', freeze_method:str = 'required-only', unfreeze_layers:Optional[List[str]]=None,
+                 pool_method:str = 'mean',pt_ckpt:Optional[Union[Path,str]]=None, ft_ckpt:Optional[Union[Path,str]]=None, clf_ckpt:Optional[Union[Path,str]]=None,
+                 out_features:int=1, nlayers:int=2, activation:str='relu', bottleneck:int=None, layernorm:bool=False, dropout:float=0.0, binary:bool=True,
+                 lora_rank:Optional[int]=8, lora_alpha:Optional[int]=16, lora_dropout:Optional[float]=0.0, virtual_tokens:Optional[int]=4,
                  seed:int=42, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
-                 from_hub:bool=True, test_hub_fail:bool=False, test_local_fail:bool=False, **kwargs):
+                 from_hub:bool=True, delete_download:bool=False, test_hub_fail:bool=False, test_local_fail:bool=False):
 
         self.out_dir = out_dir 
         if not isinstance(self.out_dir, Path): self.out_dir = Path(self.out_dir)
@@ -64,10 +71,10 @@ class HFModel(BaseModel):
             if not isinstance(ft_ckpt, Path): ft_ckpt = ft_ckpt(Path)
             assert ft_ckpt.is_dir(), 'Hugging face finetuned model checkpoints should be directories.'
             #check first if there is a given clf_ckpt already
-            if 'clf_ckpt' not in kwargs:
+            if clf_ckpt is None:
                 poss_ckpts = [r for r in ft_ckpt.glob('Classifier*')]
-                if poss_ckpts != [] and 'clf_ckpt' not in kwargs:
-                    kwargs['clf_ckpt'] = poss_ckpts[0]
+                if poss_ckpts != []:
+                    clf_ckpt = poss_ckpts[0]
 
             base_ckpt = None
             for entry in ft_ckpt.iterdir():
@@ -75,17 +82,21 @@ class HFModel(BaseModel):
                     base_ckpt = entry
             if base_ckpt is not None:
                 ft_ckpt = base_ckpt
-
-                    
-                
+         
         super().__init__(model_type=model_type, out_dir=out_dir, finetune_method=finetune_method,
-                         freeze_method=freeze_method, pool_method=pool_method, 
-                         pt_ckpt=pt_ckpt,ft_ckpt=ft_ckpt,
+                         freeze_method=freeze_method, unfreeze_layers=unfreeze_layers, pool_method=pool_method, 
+                         pt_ckpt=pt_ckpt,ft_ckpt=ft_ckpt, clf_ckpt=clf_ckpt,
                          in_features=_MODELS[model_type]['in_features'], out_features=out_features, nlayers=nlayers, activation=activation, 
-                         bottleneck=bottleneck, layernorm=layernorm, dropout=dropout,
-                         device=device, seed=seed, pool_dim=_MODELS[model_type]['pool_dim'],**kwargs)
+                         bottleneck=bottleneck, layernorm=layernorm, dropout=dropout, binary=binary,
+                         device=device, seed=seed, pool_dim=_MODELS[model_type]['pool_dim'])
 
         #HF ARGS
+        self.lora_rank = lora_rank
+        self.lora_alpha = lora_alpha
+        self.lora_dropout = lora_dropout
+        self.virtual_tokens = virtual_tokens
+        if self.finetune_method == 'lora' or self.finetune_method == 'soft-prompt':
+            self.freeze_method = 'all'
         #handle some hugging face model specific parameters
         self.required_freeze = _MODELS[self.model_type]['required_freeze']
         self.optional_freeze = _MODELS[self.model_type]['optional_freeze']
@@ -94,10 +105,7 @@ class HFModel(BaseModel):
         assert 'hf_hub' in _MODELS[self.model_type], f'{self.model_type} is incompatible with HFModel class.'
         self.hf_hub = _MODELS[self.model_type]['hf_hub']
 
-        if "delete_download" in kwargs:
-            self.delete_download = kwargs.pop("delete_download")
-        else:
-            self.delete_download = False
+        self.delete_download = delete_download
 
         self.from_hub = from_hub
         ckpt = None
@@ -131,7 +139,8 @@ class HFModel(BaseModel):
         self._load_model(ckpt=ckpt, test_hub_fail=test_hub_fail, test_local_fail=test_local_fail) 
         #print('Model parameters pre-freezing:')
         #trainable, allp = self._trainable_parameters(print_output=True)
-
+        if not isinstance(self.base_model, _MODELS[self.model_type]['model_instance']):
+            raise ValueError('Loaded model is not the expected model type. Please check that your checkpoint points to the correct model type.')
         self.is_whisper_model = isinstance(self.base_model, WhisperModel)
         self._freeze()
         if self.finetune_method == 'lora':
@@ -213,8 +222,6 @@ class HFModel(BaseModel):
         except:
             raise ValueError('Checkpoint is incompatible with HuggingFace models. Confirm this is a path to a local hugging face checkpoint.')
         
-        if not isinstance(self.base_model, _MODELS[self.model_type]['model_instance']):
-            raise ValueError('Loaded model is not the expected model type. Please check that your checkpoint points to the correct model type.')
         return
                    
     def _freeze(self):
@@ -283,7 +290,11 @@ class HFModel(BaseModel):
 
         return layer_names
     
-    def _load_peft(self, ckpt):
+    def _load_peft(self, ckpt:Union[str,Path]):
+        """
+        Load a peft model from a finetuned checkpoint
+        :param ckpt:pathlike, path to finetuned checkpoint directory
+        """
         if self.finetune_method == 'soft-prompt':
             is_trainable = False
             warnings.warn('Finetuned soft prompting models can not be loaded and further trained. Note that only classifier head will train if fitting a model.')

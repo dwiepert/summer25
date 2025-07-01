@@ -73,6 +73,11 @@ def test_basemodel_params():
     params['model_type'] = 'wavlm-base'
     #pool dim not int or tuple
     params['pool_dim'] = '1'
+    params['pool_method'] = 'mean'
+    with pytest.raises(AssertionError):
+        m = BaseModel(**params)
+
+    params['pool_dim'] = 'str'
     with pytest.raises(AssertionError):
         m = BaseModel(**params)
 
@@ -115,12 +120,6 @@ def test_basemodel_params():
     ft_ckpt.mkdir(exist_ok=True)
     with pytest.raises(AssertionError):
         m = BaseModel(**params)
-
-    #TODO: test ft checkpoint that is a non empty directory 
-
-    #TODO: test ft checkpoint that is a non .pt .pth file
-
-    #TODO: test ft checkpoint that is a .pt file
 
     del params['ft_ckpt']
     shutil.rmtree(ft_ckpt)

@@ -26,23 +26,20 @@ class HFExtractor(BaseExtractor):
     :param model_type: str, type of model being initialized
     :param pt_ckpt: pathlike, path to base pretrained model checkpoint (default=None)
     :param from_hub: bool, specify whether to load from hub or from existing pt_ckpt
+    :param delete_download: bool, specify whether to delete any local downloads from hugging face (default = False)
     :param test_hub_fail: bool, TESTING ONLY
     :param test_local_fail: bool, TESTING ONLY
     """
     def __init__(self, model_type:str, pt_ckpt:Optional[Union[Path,str]]=None, from_hub:bool=True,
-                test_hub_fail:bool=False, test_local_fail:bool=False, **kwargs):
+                test_hub_fail:bool=False, test_local_fail:bool=False, delete_download:bool=False):
         super().__init__(model_type, pt_ckpt)
 
         assert 'hf_hub' in _MODELS[self.model_type], f'{self.model_type} is incompatible with HFModel class.'
 
         if _MODELS[self.model_type]['use_featext']:
             self.hf_hub = _MODELS[self.model_type]['hf_hub']
-            if "delete_download" in kwargs:
-                self.delete_download = kwargs.pop("delete_download")
-            else:
-                self.delete_download = False
-
             self.from_hub = from_hub
+            self.delete_download = delete_download
             
             if not self.from_hub: 
                 assert self.pt_ckpt is not None, 'Must give pt_ckpt if not loading from the hub'

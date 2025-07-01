@@ -26,5 +26,5 @@ class BaseExtractor():
         pass
     
     @abstractmethod
-    def __call__(self):
+    def __call__(self) -> dict:
         pass
