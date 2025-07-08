@@ -8,26 +8,39 @@ CONFIG FILES:
     - can specify more exact specifics for WavDataset transforms by adding to a config file. TODO
 
 ## QUESTIONS/RESEARCH
-* use wav mean? do i need that with torch audio
-* remap the annotator scores to be integers from 0 to 5 (so 1 becomes 0, 1.5 becomes 1, 2 stays 2, etc)
-* Extra layer norm in whisper????
-* We don't actually want to re-initialize any weights except to randomly initialize classifier weights, correct? 
-* safe for features to be public? tasks to be public?
-* which features to use for debugging decide test features vs. all features? different groupings? what is the plan here
-* don't pool over Padding tokens? in any pooling? how do we ensure that? what does that mean. 
-* good scheduler values/types?
-* early stop patience? delta?
-* avg loss and other metrics?
+* get whisper final hidden state - make it flexible?, freeze it vs. unfreeze it? 
+* exclude some of the tokens - see if things are coming out in different sizes? need to figure out Padding tokens and determine which ones to pool over - determine padding, move the feature extractor to do the padding for me - get attention mask out from it, one collate function
+*  5 MOST COMMON FEATURES IN SENTENCE REPETITION - REDO WITH NEW DC EVENTUALLY TODO:
+        * hoarse_harsh: 430
+        * slow_rate: 355
+        * sound_distortions: 312
+        * monopitch_monoloudness: 299
+        * inappropriate_silences_or_prolonged_intervals: 251
+        ```
+        data = pd.read_csv('CSV')
+        data_feats = data[_FEATURES]
+        freq = (data_feats > 1).sum()
+        freq.sort_values()[-5]
+        ```
 * determine what classifier build to use with Rankings? It's not going to work the same as BCE loss...not entirely sure how to predict rank - multiclass/multicategory? ask leland what he did
+* tf_lr 1e-6 bigger adjustments to classifier. 
+
 
 ## ACTIVE DEBUGGING/TASKS
-* evaluation metrics
+* CHECK ON POOLING W ATTENTION MASK USING WHISPER? UNCERTAIN WHAT THE SHAPE OF THAT IS AND NEED TO KNOW
 * make seeded_split/model loading/model saving compatible with gcs
 * TEST SUITE
     * io/transforms - GCS test google cloud things????? mark to run only sometimes
+    * re-test new schedulers
+    * retest train params (new options)
+    * test multiple learning rate options (default tf_lr for unfrozen one should be closer to 1e-6)
+    * test new feature extractor location
+    * test that all the PEFT models run through... and can be updated
+    * TEST ATTENTION MASK STUFF
 
 
 ## All TODO
+* BEATs model
 * Make seeded_split compatible with gcs + run
 * ~~load from existing configuration~~
 * ~~load huggingface models~~ 
@@ -69,6 +82,7 @@ CONFIG FILES:
     * ~~max~~
     * ~~attention~~
     * ~~tests~~
+    * ignore padding
 * ~~test run forward pass of models~~
     * ~~do we need modsel-specific feature processors????~~
     * ~~wavlm~~

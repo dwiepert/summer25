@@ -17,7 +17,7 @@ from torch.utils.data import DataLoader
 ##local
 from summer25.models import HFModel, HFExtractor
 from summer25.dataset import seeded_split, WavDataset, collate_features, collate_wrapper
-from summer25.constants import _MODELS,_FREEZE, _FEATURES, _FINETUNE, _LOSS
+from summer25.constants import _MODELS,_FREEZE, _FEATURES, _FINETUNE, _LOSS, _SCHEDULER, _OPTIMIZER
 from summer25.training import Trainer
 
 _REQUIRED_MODEL_ARGS =['model_type']
@@ -56,7 +56,17 @@ def check_load(args:dict) -> dict:
     args['output_dir'].mkdir(parents=True, exist_ok=True)
 
     assert args['loss_type'] in _LOSS, 'Invalid loss type'
-    
+    if args['loss_type'] == 'rank':
+        assert args['rating_threshold'], 'Must give rating threshold for rank loss'
+    if args['scheduler_type']:
+        assert args['scheduler_type'] in _SCHEDULER, 'Invalid scheduler type.'
+        if args['scheduler_type'] == 'exponential':
+            if not args['gamma']:
+                assert 'end_lr' in args, 'Must give end_lr for exponential scheduler.'
+        elif args['scheduler_type'] == 'warmup-cosine':
+            assert 'warmup_epochs' in args, 'Must give warmup_epochs for warmup lr'
+
+    assert args['optim_type'] in _OPTIMIZER, 'Invalid optimizer type'
     return args
 
 def check_model(args:dict ) -> dict:
@@ -138,24 +148,6 @@ def zip_clf(args:argparse.Namespace) -> dict:
         clf_args['dropout'] = args.dropout
     return clf_args
 
-def zip_extractor(args:argparse.Namespace) -> dict:
-    """
-    Zip arguments for extractor into a dictionary
-    :param args: argparse Namespace object
-    :return extractor_args: dict of model arguments
-    """
-    if args.hf_model:
-        extractor_args = {'model_type':args.model_type}
-    else:
-        raise NotImplementedError('Only compatible with huggingface models currently.')
-    
-    if args.delete_download:
-        extractor_args['delete_download'] = args.delete_download
-    if args.pt_ckpt:
-        extractor_args['pt_ckpt'] = args.pt_ckpt
-    
-    return extractor_args
-
 
 def zip_model(args:argparse.Namespace) -> dict:
     """
@@ -169,7 +161,8 @@ def zip_model(args:argparse.Namespace) -> dict:
     if args.hf_model:
         model_args = {'model_type':args.model_type,'out_dir':args.output_dir,
                     'freeze_method':args.freeze_method, 'pool_method':args.pool_method,
-                    'seed':args.seed, 'finetune_method': args.finetune_method}
+                    'seed':args.seed,'finetune_method': args.finetune_method, 
+                    'delete_download': args.delete_download, 'normalize':args.normalize}
     else:
         raise NotImplementedError('Only compatible with huggingface models currently.')
     
@@ -177,8 +170,6 @@ def zip_model(args:argparse.Namespace) -> dict:
         model_args['binary'] = False
     else:
         model_args['binary'] = True
-    if args.delete_download:
-        model_args['delete_download'] = args.delete_download
     if args.pt_ckpt:
         model_args['pt_ckpt'] = args.pt_ckpt
     if args.ft_ckpt:
@@ -257,9 +248,13 @@ def zip_finetune(args):
     :return finetune_args: dict of finetune arguments
     """
     finetune_args = {'optim_type': args.optim_type, 'learning_rate':args.learning_rate, 'loss_type':args.loss_type,
-                     'scheduler_type': args.scheduler_type, 'epochs': args.epochs, 'early_stop':args.early_stop,
-                     'patience': args.patience}
+                     'scheduler_type': args.scheduler_type, 'epochs': args.epochs, 'early_stop':args.early_stop}
     
+    if args.tf_learning_rate:
+        finetune_args['tf_learning_rate'] = args.tf_learning_rate
+
+    if args.patience:
+        finetune_args['patience'] = args.patience
     if args.delta:
         finetune_args['delta'] = args.delta
 
@@ -267,8 +262,21 @@ def zip_finetune(args):
         finetune_args['rating_threshold'] = args.rating_threshold
         finetune_args['margin'] = args.margin
         finetune_args['bce_weight'] = args.bce_weight
-    if args.end_lr:
-        finetune_args['end_lr'] = args.end_lr
+    
+    if args.scheduler_type == 'exponential':
+        if args.gamma:
+            finetune_args['gamma'] = args.gamma
+            if args.tf_gamma:
+                finetune_args['tf_gamma'] = args.gamma
+        else:
+            finetune_args['end_lr'] = args.end_lr
+            if args.end_tf_lr:
+                finetune_args['end_tf_lr'] = args.end_tf_lr
+            finetune_args['epochs'] = args.epochs
+    elif args.scheduler_type == 'warmup-cosine':
+        finetune_args['warmup_epochs'] = args.warmup_epochs
+
+
     if args.target_features:
         finetune_args['target_features'] = args.target_features
     else:
@@ -304,8 +312,7 @@ if __name__ == "__main__":
     io_args.add_argument('--proportions', nargs="+", type=List[float], help='Specify split proportions.')
     io_args.add_argument('--clip_length', type=float, help="Specify audio clip length in s.")
     io_args.add_argument('--trim_level', type=float, help="Specify silence trim level (dB for use_librosa, trigger level for torchaudio)")
-    io_args.add_argument('--pad', action='store_true', help='Specify whether to pad audio by batch.')
-    io_args.add_argument('--pad_method', default='mean', help='Specify whether to pad with 0s or mean of waveform')
+    io_args.add_argument('--normalize', action='store_true', help='Specify whether to normalize audio.')
     #BASE MODEL
     model_args = parser.add_argument_group('model', 'model related arguments')
     model_args.add_argument('--model_type', type=str,
@@ -334,17 +341,23 @@ if __name__ == "__main__":
     train_args = parser.add_argument_group('train', 'training/testing related arguments')
     train_args.add_argument('--batch_sz', default=1, type=int, help='Set batch size.')
     train_args.add_argument('--num_workers', default=0, type=int, help='Set num workers for DataLoader.')
-    train_args.add_argument('--optim_type', type=str, default='adamw', help='Specify type of optimizer to use. (default = adamw)')
+    train_args.add_argument('--optim_type', type=str, default='adamw', choices=_OPTIMIZER, help='Specify type of optimizer to use. (default = adamw)')
     train_args.add_argument('--learning_rate', type=float, default=1e-3, help='Specify learning rate (default=1e-3)')
-    train_args.add_argument('--loss_type', type=str, default='bce', help='Specify type of optimizer to use. (default = bce)')
+    train_args.add_argument('--tf_learning_rate', type=float, help='Optionally specify transformer specific learning rate')
+    train_args.add_argument('--loss_type', type=str, default='bce', choices=_LOSS, help='Specify type of optimizer to use. (default = bce)')
     train_args.add_argument('--rank_prefix', type=str, default='rank_', help='Specify prefix for columns with rank targets if using rank loss.')
     train_args.add_argument('--rating_threshold', type=float, help='Specify rating threshold for rank loss.')
     train_args.add_argument('--margin', type=float,default=1.0, help='Specify margin for rank loss.')
     train_args.add_argument('--bce_weight', type=float,default=0.5, help='Specify weighting of BCE for rank loss.')
-    train_args.add_argument('--scheduler_type', type=str, help='Specify type of scheduler to use.')
-    train_args.add_argument('--end_lr', type=str, help='Specify end learning rate if using scheduelr')
+    train_args.add_argument('--scheduler_type', type=str, choices=_SCHEDULER, help='Specify type of scheduler to use.')
+    train_args.add_argument('--end_lr', type=str, help='Specify end learning rate if using exponential scheduler')
+    train_args.add_argument('--end_tf_lr', type=str, help='Optionally specify end learning rate for transformer if using exponential scheduler')
+    train_args.add_argument('--gamma', type=str, help='Specify gamma if using exponential scheduler')
+    train_args.add_argument('--tf_gamma', type=str, help='Optionally specify gamma for transformer if using exponential scheduler')
+    train_args.add_argument('--warmup_epochs', type=str, help='Specify warmup_epochs if using warmup scheduler.')
+    train_args.add_argument('--tf_warmup_epochs', type=str, help='Optionally specify warmup_epochs for transformer if using warmup scheduler.')
     train_args.add_argument('--early_stop', action='store_true', help='Specify whether to use early stopping.')
-    train_args.add_argument('--patience', type=int, default=5, help='Specify patience for early stopping. (default = 5)')
+    train_args.add_argument('--patience', type=int, help='Specify patience for early stopping. (default = 5)')
     train_args.add_argument('--delta', type=float, help='Specify delta for early stopping.')
     train_args.add_argument('--epochs', type=int, default=1, help='Specify epochs for finetuning. (default = 1)')
     train_args.add_argument('--eval_only', action='store_true', help='Specify whether to only run evaluation.')
@@ -357,7 +370,6 @@ if __name__ == "__main__":
     updated_args = save_path(argparse.Namespace(**args_dict_m))
 
     ## INITIALIZE EXTRACTOR AND MODEL
-    ea = zip_extractor(updated_args)
     ma = zip_model(updated_args)
     ca = zip_clf(updated_args)
     ma.update(ca)
@@ -366,8 +378,7 @@ if __name__ == "__main__":
     fa = zip_finetune(updated_args) #don't forget extra scheduler args
 
     if args.hf_model:
-        feature_extractor = HFExtractor(**ea)
-        model = HFModel(**ma) #TODO: add sampling rate check
+        model = HFModel(**ma)
     else:
         raise NotImplementedError('Currently only compatible with hugging face models.')
     
@@ -378,13 +389,22 @@ if __name__ == "__main__":
         train_df = train_df[:10]
         val_df = val_df[:10]
         test_df = test_df[:10]
-        
-    train_dataset = WavDataset(data=train_df,feature_extractor=feature_extractor, **da)
-    test_dataset = WavDataset(data=test_df,feature_extractor=feature_extractor,**da)
-    val_dataset = WavDataset(data=val_df, feature_extractor=feature_extractor,**da)
-
     
+    if fa['scheduler_type']:
+        if 'cosine' in fa['scheduler_type']:
+            fa['train_len'] = len(train_df) # for cosine annealing scheduler
+
+    train_dataset = WavDataset(data=train_df, **da)
+    test_dataset = WavDataset(data=test_df,**da)
+    val_dataset = WavDataset(data=val_df, **da)
+
     #using custom collate
+    train_loader = DataLoader(dataset=train_dataset,batch_size=args.batch_sz,shuffle=True,collate_fn=collate_features, num_workers=args.num_workers)
+    val_loader = DataLoader(dataset=val_dataset,batch_size=args.batch_sz,shuffle=False,collate_fn=collate_features, num_workers=args.num_workers)
+    test_loader = DataLoader(dataset=test_dataset,batch_size=args.batch_sz,shuffle=False,collate_fn=collate_features, num_workers=args.num_workers)
+    
+    """
+    TODO: delete if other option works
     if model.is_whisper_model:
         train_loader = DataLoader(dataset=train_dataset,batch_size=args.batch_sz,shuffle=True,collate_fn=collate_features, num_workers=args.num_workers)
         val_loader = DataLoader(dataset=val_dataset,batch_size=args.batch_sz,shuffle=False,collate_fn=collate_features, num_workers=args.num_workers)
@@ -394,7 +414,8 @@ if __name__ == "__main__":
         train_loader = DataLoader(dataset=train_dataset,batch_size=args.batch_sz,shuffle=True,collate_fn=collate_fn, num_workers=args.num_workers)
         val_loader = DataLoader(dataset=val_dataset,batch_size=args.batch_sz,shuffle=False,collate_fn=collate_fn, num_workers=args.num_workers)
         test_aloader = DataLoader(dataset=test_dataset,batch_size=args.batch_sz,shuffle=False,collate_fn=collate_fn, num_workers=args.num_workers)
-    
+    """
+
     model_trainer = Trainer(model=model, **fa)
     if not args.eval_only:
         model_trainer.fit(train_loader, val_loader, epochs=args.epochs)

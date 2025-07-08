@@ -13,7 +13,7 @@ from typing import Union, List
 from sklearn.metrics import balanced_accuracy_score, accuracy_score, roc_auc_score
 import torch
 from torch.utils.data import DataLoader
-from torch.optim.lr_scheduler import ExponentialLR, SequentialLR, LambdaLR, MultiStepLR
+from torch.optim.lr_scheduler import ExponentialLR, SequentialLR, LambdaLR, MultiStepLR, CosineAnnealingLR
 import torch.nn as nn
 from tqdm import tqdm
 
@@ -61,14 +61,20 @@ class Trainer():
     :param kwargs: additional values for rank classification loss or schedulers (e.g., rating_threshold/margin/bce_weight for rank loss and end_lr/epochs for Exponential scheduler)
     """
     def __init__(self, model:Union[HFModel], target_features:List[str], optim_type:str="adamw", 
-                 learning_rate:float=1e-3, loss_type:str="bce", scheduler_type:str=None,
+                 tf_learning_rate:float=None, learning_rate:float=1e-4, loss_type:str="bce", scheduler_type:str=None,
                  early_stop:bool=False, save_checkpoints:bool=True, patience:int=5, delta:float=0.0, **kwargs):
         self.model = model
         self.target_features = target_features
-        self.learning_rate = learning_rate
+        self.clf_lr = learning_rate
+        if tf_learning_rate:
+            self.tf_lr = tf_learning_rate
+        else:
+            self.tf_lr = learning_rate
+
         self.save_checkpoints = save_checkpoints
         if optim_type == 'adamw':
-            self.optim = torch.optim.AdamW(params=self.model.parameters(),lr=self.learning_rate)
+            self.tf_optim = torch.optim.AdamW(params=self.model.base_model.parameters(),lr=self.tf_lr)
+            self.clf_optim = torch.optim.AdamW(params=self.model.clf.parameters(), lr=self.clf_lr)
         else:
             raise NotImplementedError(f'{optim_type} not implemented.')
         
@@ -89,28 +95,54 @@ class Trainer():
         
         #scheduler
         if scheduler_type == 'exponential':
-            assert 'end_lr' in kwargs, 'Must give end_lr if using exponential learning rate decay scheduler.'
-            assert 'epochs' in kwargs, 'Must give epochs if using exponential learning rate decay scheduler.'
-            end_lr = kwargs['end_lr']
-            epochs = kwargs['epochs']
-            gamma = end_lr / (learning_rate**(1/epochs))
-            print(f'LR scheduler gamma: {gamma}')
-            self.scheduler = ExponentialLR(self.optim, gamma=gamma)
-        elif scheduler_type == 'warmup-multistep':
+            if 'gamma' in kwargs:
+                clf_gamma = kwargs['gamma']
+                if 'tf_gamma' in kwargs:
+                    tf_gamma = kwargs['tf_gamma']
+                else:
+                    tf_gamma = clf_gamma
+            else:
+
+                assert 'end_lr' in kwargs, 'Must give end_lr if using exponential learning rate decay scheduler.'
+                assert 'epochs' in kwargs, 'Must give epochs if using exponential learning rate decay scheduler.'
+                end_clf_lr = kwargs['end_lr']
+                if 'end_tf_lr' in kwargs:
+                    end_tf_lr = kwargs['end_tf_lr']
+                else:
+                    end_tf_lr = end_clf_lr
+                epochs = kwargs['epochs']
+                tf_gamma = end_tf_lr / (self.tf_lr**(1/epochs))
+                clf_gamma = end_clf_lr / (self.clf_lr**(1/epochs))
+
+            self.tf_scheduler = ExponentialLR(self.tf_optim, gamma=tf_gamma)
+            self.clf_scheduler = ExponentialLR(self.clf_optim, gamma=clf_gamma)
+
+        elif scheduler_type == 'warmup-cosine':
             assert 'warmup_epochs' in kwargs,'Must give warmup_epochs if using warmup.'
-            assert 'multistep_milestones' in kwargs, 'Must give multistep_milestones if using multistep lr.'
-            assert 'gamma' in kwargs, 'Must give gamma if use multistep lr.'
-            warmup = LambdaLR(self.optim, lr_lambda=warmup_wrapper(kwargs['warmup_epochs']))
-            multistep = MultiStepLR(self.optim, milestones=kwargs['multistep_milestones'], gamma=kwargs['gamma'])
-            self.scheduler = SequentialLR(self.optim, schedulers=[warmup, multistep], milestones=[kwargs['warmup_epochs']])
-        elif scheduler_type == 'multistep':
-            assert 'multistep_milestones' in kwargs, 'Must give multistep_milestones if using multistep lr.'
-            assert 'gamma' in kwargs, 'Must give gamma if use multistep lr.'
-            self.scheduler = MultiStepLR(self.optim, milestones=kwargs['multistep_milestones'], gamma=kwargs['gamma'])
+            assert 'train_len' in kwargs, 'Must give train_len if using cosine annealing lr.'
+            clf_warmup_e = kwargs['warmup_epochs']
+            if 'tf_warmup_epochs' in kwargs:
+                tf_warmup_e = kwargs['tf_warmup_epochs']
+            else:
+                tf_warmup_e = clf_warmup_e
+
+            tf_warmup = LambdaLR(self.tf_optim, lr_lambda=warmup_wrapper(tf_warmup_e))
+            clf_warmup = LambdaLR(self.clf_optim, lr_lambda=warmup_wrapper(clf_warmup_e))
+            tf_cosine = CosineAnnealingLR(self.tf_optim, T_max = kwargs['train_len'])
+            clf_cosine = CosineAnnealingLR(self.clf_optim, T_max = kwargs['train_len'])
+            self.tf_scheduler = SequentialLR(self.tf_optim, schedulers=[tf_warmup,tf_cosine], milestones=[tf_warmup_e-1]) #TODO: check what milestone should be based on warmup epoch?
+            self.clf_scheduler = SequentialLR(self.clf_optim, schedulers=[clf_warmup,clf_cosine], milestones=[clf_warmup_e-1]) 
+        
+        elif scheduler_type == 'cosine':
+            assert 'train_len' in kwargs, 'Must give train_len if using cosine annealing lr.'
+            self.tf_scheduler = CosineAnnealingLR(self.tf_optim, T_max = kwargs['train_len'])
+            self.clf_scheduler = CosineAnnealingLR(self.clf_optim, T_max = kwargs['train_len'])
+        
         elif scheduler_type is not None:
             raise NotImplementedError(f'{scheduler_type} not implemented.')
         else:
-            self.scheduler = None
+            self.tf_scheduler = None
+            self.clf_scheduler = None
         
         #es 
         if early_stop:
@@ -121,7 +153,7 @@ class Trainer():
         else:
             self.early_stop = None
 
-        self.log = {"train_loss":[], "val_loss":[]}
+        self.log = {"train_loss":[], "avg_train_loss":[], "val_loss":[], "avg_val_loss":[]}
 
 
     def train_step(self, train_loader:DataLoader):
@@ -132,8 +164,9 @@ class Trainer():
         self.model.train()
         running_loss = 0.
         for data in tqdm(train_loader):
-            inputs, targets = data['waveform'].to(self.model.device), data['targets'].to(self.model.device)
-            self.optim.zero_grad()
+            inputs, targets = data['waveform'], data['targets'].to(self.model.device)
+            self.tf_optim.zero_grad()
+            self.clf_optim.zero_grad()
 
             outputs = self.model(inputs)
 
@@ -141,9 +174,11 @@ class Trainer():
             loss.backward()
             running_loss += loss.item()
 
-            self.optim.step()
+            self.tf_optim.step()
+            self.clf_optim.step()
 
         self.log['train_loss'].append(running_loss)
+        self.log['avg_train_loss'].append((running_loss / len(train_loader)))
         
 
     def val_step(self, val_loader:DataLoader, e:int):
@@ -156,7 +191,7 @@ class Trainer():
         running_vloss = 0.0
         with torch.no_grad():
             for data in tqdm(val_loader):
-                inputs, targets= data['waveform'].to(self.model.device), data['targets'].to(self.model.device)
+                inputs, targets= data['waveform'], data['targets'].to(self.model.device)
     
                 outputs = self.model(inputs)
 
@@ -164,6 +199,7 @@ class Trainer():
                 running_vloss += loss.item()
 
         self.log['val_loss'].append(running_vloss)
+        self.log['avg_val_loss'].append((running_vloss / len(val_loader)))
 
         if self.early_stop:
             self.early_stop(running_vloss, self.model, e)
@@ -197,8 +233,9 @@ class Trainer():
             if (e ==0 or e % 5 == 0) and (e != epochs - 1) and self.save_checkpoints:
                 self.model.save_model_components(f'checkpoint{e}_')
             
-            if self.scheduler:
-                self.scheduler.step()
+            if self.tf_scheduler:
+                self.tf_scheduler.step()
+                self.clf_scheduler.step()
         
             if e == epochs - 1:
                 self.model.save_model_components(f'final{e}_')
@@ -219,7 +256,7 @@ class Trainer():
             running_loss = 0.0
             counter = 0
             for data in tqdm(test_loader):
-                inputs, targets = data['waveform'].to(self.model.device), data['targets'].to(self.model.device)
+                inputs, targets = data['waveform'], data['targets'].to(self.model.device)
                 
                 outputs = self.model(inputs)
                 
@@ -247,7 +284,7 @@ class Trainer():
             temp['roc_auc'] = roc_auc_score(true, pred)
             per_feature[t] = temp
 
-        metrics = {'loss':running_loss, 'feature_metrics': per_feature}
+        metrics = {'loss':running_loss, 'avg_loss': (running_loss / len(test_loader)), 'feature_metrics': per_feature}
         with open(str(self.model.out_dir / 'evaluation.json'), 'w') as f:
             json.dump(metrics, f)
         

@@ -15,12 +15,15 @@ import warnings
 
 ##third-party
 from huggingface_hub import snapshot_download
-from peft import LoraConfig, get_peft_model, PeftModel, PromptTuningConfig, PromptTuningInit
+from peft import LoraConfig, PeftModel, PromptTuningConfig, PromptTuningInit
 import torch
+import torch.nn.functional as F
 from transformers import AutoModel, WhisperModel
 
 ##local
 from ._base_model import BaseModel
+from ._hf_extractor import HFExtractor
+from ._peft_model import SpeechPeft
 from ._classifier import Classifier
 from summer25.constants import _MODELS
 
@@ -37,6 +40,7 @@ class HFModel(BaseModel):
     :param pt_ckpt: pathlike, path to pretrained model checkpoint (default=None)
     :param ft_ckpt: pathlike, path to finetuned base model checkpoint (default=None)
     :param clf_ckpt: pathlike, path to finetuned classifier checkpoint (default = None)
+    :param normalize: bool, specify whether to normalize input
     :param out_features: int, number of output features from classifier (number of classes) (default = 1)
     :param nlayers: int, number of layers in classification head (default = 2)
     :param activation: str, activation function to use in classification head (default = 'relu')
@@ -57,7 +61,7 @@ class HFModel(BaseModel):
     """
     def __init__(self, 
                  out_dir:Union[Path, str], model_type:str, finetune_method:str='none', freeze_method:str = 'required-only', unfreeze_layers:Optional[List[str]]=None,
-                 pool_method:str = 'mean',pt_ckpt:Optional[Union[Path,str]]=None, ft_ckpt:Optional[Union[Path,str]]=None, clf_ckpt:Optional[Union[Path,str]]=None,
+                 pool_method:str = 'mean',pt_ckpt:Optional[Union[Path,str]]=None, ft_ckpt:Optional[Union[Path,str]]=None, clf_ckpt:Optional[Union[Path,str]]=None, normalize:bool=False,
                  out_features:int=1, nlayers:int=2, activation:str='relu', bottleneck:int=None, layernorm:bool=False, dropout:float=0.0, binary:bool=True,
                  lora_rank:Optional[int]=8, lora_alpha:Optional[int]=16, lora_dropout:Optional[float]=0.0, virtual_tokens:Optional[int]=4,
                  seed:int=42, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
@@ -91,6 +95,7 @@ class HFModel(BaseModel):
                          device=device, seed=seed, pool_dim=_MODELS[model_type]['pool_dim'])
 
         #HF ARGS
+        self.normalize = normalize
         self.lora_rank = lora_rank
         self.lora_alpha = lora_alpha
         self.lora_dropout = lora_dropout
@@ -162,6 +167,9 @@ class HFModel(BaseModel):
         self.config.update(self.base_config)
         self.config.update(self.clf.get_config())
         self.save_config()
+
+        # INITIALIZE FEATURE EXTRACTOR
+        self.feature_extractor = HFExtractor(model_type=self.model_type, pt_ckpt=self.pt_ckpt, from_hub=self.from_hub, delete_download=self.delete_download,normalize=self.normalize)
     
     def get_model_name(self) -> str:
         """
@@ -304,7 +312,7 @@ class HFModel(BaseModel):
         if ckpt:
             self.base_model = PeftModel.from_pretrained(self.base_model, 
                                                         ckpt,
-                                                        is_trainable=is_trainable)
+                                                        is_trainable=is_trainable) #THERE IS GONNA BE AN ISSUE W THIS!! NEED TO MAKE MY OWN VERSION BOO
 
     def _trainable_parameters(self, print_output:bool=False):
         """
@@ -340,7 +348,7 @@ class HFModel(BaseModel):
                 tokenizer_name_or_path=ckpt #The pre-trained model.
             )
 
-            self.base_model = get_peft_model(self.base_model, peft_config)
+            self.base_model = SpeechPeft(self.base_model, peft_config)
         print('Using soft prompting: ')
         self.base_model.print_trainable_parameters()
 
@@ -374,26 +382,39 @@ class HFModel(BaseModel):
                 task_type="FEATURE_EXTRACTION"
             )
 
-            self.base_model = get_peft_model(self.base_model, peft_config)
+            self.base_model = SpeechPeft(self.base_model, peft_config)
         print('Using LoRA: ')
         self.base_model.print_trainable_parameters()
 
-    def forward(self, x:torch.Tensor) -> torch.Tensor:
+    def forward(self, waveform:List[torch.Tensor]) -> torch.Tensor:
         """
         Overwritten forward loop. 
 
         :param sample: batched sample feature input
         :return: classifier output
         """
+        inputs, attention_mask = self.feature_extractor(waveform)
+        inputs = inputs.to(self.device)
+        attention_mask = attention_mask.to(self.device)
+
         if self.is_whisper_model:
-            output = self.base_model.encoder(x.to(self.device))
+            output = self.base_model.encoder(inputs, attention_mask=attention_mask)
         else:
-            output = self.base_model(x.to(self.device))
+            output = self.base_model(inputs, attention_mask=attention_mask)
+
         output = output['last_hidden_state']
         
-        pooled = self.pooling(output)
+        ds_attn_mask = self.downsample_attention_mask(attn_mask=attention_mask.to(torch.float16), target_len=output.shape[1])
+        expand_attn_mask = ds_attn_mask.unsqueeze(-1).repeat(1, 1, output.shape[2])
+        output[~(expand_attn_mask==1.0)] = 0.0
+        pooled = self.pooling(output, ds_attn_mask)
  
         return self.clf(pooled)
+    
+    def downsample_attention_mask(self, attn_mask, target_len):
+        attn_mask = attn_mask.float().unsqueeze(1) # batch x 1 x time
+        attn_mask = F.interpolate(attn_mask, size=target_len, mode="nearest")  # downsample
+        return attn_mask.squeeze(1)
     
     def save_base_model(self, name:str, save_dir:Union[str,Path]):
         """

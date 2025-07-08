@@ -2,17 +2,18 @@
 Hugging Face feature extractor
 
 Author(s): Daniela Wiepert
-Last modified: 06/2025
+Last modified: 07/2025
 """
 #IMPORT
 ##built-in
 import os
 from pathlib import Path
 import shutil
-from typing import Union, Optional,Dict
+from typing import Union, Optional, Tuple
 
 ##third-party
 from huggingface_hub import snapshot_download
+import torch
 from transformers import AutoFeatureExtractor, WhisperFeatureExtractor
 
 ##local
@@ -27,11 +28,13 @@ class HFExtractor(BaseExtractor):
     :param pt_ckpt: pathlike, path to base pretrained model checkpoint (default=None)
     :param from_hub: bool, specify whether to load from hub or from existing pt_ckpt
     :param delete_download: bool, specify whether to delete any local downloads from hugging face (default = False)
+    :param normalize: bool, specify whether to normalize audio
     :param test_hub_fail: bool, TESTING ONLY
     :param test_local_fail: bool, TESTING ONLY
     """
-    def __init__(self, model_type:str, pt_ckpt:Optional[Union[Path,str]]=None, from_hub:bool=True,
-                test_hub_fail:bool=False, test_local_fail:bool=False, delete_download:bool=False):
+    def __init__(self, model_type:str, pt_ckpt:Optional[Union[Path,str]]=None, from_hub:bool=True, delete_download:bool=False, normalize:bool=False, 
+                test_hub_fail:bool=False, test_local_fail:bool=False):
+        
         super().__init__(model_type, pt_ckpt)
 
         assert 'hf_hub' in _MODELS[self.model_type], f'{self.model_type} is incompatible with HFModel class.'
@@ -40,7 +43,8 @@ class HFExtractor(BaseExtractor):
             self.hf_hub = _MODELS[self.model_type]['hf_hub']
             self.from_hub = from_hub
             self.delete_download = delete_download
-            
+            self.normalize = normalize
+
             if not self.from_hub: 
                 assert self.pt_ckpt is not None, 'Must give pt_ckpt if not loading from the hub'
                 if not isinstance(self.pt_ckpt, Path): self.pt_ckpt = Path(self.pt_ckpt)
@@ -106,26 +110,29 @@ class HFExtractor(BaseExtractor):
         Set kwargs for feature extractor
         """
         self.feature_extractor_kwargs = {}
+        self.feature_extractor_kwargs['return_attention_mask'] = True
         if isinstance(self.feature_extractor, WhisperFeatureExtractor):
             self.features_key = 'input_features'
-            self.feature_extractor_kwargs['return_attention_mask'] = True
+            self.attention_key = 'attention_mask'
         else:
             self.features_key = 'input_values'
+            self.attention_key = 'attention_mask'
+            self.feature_extractor_kwargs['do_normalize'] = self.normalize
+            self.feature_extractor_kwargs['padding'] = True
     
-    def __call__(self, sample:Dict) -> dict:
+    def __call__(self, wav:torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Run feature extraction on a sample
-        :param sample: dict, input sample
-        :return featsample: dict, sample after running through feature extractor
+        :param wav: input tensor
+        :return: torch.tensor, processed input
+        :return: torch.tensor, attention mask
         """
         if self.feature_extractor:
-            featsample = sample.copy()
-            wav = featsample['waveform']
-            preprocessed_wav = self.feature_extractor(wav.numpy(),
+            wav = [torch.squeeze(w).numpy() for w in wav]
+            preprocessed_wav = self.feature_extractor(wav,
                                                         return_tensors='pt', 
                                                         sampling_rate = self.feature_extractor.sampling_rate,
                                                         **self.feature_extractor_kwargs)
-            featsample['waveform'] = preprocessed_wav[self.features_key]
-            return featsample
+            return preprocessed_wav[self.features_key], preprocessed_wav[self.attention_key]
         else:
-            return sample
+            return wav, None

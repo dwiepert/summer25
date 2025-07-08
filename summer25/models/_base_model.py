@@ -201,18 +201,25 @@ class BaseModel(nn.Module):
                 param.requires_grad=True
 
     ### POOLING ###
-    def pooling(self, x:torch.Tensor) -> torch.Tensor:
+    def pooling(self, x:torch.Tensor, attn_mask:torch.Tensor=None) -> torch.Tensor:
         """
         Mean/max pooling
         May need to change dimensions depending on model
         :param x: torch tensor, input
         """
         if self.pool_method == 'mean':
-            return torch.mean(x, self.pool_dim)
+            if attn_mask is not None:
+                return x.sum(dim=self.pool_dim) / attn_mask.sum(dim=self.pool_dim).view(-1, 1)
+            else:
+                return torch.mean(x, self.pool_dim)
         elif self.pool_method == 'max': 
-            return torch.max(x, self.pool_dim).values
+            return torch.max(x, self.pool_dim).values #DO YOU NEED TO CHANGE ATTN MASK FOR MAX? I DON'T THINK SO? TODO
         else:
-            return self.attention_pooling(x)
+            if attn_mask is not None:
+                lengths = torch.count_nonzero(attn_mask, dim=1) #right dim? TODO
+            else:
+                lengths = torch.count_nonzero(x, dim=1)
+            return self.attention_pooling(x, lengths)
     
     ### FORWARD METHOD ###
     def forward(self, x:torch.Tensor) -> torch.Tensor:

@@ -31,7 +31,7 @@ class RankedClassificationLoss(nn.Module):
 
         :param logits: torch.Tensor, model prediction (N, # classes)
         :param ratings: torch.Tensor, target ratings (N, # classes)
-        :return: torch.Tensor, calculated loss TODO: is this actually a torch tensor
+        :return: torch.Tensor, calculated loss
         """
         # Convert ratings to binary labels for BCE loss
         binary_labels = (ratings >= self.rating_threshold).float()

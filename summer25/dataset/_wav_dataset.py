@@ -5,7 +5,6 @@ Author(s): Daniela Wiepert
 Last modified: 06/2025
 """
 #IMPORTS
-import random
 from typing import List, Union, Any
 
 #third party
@@ -22,7 +21,7 @@ from ._base_dataset import BaseDataset
      
 class WavDataset(BaseDataset):
     def __init__(self, data:pd.DataFrame, prefix:str, model_type:str, uid_col:str,
-                 config:dict, target_labels:str, rank_prefix:str=None, bucket=None, feature_extractor=None, 
+                 config:dict, target_labels:str, rank_prefix:str=None, bucket=None,
                  transforms=None, extension:str='wav', structured:bool=False):
         '''
         Dataset that manages audio recordings. 
@@ -35,7 +34,6 @@ class WavDataset(BaseDataset):
         :param target_labels: str list of targets to extract from data. Can be none only for 'asr'.
         :param rank_prefix: str, prefix for columns with rank target
         :param bucket: gcs bucket (default=None)
-        :param feature_extractor: initialized feature extractor (default=Nonse)
         :param transforms: torchvision transforms function to run on data (default=None)
         :param extension: str, audio extension
         :param structured: bool, indicate whether audio files are in structured format (prefix/uid/waveform.wav) or not (default=False)
@@ -64,10 +62,6 @@ class WavDataset(BaseDataset):
         else:
             print('Using given transforms rather than automatically intializing transforms from config.')
             self.transforms = transforms
-
-        self.feature_extractor = None
-        if feature_extractor is not None:
-            self.set_feature_extractor(feature_extractor)
         
     def _check_existence(self, dictionary:dict, key: str) -> Any:
         """
@@ -126,14 +120,6 @@ class WavDataset(BaseDataset):
             transform_list.append(numpy_tfm)
 
         self.audio_transforms = torchvision.transforms.Compose(transform_list)
-
-
-    def set_feature_extractor(self, feature_extractor):
-        """
-        Set a feature extractor
-        :param feature_extractor: initialized feature extractor
-        """
-        self.feature_extractor = feature_extractor
     
     def audiomentation_options(self) -> List[str]:
         """
@@ -202,9 +188,6 @@ class WavDataset(BaseDataset):
         if self.data_augmentation:
             aug_wav = self.al_transforms(samples=sample['waveform'], sample_rate = sample['sample_rate']) #audio augmentations
             sample['waveform'] = torch.from_numpy(aug_wav).type(torch.float32)
-       
-        if self.feature_extractor is not None:
-            sample = self.feature_extractor(sample)
     
         return sample
     
