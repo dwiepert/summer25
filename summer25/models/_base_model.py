@@ -213,12 +213,12 @@ class BaseModel(nn.Module):
             else:
                 return torch.mean(x, self.pool_dim)
         elif self.pool_method == 'max': 
-            return torch.max(x, self.pool_dim).values #DO YOU NEED TO CHANGE ATTN MASK FOR MAX? I DON'T THINK SO? TODO
+            return torch.max(x, self.pool_dim).values
         else:
             if attn_mask is not None:
-                lengths = torch.count_nonzero(attn_mask, dim=1) #right dim? TODO
+                lengths = torch.count_nonzero(attn_mask, dim=1)
             else:
-                lengths = torch.count_nonzero(x, dim=1)
+                lengths = torch.count_nonzero(x[:,:,0], dim=1)
             return self.attention_pooling(x, lengths)
     
     ### FORWARD METHOD ###

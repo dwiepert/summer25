@@ -23,7 +23,7 @@ from transformers import AutoModel, WhisperModel
 ##local
 from ._base_model import BaseModel
 from ._hf_extractor import HFExtractor
-from ._peft_model import SpeechPeft
+from ._peft_model import SpeechPeft, peft_from_pretrained
 from ._classifier import Classifier
 from summer25.constants import _MODELS
 
@@ -169,7 +169,7 @@ class HFModel(BaseModel):
         self.save_config()
 
         # INITIALIZE FEATURE EXTRACTOR
-        self.feature_extractor = HFExtractor(model_type=self.model_type, pt_ckpt=self.pt_ckpt, from_hub=self.from_hub, delete_download=self.delete_download,normalize=self.normalize)
+        self.feature_extractor = HFExtractor(model_type=self.model_type, pt_ckpt=self.pt_ckpt, from_hub=from_hub, delete_download=self.delete_download,normalize=self.normalize)
     
     def get_model_name(self) -> str:
         """
@@ -310,10 +310,10 @@ class HFModel(BaseModel):
             is_trainable = True
 
         if ckpt:
-            self.base_model = PeftModel.from_pretrained(self.base_model, 
-                                                        ckpt,
+            self.base_model = peft_from_pretrained(SpeechPeft, model = self.base_model, 
+                                                        model_id = ckpt,
                                                         is_trainable=is_trainable) #THERE IS GONNA BE AN ISSUE W THIS!! NEED TO MAKE MY OWN VERSION BOO
-
+    
     def _trainable_parameters(self, print_output:bool=False):
         """
         Calculate number of parameters, trainable or frozen
@@ -395,7 +395,7 @@ class HFModel(BaseModel):
         """
         inputs, attention_mask = self.feature_extractor(waveform)
         inputs = inputs.to(self.device)
-        attention_mask = attention_mask.to(self.device)
+        attention_mask = attention_mask.bool().to(self.device)
 
         if self.is_whisper_model:
             output = self.base_model.encoder(inputs, attention_mask=attention_mask)
@@ -411,7 +411,14 @@ class HFModel(BaseModel):
  
         return self.clf(pooled)
     
-    def downsample_attention_mask(self, attn_mask, target_len):
+    def downsample_attention_mask(self, attn_mask:torch.Tensor, target_len:int) -> torch.Tensor:
+        """
+        Downsample attention mask to target length
+
+        :param attn_mask: torch.Tensor, attention mask
+        :param target_len: int, target length to downsample 
+        :return: downsampled attention mask
+        """
         attn_mask = attn_mask.float().unsqueeze(1) # batch x 1 x time
         attn_mask = F.interpolate(attn_mask, size=target_len, mode="nearest")  # downsample
         return attn_mask.squeeze(1)
@@ -428,19 +435,24 @@ class HFModel(BaseModel):
         if save_dir.exists(): print('Overwriting existing base model file!')
         self.base_model.save_pretrained(save_dir)
 
-    def save_model_components(self, name_prefix:str=None):
+    def save_model_components(self, name_prefix:str=None, sub_dir:Path = None):
         """
         Save base model and classifier separately
         :param name_prefix: str, name prefix for model and classifier (default = None)
+        :param sub_dir: Path, optional sub dir to save model components to
         """
+        if sub_dir:
+            path = self.out_dir / sub_dir 
+        else:
+            path = self.out_dir
         name_model = self.model_name
         name_clf = self.clf.config['clf_name']
         if name_prefix:
             name_model = name_prefix + name_model
             name_clf = name_prefix + name_clf
        
-        out_path = self.out_dir / 'weights'
-        out_path.mkdir(exist_ok=True)
+        out_path = path / 'weights'
+        out_path.mkdir(parents=True, exist_ok=True)
         self.save_base_model(name_model, out_path)
         self.clf.save_classifier(name_clf, out_path)
     

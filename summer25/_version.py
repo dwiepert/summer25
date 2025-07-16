@@ -1,4 +1,4 @@
-__version__ = '0.4.1'
+__version__ = '0.4.3'
 
 #change log:
 # 0.0.0: initial commit
@@ -21,3 +21,4 @@ __version__ = '0.4.1'
 # 0.4.0: trainer implemented and tested
 # 0.4.1: untested changes to feature extractor/collation/scheduler/optimizer
 # 0.4.2: untested changes to pooling
+# 0.4.3: tests added (excluding gcs tests)

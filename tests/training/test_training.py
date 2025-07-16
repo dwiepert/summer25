@@ -16,9 +16,30 @@ from torch.utils.data import DataLoader
 
 ##local
 from summer25.models import HFModel, HFExtractor
-from summer25.dataset import WavDataset, collate_waveform
+from summer25.dataset import WavDataset, collate_features
 from summer25.training import Trainer
 from summer25.constants import _FEATURES
+
+def check_checkpoints(m, name_prefix, checkpoints=[0], epochs=7, val=True, args=[], train_params={}, early_stop=False):
+    path = m.out_dir / name_prefix 
+    assert (path / 'train_log.json').exists(), 'Training log not dumped correctly'
+    out_path = path / 'weights'
+    for c in checkpoints:
+        assert (out_path / f'checkpoint{c}_{m.model_name}').exists(), 'Model checkpoint not saved correctly'
+    
+    if not early_stop:
+        assert (out_path / f'final{epochs-1}_{m.model_name}').exists(), 'Final model not saved correctly'
+    else:
+        assert(out_path / f'best{epochs-1}_{m.model_name}').exists(), 'Best model not saved correctly.'
+    with open(str(path / 'train_log.json'), 'r') as f:
+        data = json.load(f)
+    assert len(data['train_loss']) == epochs
+    if val:
+        assert len(data['val_loss']) == epochs
+    
+    for a in args:
+        assert a in data
+        assert train_params[a] == data[a], 'Value not saved_correctly'
 
 def data_dictionary():
     sub_list = ['1919-142785-0008']
@@ -90,8 +111,6 @@ def test_trainer_params():
     trainer_params['rating_threshold'] = 2.0
     t = Trainer(**trainer_params)
 
-    #try different schedulers with specific params
-
     ##exponential
     trainer_params['scheduler_type'] = 'exponential'
     with pytest.raises(AssertionError):
@@ -101,29 +120,22 @@ def test_trainer_params():
         t = Trainer(**trainer_params)
     trainer_params['epochs'] = 1
     t = Trainer(**trainer_params)
+    trainer_params['gamma'] = 0.1
+    t = Trainer(**trainer_params)
 
-    ##warmup multistep
-    trainer_params['scheduler_type'] = 'warmup-multistep'
+    ##warmup cosine
+    trainer_params['scheduler_type'] = 'warmup-cosine'
     with pytest.raises(AssertionError):
         t = Trainer(**trainer_params)
     trainer_params['warmup_epochs'] = 1 
     with pytest.raises(AssertionError):
         t = Trainer(**trainer_params)
-    trainer_params['multistep_milestones'] = [0,1]
-    with pytest.raises(AssertionError):
-        t = Trainer(**trainer_params)
-    trainer_params['gamma'] = 0.1 
-    
-
-    ## multistep
-    trainer_params['scheduler_type'] = 'multistep' 
+    trainer_params['train_len'] = 10
     t = Trainer(**trainer_params)
-    del trainer_params['gamma']
-    with pytest.raises(AssertionError):
-        t = Trainer(**trainer_params)
-    del trainer_params['multistep_milestones']
-    with pytest.raises(AssertionError):
-        t = Trainer(**trainer_params)
+
+    ## cosine
+    trainer_params['scheduler_type'] = 'cosine' 
+    t = Trainer(**trainer_params)
 
     ## early stop
     del trainer_params['scheduler_type']
@@ -137,7 +149,7 @@ def test_fit():
     params['model_type'] = 'wavlm-base'
     m = HFModel(**params)
 
-    trainer_params = {'model': m, 'target_features':[_FEATURES[0]], 'early_stop':False}
+    trainer_params = {'model': m, 'target_features':[_FEATURES[0]], 'early_stop':False, 'loss_type':'bce', 'scheduler_type':None, 'optim_type':'adamw', 'learning_rate':0.001, 'tf_learning_rate':0.0001}
     #initialize with valid params 
     t = Trainer(**trainer_params)
     
@@ -145,38 +157,22 @@ def test_fit():
     config = create_config()
 
     # AUDIO ONLY
-    feature_extractor = HFExtractor(model_type='wavlm-base')
-    d = WavDataset(data=df, prefix='./tests/audio_examples/', uid_col='original_audio_id', model_type='wavlm-base', config=config, target_labels=[_FEATURES[0]], bucket=None, feature_extractor=feature_extractor, extension='flac')
+    d = WavDataset(data=df, prefix='./tests/audio_examples/', uid_col='original_audio_id', model_type='wavlm-base', config=config, target_labels=[_FEATURES[0]], bucket=None, extension='flac')
     
     #train_loader
-    train_loader = DataLoader(d, batch_size=1, shuffle=True, collate_fn=collate_waveform)
+    train_loader = DataLoader(d, batch_size=1, shuffle=True, collate_fn=collate_features)
     #val_loader
-    val_loader = DataLoader(d, batch_size=1, shuffle=False, collate_fn=collate_waveform)
+    val_loader = DataLoader(d, batch_size=1, shuffle=False, collate_fn=collate_features)
 
     #fit without val loader - check that train log is in output, run for 7 epochs, assert there is a checkpoint for 0,5 and final for e = 6
     t.fit(train_loader=train_loader, epochs=7)
-    out_path = m.out_dir / 'weights'
-    assert (m.out_dir / 'train_log.json').exists(), 'Training log not dumped correctly'
-    assert (out_path / f'checkpoint0_{m.model_name}').exists(), 'Model checkpoint not saved correctly'
-    assert (out_path / f'checkpoint5_{m.model_name}').exists(), 'Model checkpoint not saved correctly'
-    assert (out_path / f'final6_{m.model_name}').exists(), 'Final model not saved correctly'
-    with open(str(m.out_dir / 'train_log.json'), 'r') as f:
-        data = json.load(f)
-    assert len(data['train_loss']) == 7
-    assert data['val_loss'] == []
+    args = ['loss_type', 'optim_type', 'scheduler_type', 'learning_rate', 'tf_learning_rate']
+    check_checkpoints(m,name_prefix=f'{t.name_prefix}_e7', checkpoints=[0,5],epochs=7, val=False, args=args, train_params = trainer_params)
 
     #fit with val loader - check that train log is in output, run for 7 epochs, assert there is a checkpoint for 0,5 and final for e = 6
     t = Trainer(**trainer_params)
     t.fit(train_loader=train_loader,val_loader=val_loader, epochs=7)
-    out_path = m.out_dir / 'weights'
-    assert (m.out_dir / 'train_log.json').exists(), 'Training log not dumped correctly'
-    assert (out_path / f'checkpoint0_{m.model_name}').exists(), 'Model checkpoint not saved correctly'
-    assert (out_path / f'checkpoint5_{m.model_name}').exists(), 'Model checkpoint not saved correctly'
-    assert (out_path / f'final6_{m.model_name}').exists(), 'Final model not saved correctly'
-    with open(str(m.out_dir / 'train_log.json'), 'r') as f:
-        data = json.load(f)
-    assert len(data['train_loss']) == 7
-    assert len(data['val_loss']) == 7
+    check_checkpoints(m,name_prefix=f'{t.name_prefix}_e7', checkpoints=[0,5],epochs=7, val=True, args=args, train_params = trainer_params)
     shutil.rmtree(params['out_dir'])
 
 def test_earlystop():
@@ -186,7 +182,7 @@ def test_earlystop():
     params['model_type'] = 'wavlm-base'
     m = HFModel(**params)
 
-    trainer_params = {'model': m, 'target_features':[_FEATURES[0]], 'early_stop':True}
+    trainer_params = {'model': m, 'target_features':[_FEATURES[0]], 'early_stop':True, 'loss_type': 'bce', 'optim_type':'adamw','learning_rate':0.0001, 'tf_learning_rate': 0.00001, 'scheduler_type':None}
     #fit with early stopping
     trainer_params['test'] = True
     t = Trainer(**trainer_params)
@@ -194,134 +190,154 @@ def test_earlystop():
     df = data_dictionary()
     config = create_config()
     # AUDIO ONLY
-    feature_extractor = HFExtractor(model_type='wavlm-base')
-    d = WavDataset(data=df, prefix='./tests/audio_examples/', uid_col='original_audio_id', model_type='wavlm-base', config=config, target_labels=[_FEATURES[0]], bucket=None, feature_extractor=feature_extractor, extension='flac')
+    d = WavDataset(data=df, prefix='./tests/audio_examples/', uid_col='original_audio_id', model_type='wavlm-base', config=config, target_labels=[_FEATURES[0]], bucket=None, extension='flac')
     #train_loader
-    train_loader = DataLoader(d, batch_size=21, shuffle=True, collate_fn=collate_waveform)
+    train_loader = DataLoader(d, batch_size=21, shuffle=True, collate_fn=collate_features)
     #val_loader
-    val_loader = DataLoader(d, batch_size=1, shuffle=False, collate_fn=collate_waveform)
+    val_loader = DataLoader(d, batch_size=1, shuffle=False, collate_fn=collate_features)
 
+    args = ['loss_type', 'optim_type', 'scheduler_type', 'learning_rate', 'tf_learning_rate']
     t = Trainer(**trainer_params)
     t.fit(train_loader=train_loader,val_loader=val_loader, epochs=7)
-    out_path = m.out_dir / 'weights'
-    assert (m.out_dir / 'train_log.json').exists(), 'Training log not dumped correctly'
-    assert (out_path / f'best0_{m.model_name}').exists(), 'Final model not saved correctly'
-    with open(str(m.out_dir / 'train_log.json'), 'r') as f:
-        data = json.load(f)
-    assert len(data['train_loss']) == 1
-    assert len(data['val_loss']) == 1
+    check_checkpoints(m, name_prefix = f'{t.name_prefix}_e7', checkpoints=[], epochs = 1, val=True, args=args, train_params=trainer_params, early_stop=True)
     shutil.rmtree(params['out_dir'])
 
 def test_schedulers():
     params = {'out_dir':Path('./out_dir')}
-
     #base test
     params['model_type'] = 'wavlm-base'
     m = HFModel(**params)
 
-    trainer_params = {'model': m, 'target_features':[_FEATURES[0]], 'early_stop':False}
+    trainer_params = {'model': m, 'target_features':[_FEATURES[0]], 'early_stop':False, 'loss_type': 'bce', 'optim_type':'adamw','learning_rate':0.0001, 'tf_learning_rate': 0.00001, 'scheduler_type':None}
     #initialize with valid params 
     df = data_dictionary()
     config = create_config()
 
     # AUDIO ONLY
-    feature_extractor = HFExtractor(model_type='wavlm-base')
-    d = WavDataset(data=df, prefix='./tests/audio_examples/', uid_col='original_audio_id', model_type='wavlm-base', config=config, target_labels=[_FEATURES[0]], bucket=None, feature_extractor=feature_extractor, extension='flac')
-    
+    d = WavDataset(data=df, prefix='./tests/audio_examples/', uid_col='original_audio_id', model_type='wavlm-base', config=config, target_labels=[_FEATURES[0]], bucket=None, extension='flac')
+
     #train_loader
-    train_loader = DataLoader(d, batch_size=1, shuffle=True, collate_fn=collate_waveform)
+    train_loader = DataLoader(d, batch_size=1, shuffle=True, collate_fn=collate_features)
     #val_loader
-    val_loader = DataLoader(d, batch_size=1, shuffle=False, collate_fn=collate_waveform)
+    val_loader = DataLoader(d, batch_size=1, shuffle=False, collate_fn=collate_features)
+
+    args = ['loss_type', 'optim_type', 'scheduler_type', 'learning_rate', 'tf_learning_rate']
+    #no scheduler 
+    t = Trainer(**trainer_params)
+    t.fit(train_loader=train_loader,val_loader=val_loader, epochs=7)
+    check_checkpoints(m,name_prefix=f'{t.name_prefix}_e7', checkpoints=[0,5],epochs=7, val=True, args=args, train_params = trainer_params)
 
     #exponential
+    trainer_params['scheduler_type'] = 'exponential'
+    #USE GAMMA
+    #one gamma
+    gamma = 0.01
+    trainer_params['gamma'] = gamma
+    t = Trainer(**trainer_params)
+    t.fit(train_loader=train_loader,val_loader=val_loader, epochs=7)
+    check_checkpoints(m, name_prefix=f'{t.name_prefix}_e7', checkpoints=[0,5],epochs=7, val=True, args = args + ['gamma'], train_params = trainer_params)
+
+    #tf gamma
+    trainer_params['tf_gamma'] = 0.001
+    t = Trainer(**trainer_params)
+    t.fit(train_loader=train_loader,val_loader=val_loader, epochs=7)
+    check_checkpoints(m, name_prefix=f'{t.name_prefix}_e7', checkpoints=[0,5],epochs=7, val=True,  args = args + ['gamma', 'tf_gamma'], train_params = trainer_params)
+
+    #NO GAMMA
+    del trainer_params['gamma']
+    del trainer_params['tf_gamma']
+    with pytest.raises(AssertionError):
+        t = Trainer(**trainer_params)
     trainer_params['end_lr'] = 0.001
+    with pytest.raises(AssertionError):
+        t = Trainer(**trainer_params)
     trainer_params['epochs'] = 7
-    trainer_params['scheduler'] = 'exponential'
     t = Trainer(**trainer_params)
     t.fit(train_loader=train_loader,val_loader=val_loader, epochs=7)
-    out_path = m.out_dir / 'weights'
-    assert (m.out_dir / 'train_log.json').exists(), 'Training log not dumped correctly'
-    assert (out_path / f'checkpoint0_{m.model_name}').exists(), 'Model checkpoint not saved correctly'
-    assert (out_path / f'checkpoint5_{m.model_name}').exists(), 'Model checkpoint not saved correctly'
-    assert (out_path / f'final6_{m.model_name}').exists(), 'Final model not saved correctly'
-    with open(str(m.out_dir / 'train_log.json'), 'r') as f:
-        data = json.load(f)
-    assert len(data['train_loss']) == 7
-    assert len(data['val_loss']) == 7
+    check_checkpoints(m, name_prefix=f'{t.name_prefix}_e7', checkpoints=[0,5],epochs=7, val=True,  args = args + ['end_lr', 'epochs'], train_params = trainer_params)
 
+    #tf no gamma
+    trainer_params['end_tf_lr'] = 0.01
+    t = Trainer(**trainer_params)
+    t.fit(train_loader=train_loader,val_loader=val_loader, epochs=7)
+    check_checkpoints(m,name_prefix=f'{t.name_prefix}_e7', checkpoints=[0,5],epochs=7, val=True, args = args + ['end_lr', 'epochs', 'end_tf_lr'], train_params = trainer_params)
 
-    #warmup-multistep
-    trainer_params['scheduler_type'] = 'warmup-multistep'
+    #cosine
+    trainer_params['scheduler_type'] = 'cosine'
+    with pytest.raises(AssertionError):
+        t = Trainer(**trainer_params)
+    trainer_params['train_len'] = len(train_loader)
+    t = Trainer(**trainer_params)
+    t.fit(train_loader=train_loader,val_loader=val_loader, epochs=7)
+    check_checkpoints(m,name_prefix=f'{t.name_prefix}_e7', checkpoints=[0,5],epochs=7, val=True, args = args + ['train_len'], train_params = trainer_params)
+
+    #warmup-cosine
+    trainer_params['scheduler_type'] = 'warmup-cosine'
+    del trainer_params['train_len']
+    with pytest.raises(AssertionError):
+        t = Trainer(**trainer_params)
+    trainer_params['train_len'] = len(train_loader)
+    with pytest.raises(AssertionError):
+        t = Trainer(**trainer_params)
     trainer_params['warmup_epochs'] = 2
-    trainer_params['multistep_milestones'] = [3,4]
-    trainer_params['gamma'] = 0.1 
     t = Trainer(**trainer_params)
     t.fit(train_loader=train_loader,val_loader=val_loader, epochs=7)
-    out_path = m.out_dir / 'weights'
-    assert (m.out_dir / 'train_log.json').exists(), 'Training log not dumped correctly'
-    assert (out_path / f'checkpoint0_{m.model_name}').exists(), 'Model checkpoint not saved correctly'
-    assert (out_path / f'checkpoint5_{m.model_name}').exists(), 'Model checkpoint not saved correctly'
-    assert (out_path / f'final6_{m.model_name}').exists(), 'Final model not saved correctly'
-    with open(str(m.out_dir / 'train_log.json'), 'r') as f:
-        data = json.load(f)
-    assert len(data['train_loss']) == 7
-    assert len(data['val_loss']) == 7
+    check_checkpoints(m,name_prefix=f'{t.name_prefix}_e7', checkpoints=[0,5],epochs=7, val=True,  args = args + ['train_len', 'warmup_epochs'], train_params = trainer_params)
 
-    #multistep 
-    trainer_params['scheduler_type'] = 'multistep'
+    trainer_params['tf_warmup_epochs'] = 3
     t = Trainer(**trainer_params)
     t.fit(train_loader=train_loader,val_loader=val_loader, epochs=7)
-    out_path = m.out_dir / 'weights'
-    assert (m.out_dir / 'train_log.json').exists(), 'Training log not dumped correctly'
-    assert (out_path / f'checkpoint0_{m.model_name}').exists(), 'Model checkpoint not saved correctly'
-    assert (out_path / f'checkpoint5_{m.model_name}').exists(), 'Model checkpoint not saved correctly'
-    assert (out_path / f'final6_{m.model_name}').exists(), 'Final model not saved correctly'
-    with open(str(m.out_dir / 'train_log.json'), 'r') as f:
-        data = json.load(f)
-    assert len(data['train_loss']) == 7
-    assert len(data['val_loss']) == 7
+    check_checkpoints(m, name_prefix=f'{t.name_prefix}_e7', checkpoints=[0,5],epochs=7, val=True, args = args + ['train_len', 'tf_warmup_epochs'], train_params = trainer_params)
 
-    #test all assertionsxf
+    #test all assertions
     shutil.rmtree(params['out_dir'])
 
 def test_loss():
-    params = {'out_dir':Path('./out_dir'), 'binary':False}
-
+    params = {'out_dir':Path('./out_dir')}
     #base test
     params['model_type'] = 'wavlm-base'
     m = HFModel(**params)
 
-    trainer_params = {'model': m, 'target_features':[_FEATURES[0]], 'early_stop':False, 'loss_type':'rank'}
-    #initialize with valid params
-    with pytest.raises(AssertionError): 
-        t = Trainer(**trainer_params)
-    trainer_params['rating_threshold'] = 2
-    t = Trainer(**trainer_params)
-    
+    trainer_params = {'model': m, 'target_features':[_FEATURES[0]], 'early_stop':False, 'loss_type': 'bce', 'optim_type':'adamw','learning_rate':0.0001, 'tf_learning_rate': 0.00001, 'scheduler_type':None}
+    #initialize with valid params 
     df = data_dictionary()
     config = create_config()
 
     # AUDIO ONLY
-    feature_extractor = HFExtractor(model_type='wavlm-base')
-    d = WavDataset(data=df, prefix='./tests/audio_examples/', uid_col='original_audio_id', model_type='wavlm-base', config=config, target_labels=[_FEATURES[0]], bucket=None, feature_extractor=feature_extractor, extension='flac')
-    
-    #train_loader
-    train_loader = DataLoader(d, batch_size=1, shuffle=True, collate_fn=collate_waveform)
-    #val_loader
-    val_loader = DataLoader(d, batch_size=1, shuffle=False, collate_fn=collate_waveform)
+    d = WavDataset(data=df, prefix='./tests/audio_examples/', uid_col='original_audio_id', model_type='wavlm-base', config=config, target_labels=[_FEATURES[0]], bucket=None, extension='flac')
 
-    #fit with val loader - check that train log is in output, run for 7 epochs, assert there is a checkpoint for 0,5 and final for e = 6
+    #train_loader
+    train_loader = DataLoader(d, batch_size=1, shuffle=True, collate_fn=collate_features)
+    #val_loader
+    val_loader = DataLoader(d, batch_size=1, shuffle=False, collate_fn=collate_features)
+
+    args = ['loss_type', 'optim_type', 'scheduler_type', 'learning_rate', 'tf_learning_rate']
+    #bce loss
     t = Trainer(**trainer_params)
     t.fit(train_loader=train_loader,val_loader=val_loader, epochs=7)
-    out_path = m.out_dir / 'weights'
-    assert (m.out_dir / 'train_log.json').exists(), 'Training log not dumped correctly'
-    assert (out_path / f'checkpoint0_{m.model_name}').exists(), 'Model checkpoint not saved correctly'
-    assert (out_path / f'checkpoint5_{m.model_name}').exists(), 'Model checkpoint not saved correctly'
-    assert (out_path / f'final6_{m.model_name}').exists(), 'Final model not saved correctly'
-    with open(str(m.out_dir / 'train_log.json'), 'r') as f:
-        data = json.load(f)
-    assert len(data['train_loss']) == 7
-    assert len(data['val_loss']) == 7
+    check_checkpoints(m,name_prefix=f'{t.name_prefix}_e7', checkpoints=[0,5],epochs=7, val=True, args=args, train_params = trainer_params)
+
+    #rank loss
+    trainer_params['loss_type'] = 'rank'
+    with pytest.raises(AssertionError):
+        t = Trainer(**trainer_params)
+    trainer_params['rating_threshold'] = 2.0
+    t = Trainer(**trainer_params)
+    t.fit(train_loader=train_loader,val_loader=val_loader, epochs=7)
+    check_checkpoints(m,name_prefix=f'{t.name_prefix}_e7', checkpoints=[0,5],epochs=7, val=True, args=args + ['rating_threshold'], train_params = trainer_params)
+
+    #optional margin
+    trainer_params['margin'] = 1.0
+    t = Trainer(**trainer_params)
+    t.fit(train_loader=train_loader,val_loader=val_loader, epochs=7)
+    check_checkpoints(m,name_prefix=f'{t.name_prefix}_e7', checkpoints=[0,5],epochs=7, val=True, args=args + ['rating_threshold', 'margin'], train_params = trainer_params)
+
+    #option weight
+    trainer_params['bce_weight'] = 0.25
+    t = Trainer(**trainer_params)
+    t.fit(train_loader=train_loader,val_loader=val_loader, epochs=7)
+    check_checkpoints(m,name_prefix=f'{t.name_prefix}_e7', checkpoints=[0,5],epochs=7, val=True, args=args + ['rating_threshold', 'margin'], train_params = trainer_params)
+
     shutil.rmtree(params['out_dir'])
 
 def test_eval():
@@ -331,7 +347,7 @@ def test_eval():
     params['model_type'] = 'wavlm-base'
     m = HFModel(**params)
 
-    trainer_params = {'model': m, 'target_features':[_FEATURES[0]], 'early_stop':False}
+    trainer_params = {'model': m, 'target_features':[_FEATURES[0]], 'early_stop':False, 'loss_type': 'bce', 'optim_type':'adamw','learning_rate':0.0001, 'tf_learning_rate': 0.00001, 'scheduler_type':None}
     #initialize with valid params 
     t = Trainer(**trainer_params)
     
@@ -339,22 +355,23 @@ def test_eval():
     config = create_config()
 
     # AUDIO ONLY
-    feature_extractor = HFExtractor(model_type='wavlm-base')
-    d = WavDataset(data=df, prefix='./tests/audio_examples/', uid_col='original_audio_id', model_type='wavlm-base', config=config, target_labels=[_FEATURES[0]], bucket=None, feature_extractor=feature_extractor, extension='flac')
+    d = WavDataset(data=df, prefix='./tests/audio_examples/', uid_col='original_audio_id', model_type='wavlm-base', config=config, target_labels=[_FEATURES[0]], bucket=None, extension='flac')
     
     #train_loader
-    train_loader = DataLoader(d, batch_size=1, shuffle=True, collate_fn=collate_waveform)
+    train_loader = DataLoader(d, batch_size=1, shuffle=True, collate_fn=collate_features)
     #val_loader
-    val_loader = DataLoader(d, batch_size=1, shuffle=False, collate_fn=collate_waveform)
+    val_loader = DataLoader(d, batch_size=1, shuffle=False, collate_fn=collate_features)
     #test_loader
-    test_loader = DataLoader(d, batch_size=1, shuffle=False, collate_fn=collate_waveform)
+    test_loader = DataLoader(d, batch_size=1, shuffle=False, collate_fn=collate_features)
     #fit with val loader - check that train log is in output, run for 7 epochs, assert there is a checkpoint for 0,5 and final for e = 6
     t = Trainer(**trainer_params)
     t.fit(train_loader=train_loader,val_loader=val_loader, epochs=7)
     
     t.test(test_loader = test_loader)
-    assert (m.out_dir / 'evaluation.json').exists()
-    with open(str(m.out_dir / 'evaluation.json'), 'r') as f:
+    name_prefix = f'{t.name_prefix}_e{t.epochs}'
+    path = m.out_dir /name_prefix
+    assert (path/ 'evaluation.json').exists()
+    with open(str(path / 'evaluation.json'), 'r') as f:
         data = json.load(f)
     assert 'loss' in data and 'feature_metrics' in data
     feats = data['feature_metrics']

@@ -12,9 +12,10 @@ import shutil
 ##third-party
 import pytest
 import torchaudio
+import torch
 
 ##local
-from summer25.models import HFModel, Classifier, HFExtractor
+from summer25.models import HFModel
 
 
 @pytest.mark.hf
@@ -173,11 +174,13 @@ def test_lora():
     assert (ft_ckpt/(m.model_name)).exists() and os.listdir(ft_ckpt/(m.model_name)) != [], 'Base model properly saved.'
     assert (ft_ckpt/(m.clf.config['clf_name'] + '.pt')).exists(), 'Classifier properly saved.'
     assert check_lora(m)
-
+    n_params = sum(p.numel() for p in m.base_model.parameters() if p.requires_grad)
     #from hub = True 
     params['ft_ckpt'] = ft_ckpt/(m.model_name)
     m = HFModel(**params)
     assert check_lora(m)
+    n_params2 = sum(p.numel() for p in m.base_model.parameters() if p.requires_grad)
+    assert n_params == n_params2, 'Different models during lora'
 
     params['from_hub'] = False 
     with pytest.raises(AssertionError):
@@ -189,16 +192,24 @@ def test_lora():
     assert m.local_path.exists(), 'Local path with copy of checkpoint does not exist.'
     params['pt_ckpt'] = m.local_path 
     assert check_lora(m)
+    n_params2 = sum(p.numel() for p in m.base_model.parameters() if p.requires_grad)
+    assert n_params == n_params2, 'Different models during lora'
+
 
     params['from_hub'] = False
     m = HFModel(**params)
     assert check_lora(m)
+    n_params2 = sum(p.numel() for p in m.base_model.parameters() if p.requires_grad)
+    assert n_params == n_params2, 'Different models during lora'
+
 
     params['delete_download'] = True
     m = HFModel(test_hub_fail=True, **params)
     assert check_lora(m)
+    n_params2 = sum(p.numel() for p in m.base_model.parameters() if p.requires_grad)
+    assert n_params == n_params2, 'Different models during lora'
 
-    # TEST WHIS{ER
+    # TEST WHIS+ER
     del params['ft_ckpt']
     params['model_type'] = 'whisper-tiny'
     params['from_hub'] = True
@@ -227,6 +238,7 @@ def test_softprompt():
     assert (ft_ckpt/(m.model_name)).exists() and os.listdir(ft_ckpt/(m.model_name)) != [], 'Base model properly saved.'
     assert (ft_ckpt/(m.clf.config['clf_name'] + '.pt')).exists(), 'Classifier properly saved.'
     assert check_softprompt(m)
+    n_params = sum(p.numel() for p in m.base_model.parameters() if p.requires_grad)
 
     #TEST IT ALSO WORKS LOADING FROM LOCAL PT CKPT
     params['from_hub'] = True
@@ -235,15 +247,23 @@ def test_softprompt():
     assert m.local_path.exists(), 'Local path with copy of checkpoint does not exist.'
     params['pt_ckpt'] = m.local_path 
     assert check_softprompt(m)
-
+    n_params2 = sum(p.numel() for p in m.base_model.parameters() if p.requires_grad)
+    assert n_params == n_params2, 'Models not the same'
+    
     params['from_hub'] = False
     m = HFModel(**params)   
     assert check_softprompt(m)
+    n_params2 = sum(p.numel() for p in m.base_model.parameters() if p.requires_grad)
+    assert n_params == n_params2, 'Models not the same'
+    
 
     #from hub = True AND FT checkpoint already exists
     params['ft_ckpt'] = ft_ckpt/(m.model_name)
     m = HFModel(**params)
     assert check_softprompt(m)
+    n_params2 = sum(p.numel() for p in m.base_model.parameters() if p.requires_grad)
+    assert n_params == n_params2, 'Models not the same'
+    
 
     params['from_hub'] = False 
     del params['pt_ckpt']
@@ -253,10 +273,16 @@ def test_softprompt():
     params['pt_ckpt'] = m.local_path 
     m = HFModel(**params)
     assert check_softprompt(m)
+    n_params2 = sum(p.numel() for p in m.base_model.parameters() if p.requires_grad)
+    assert n_params == n_params2, 'Models not the same'
+    
 
     params['delete_download'] = True
     m = HFModel(test_hub_fail=True, **params)
     assert check_softprompt(m)
+    n_params2 = sum(p.numel() for p in m.base_model.parameters() if p.requires_grad)
+    assert n_params == n_params2, 'Models not the same'
+    
 
     del params['ft_ckpt']
     params['model_type'] = 'whisper-tiny'
@@ -306,8 +332,6 @@ def check_softprompt(model):
         else:
             check.append(param.requires_grad is False)
     return all(check)
-
-
 
 @pytest.mark.hf
 def test_freeze():
@@ -398,67 +422,121 @@ def load_audio():
 
     return sample1, sample2 
 
-def test_pooling():
-    sample1, _ = load_audio()
-    params = {'out_dir':Path('./out_dir'), 'model_type':'wavlm-base', 'pool_method': 'max'}
-    e = HFExtractor(model_type='wavlm-base')
-    sample = e(sample1)
-    features = sample['waveform']
-    
-    #MAX POOL
-    m = HFModel(**params)
-    output = m.base_model(features.to(m.device))
+def mock_forward(m, waveform):
+    inputs, attention_mask = m.feature_extractor(waveform)
+    attention_mask = attention_mask.to(m.device)
+    if m.is_whisper_model:
+        output = m.base_model.encoder(inputs, attention_mask=attention_mask)
+    else:
+        output = m.base_model(inputs, attention_mask=attention_mask)
     output = output['last_hidden_state']
 
-    pool_max = m.pooling(output).detach()
-    assert pool_max.ndim == 2 and pool_max.shape[0] == 1 and pool_max.shape[1] == output.shape[-1], 'Max pooling not outputting proper shape'
+    ds_attn_mask = m.downsample_attention_mask(attn_mask=attention_mask.to(torch.float16), target_len=output.shape[1])
+    expand_attn_mask = ds_attn_mask.unsqueeze(-1).repeat(1, 1, output.shape[2])
+    output[~(expand_attn_mask==1.0)] = 0.0
+
+    pool = m.pooling(output, attn_mask=ds_attn_mask).detach()
+    assert pool.ndim == 2 and pool.shape[0] == 2 and pool.shape[1] == output.shape[-1], f'{m.pool_method} pooling not outputting proper shape'
+
+def mock_forward_noattn(m, waveform):
+    inputs, attention_mask = m.feature_extractor(waveform)
+    output = m.base_model(inputs.to(m.device))
+    output = output['last_hidden_state']
+    pool = m.pooling(output).detach()
+    assert pool.ndim == 2 and pool.shape[0] == 2 and pool.shape[1] == output.shape[-1], f'{m.pool_method} pooling not outputting proper shape'
+
+def test_pooling():
+    sample1, sample2 = load_audio()
+    waveforms = [sample1['waveform'], sample2['waveform']]
+    params = {'out_dir':Path('./out_dir'), 'model_type':'wavlm-base', 'pool_method': 'max'}
+
+    #MAX POOL
+    m = HFModel(**params)
+    mock_forward(m, waveforms)
 
     #MEAN POOL
     params['pool_method'] = 'mean'
     m = HFModel(**params)
-    output = m.base_model(features.to(m.device))
-    output = output['last_hidden_state']
-
-    pool_mean = m.pooling(output)
-    assert pool_mean.ndim == 2 and pool_mean.shape[0] == 1 and pool_mean.shape[1] == output.shape[-1], 'Mean pooling not outputting proper shape'
+    mock_forward(m, waveforms)
+    ### POOL WITHOUT ATTN MASK
+    mock_forward_noattn(m, waveforms)
 
     #ATTENTION POOL
     params['pool_method'] = 'attention'
     m = HFModel(**params)
-    output = m.base_model(features.to(m.device))
-    output = output['last_hidden_state']
+    mock_forward(m, waveforms)
+    ### POOL WITHOUT ATTN MASK
+    mock_forward_noattn(m, waveforms)
 
-    pool_attn = m.pooling(output)
-    assert pool_attn.ndim == 2 and pool_attn.shape[0] == 1 and pool_attn.shape[1] == output.shape[-1], 'Attention pooling not outputting proper shape'
+    #WHISPER POOL - TODO
+    params['model_type'] = 'whisper-tiny'
+    params['pool_method'] = 'mean'
+    m = HFModel(**params)
+    mock_forward(m, waveforms)
 
 @pytest.mark.hf
 def test_forward():
     sample1, _ = load_audio()
+    waveforms = [sample1['waveform']]
     params = {'out_dir':Path('./out_dir'), 'model_type':'wavlm-base', 'pool_method': 'max'}
 
     #test WavLM
-    wavlme = HFExtractor(model_type='wavlm-base')
-    wavlmsample = wavlme(sample1)
-    wavlmfeatures = wavlmsample['waveform']
     wavlm = HFModel(**params)
-    output = wavlm(wavlmfeatures)
+    output = wavlm(waveforms)
     assert output.shape[0] == 1 and output.shape[1] == 1, 'outputs correct output features'
 
     #test hubert
     params['model_type'] = 'hubert-base'
-    huberte = HFExtractor(model_type='hubert-base')
-    hubertsample = huberte(sample1)
-    hubertfeatures = hubertsample['waveform']
     hubert = HFModel(**params)
-    output = hubert(hubertfeatures)
+    output = hubert(waveforms)
     assert output.shape[0] == 1 and output.shape[1] == 1, 'outputs correct output features'
 
     #test whisper
-    whispere = HFExtractor(model_type='whisper-tiny')
-    whispersample = whispere(sample1)
-    whisperfeatures = whispersample['waveform']
     params['model_type'] = 'whisper-tiny'
     whisper = HFModel(**params)
-    output = whisper(whisperfeatures)
+    output = whisper(waveforms)
     assert output.shape[0] == 1 and output.shape[1] == 1, 'outputs correct output features'
 
+@pytest.mark.hf
+def test_peft_forward():
+    sample1, sample2 = load_audio()
+    waveforms = [sample1['waveform'], sample2['waveform']]
+    #wavlm - lora
+    params = {'out_dir':Path('./out_dir')}
+
+    #base test
+    params['model_type'] = 'wavlm-base'
+    params['finetune_method'] = 'lora'
+    ft_ckpt = params['out_dir'] / 'weights'
+    m = HFModel(**params)
+    n_params = sum(p.numel() for p in m.base_model.parameters() if p.requires_grad)
+    output1 = m(waveforms)
+
+    #wavlm - lora, reloaded
+    m.save_model_components()
+    params['ft_ckpt'] = ft_ckpt/(m.model_name)
+    m = HFModel(**params)
+    n_params2 = sum(p.numel() for p in m.base_model.parameters() if p.requires_grad)
+    assert n_params == n_params2, 'Different models during lora'
+    output2 = m(waveforms)
+    assert torch.equal(output1, output2)
+
+    shutil.rmtree(params['out_dir'])
+
+    #wavlm - soft prompt
+    del params['ft_ckpt']
+    params['finetune_method'] = 'soft-prompt'
+    m = HFModel(**params)
+    n_params = sum(p.numel() for p in m.base_model.parameters() if p.requires_grad)
+    output1 = m(waveforms)
+
+    #wavlm - soft prompt, reloaded
+    m.save_model_components()
+    params['ft_ckpt'] = ft_ckpt/(m.model_name)
+    m = HFModel(**params)
+    n_params2 = sum(p.numel() for p in m.base_model.parameters() if p.requires_grad)
+    assert n_params == n_params2, 'Different models during lora'
+    output2 = m(waveforms)
+    assert torch.equal(output1, output2)
+
+    shutil.rmtree(params['out_dir'])

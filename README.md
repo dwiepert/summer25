@@ -7,9 +7,34 @@ CONFIG FILES:
     - run.py only contains some parameters for audio
     - can specify more exact specifics for WavDataset transforms by adding to a config file. TODO
 
+## TRAINING PARAMS
+* FEATURES: hoarse_harsh, slow_rate, sound_distortions, monopitch_monoloudness, 'inappropriate_silences_or_prolonged_intervals'
+* batch_size: 16
+* learning_rate: 0.001, 0.01, 0.0001
+* tf_learning_rate: 1e-6, 1e-5, 1e-4
+* loss: rank
+    * bce_weight: 0, 0.25, 0.5, 1
+* number of classifier layers: TODO
+* freezing/finetuning:
+    * all 
+    * exclude-last 
+    * half
+    * required-only
+    * LoRA
+    * soft-prompting
+* pooling
+    * mean
+    * max
+    * attention
+* MODELS:
+    * wavlm-large
+    * hubert-large
+    * whisper-medium
+* scheduler: TODO
+    * warmup-cosine, # warmup epochs
+
+
 ## QUESTIONS/RESEARCH
-* get whisper final hidden state - make it flexible?, freeze it vs. unfreeze it? 
-* exclude some of the tokens - see if things are coming out in different sizes? need to figure out Padding tokens and determine which ones to pool over - determine padding, move the feature extractor to do the padding for me - get attention mask out from it, one collate function
 *  5 MOST COMMON FEATURES IN SENTENCE REPETITION - REDO WITH NEW DC EVENTUALLY TODO:
         * hoarse_harsh: 430
         * slow_rate: 355
@@ -22,22 +47,20 @@ CONFIG FILES:
         freq = (data_feats > 1).sum()
         freq.sort_values()[-5]
         ```
-* determine what classifier build to use with Rankings? It's not going to work the same as BCE loss...not entirely sure how to predict rank - multiclass/multicategory? ask leland what he did
-* tf_lr 1e-6 bigger adjustments to classifier. 
+* determine what classifier build to use with Rankings? It's not going to work the same as BCE loss...not entirely sure how to predict rank - multiclass/multicategory? ask leland what he did? ask what had been done before? - if you are going to add parameters to model - could add to classifier level, limited compute/limited data - where to add it? Add one more classifier layer and see what happens? More data you have, the more parameters you can reasonably optimize - we're always low data, so what's the best way to limit the data. 
+* check 2024/2025 papers for audio classification to see what learning rates/schedulers they use - just choose a scheduler/learning rate - probably do a mini search - 
 
 
 ## ACTIVE DEBUGGING/TASKS
-* CHECK ON POOLING W ATTENTION MASK USING WHISPER? UNCERTAIN WHAT THE SHAPE OF THAT IS AND NEED TO KNOW
+* get new speech dataset loaded
+* IMPLEMENT BEATS MODEL
 * make seeded_split/model loading/model saving compatible with gcs
+* #TODO: check what milestone should be based on warmup epoch?
+* max pooling done right?
 * TEST SUITE
     * io/transforms - GCS test google cloud things????? mark to run only sometimes
-    * re-test new schedulers
-    * retest train params (new options)
-    * test multiple learning rate options (default tf_lr for unfrozen one should be closer to 1e-6)
-    * test new feature extractor location
-    * test that all the PEFT models run through... and can be updated
-    * TEST ATTENTION MASK STUFF
-
+    * check when loading trained model that the weights are the same!!! output same
+        * peft model - train for a handful of epochs, check when reloaded that it works as expected
 
 ## All TODO
 * BEATs model
@@ -82,7 +105,7 @@ CONFIG FILES:
     * ~~max~~
     * ~~attention~~
     * ~~tests~~
-    * ignore padding
+    * ~~ignore padding~~
 * ~~test run forward pass of models~~
     * ~~do we need modsel-specific feature processors????~~
     * ~~wavlm~~

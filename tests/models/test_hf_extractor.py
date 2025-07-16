@@ -73,8 +73,3 @@ def test_extractor_pretrained():
     
     if pt_ckpt.exists():
         shutil.rmtree(pt_ckpt)
-
-@pytest.mark.hf
-def test_load_hfextractors():
-    #TODO: check that the base model for each of the possible hugging face models loads in properly with no errors
-    pass

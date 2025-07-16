@@ -74,7 +74,7 @@ def test_dataset_initialization():
     waveform_loader = UidToPath(prefix = Path('./tests/audio_examples/'), ext='flac')
     transform = torchvision.transforms.Compose([waveform_loader])
 
-    d = WavDataset(data=df, prefix='./tests/audio_examples/', uid_col='original_audio_id', model_type='wavlm-base', config=config, target_labels=[_FEATURES[0]], bucket=None, feature_extractor=None, transforms=transform)
+    d = WavDataset(data=df, prefix='./tests/audio_examples/', uid_col='original_audio_id', model_type='wavlm-base', config=config, target_labels=[_FEATURES[0]], bucket=None, transforms=transform)
     assert d.use_librosa is False, 'Did not extract values from config properly'
 
 def test_get_item():
@@ -82,7 +82,7 @@ def test_get_item():
     config = create_config()
 
     # AUDIO ONLY
-    d = WavDataset(data=df, prefix='./tests/audio_examples/', uid_col='original_audio_id', model_type='whisper-tiny', config=config, target_labels=[_FEATURES[0]], bucket=None, feature_extractor=None, extension='flac')
+    d = WavDataset(data=df, prefix='./tests/audio_examples/', uid_col='original_audio_id', model_type='whisper-tiny', config=config, target_labels=[_FEATURES[0]], bucket=None, extension='flac')
     out = d[0]
     assert all([u in out for u in ['uid','targets','waveform','sample_rate']])
     assert isinstance(out['uid'],str)
@@ -92,7 +92,7 @@ def test_get_item():
 
     # LIBROSA
     config2 = create_config(use_librosa=True)
-    d2 = WavDataset(data=df, prefix='./tests/audio_examples/',uid_col='original_audio_id', model_type='whisper-tiny', config=config2, target_labels=[_FEATURES[0]], bucket=None, feature_extractor=None, extension='flac')
+    d2 = WavDataset(data=df, prefix='./tests/audio_examples/',uid_col='original_audio_id', model_type='whisper-tiny', config=config2, target_labels=[_FEATURES[0]], bucket=None, extension='flac')
     out = d2[0]
     assert all([u in out for u in ['uid','targets','waveform','sample_rate']])
     assert isinstance(out['uid'],str)
@@ -102,7 +102,7 @@ def test_get_item():
 
     #AUGMENT
     config3 = create_config(augment=True)
-    d3 = WavDataset(data=df, prefix='./tests/audio_examples/', uid_col='original_audio_id', model_type='whisper-tiny', config=config3, target_labels=[_FEATURES[0]], bucket=None, feature_extractor=None, extension='flac')
+    d3 = WavDataset(data=df, prefix='./tests/audio_examples/', uid_col='original_audio_id', model_type='whisper-tiny', config=config3, target_labels=[_FEATURES[0]], bucket=None, extension='flac')
     out = d3[0]
     assert all([u in out for u in ['uid','targets','waveform','sample_rate']])
     assert isinstance(out['uid'],str)
@@ -112,7 +112,7 @@ def test_get_item():
 
     #give truncate but revise clip length
     config4 = create_config(truncate=True)
-    d4 = WavDataset(data=df, prefix='./tests/audio_examples/', uid_col='original_audio_id', model_type='whisper-tiny', config=config4, target_labels=[_FEATURES[0]], bucket=None, feature_extractor=None, extension='flac')
+    d4 = WavDataset(data=df, prefix='./tests/audio_examples/', uid_col='original_audio_id', model_type='whisper-tiny', config=config4, target_labels=[_FEATURES[0]], bucket=None, extension='flac')
     out = d4[0]
     assert all([u in out for u in ['uid','targets','waveform','sample_rate']])
     assert isinstance(out['uid'],str)
@@ -121,35 +121,8 @@ def test_get_item():
     assert isinstance(out['sample_rate'],int)
 
     #truncate and wavlm-base model
-    d5 = WavDataset(data=df, prefix='./tests/audio_examples/', uid_col='original_audio_id', model_type='wavlm-base', config=config4, target_labels=[_FEATURES[0]], bucket=None, feature_extractor=None, extension='flac')
+    d5 = WavDataset(data=df, prefix='./tests/audio_examples/', uid_col='original_audio_id', model_type='wavlm-base', config=config4, target_labels=[_FEATURES[0]], bucket=None, extension='flac')
     out = d5[0]
-    assert all([u in out for u in ['uid','targets','waveform','sample_rate']])
-    assert isinstance(out['uid'],str)
-    assert isinstance(out['targets'],torch.Tensor)
-    assert isinstance(out['waveform'],torch.Tensor)
-    assert isinstance(out['sample_rate'],int)
-
-@pytest.mark.hf
-def test_dataset_feature_extractor():
-    df = data_dictionary()
-    config = create_config()
-    params = {'out_dir':Path('./out_dir')}
-
-    feature_extractor = HFExtractor(model_type='wavlm-base')
-
-    #FEATURE EXTRACTOR - give at loading
-    d = WavDataset(data=df, prefix='./tests/audio_examples/', uid_col='original_audio_id', model_type='whisper-tiny', config=config, target_labels=[_FEATURES[0]], bucket=None, feature_extractor=feature_extractor, extension='flac')
-    out = d[0]
-    assert all([u in out for u in ['uid','targets','waveform','sample_rate']])
-    assert isinstance(out['uid'],str)
-    assert isinstance(out['targets'],torch.Tensor)
-    assert isinstance(out['waveform'],torch.Tensor)
-    assert isinstance(out['sample_rate'],int)
-
-    # give outside
-    d = WavDataset(data=df, prefix='./tests/audio_examples/',uid_col='original_audio_id', model_type='whisper-tiny', config=config, target_labels=[_FEATURES[0]], bucket=None, feature_extractor=None, extension='flac')
-    d.set_feature_extractor(feature_extractor)
-    out = d[0]
     assert all([u in out for u in ['uid','targets','waveform','sample_rate']])
     assert isinstance(out['uid'],str)
     assert isinstance(out['targets'],torch.Tensor)

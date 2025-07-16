@@ -64,17 +64,21 @@ class Trainer():
                  tf_learning_rate:float=None, learning_rate:float=1e-4, loss_type:str="bce", scheduler_type:str=None,
                  early_stop:bool=False, save_checkpoints:bool=True, patience:int=5, delta:float=0.0, **kwargs):
         self.model = model
+        self.name_prefix = f'{optim_type}_{loss_type}'
         self.target_features = target_features
-        self.clf_lr = learning_rate
+        self.learning_rate= learning_rate
         if tf_learning_rate:
-            self.tf_lr = tf_learning_rate
+            self.tf_learning_rate = tf_learning_rate
         else:
-            self.tf_lr = learning_rate
+            self.tf_learning_rate = learning_rate
+        self.name_prefix += f'_lr{self.learning_rate}_tflr{self.tf_learning_rate}'
+
+        self.config = {'learning_rate': self.learning_rate, 'tf_learning_rate': self.tf_learning_rate, 'optim_type':optim_type, 'loss_type': loss_type, 'scheduler_type':scheduler_type}
 
         self.save_checkpoints = save_checkpoints
         if optim_type == 'adamw':
-            self.tf_optim = torch.optim.AdamW(params=self.model.base_model.parameters(),lr=self.tf_lr)
-            self.clf_optim = torch.optim.AdamW(params=self.model.clf.parameters(), lr=self.clf_lr)
+            self.tf_optim = torch.optim.AdamW(params=self.model.base_model.parameters(),lr=self.tf_learning_rate)
+            self.clf_optim = torch.optim.AdamW(params=self.model.clf.parameters(), lr=self.learning_rate)
         else:
             raise NotImplementedError(f'{optim_type} not implemented.')
         
@@ -83,24 +87,36 @@ class Trainer():
             self.criterion = nn.BCEWithLogitsLoss()
         elif loss_type == 'rank':
             assert 'rating_threshold' in kwargs, 'Must give rating threshold for rank loss.'
-            args = {'rating_threshold': kwargs.pop('rating_threshold')}
-            if 'margin' in kwargs:
-                args['margin'] = kwargs.pop('margin')
-            if 'bce_weight' in kwargs:
-                args['bce_weight'] = kwargs.pop('bce_weight')
+            th = kwargs.pop('rating_threshold')
+            args = {'rating_threshold': th}
+            self.name_prefix += f'_th{th}'
 
+            if 'margin' in kwargs:
+                m = kwargs.pop('margin')
+                args['margin'] = m
+                self.name_prefix += f'_mar{m}'
+            if 'bce_weight' in kwargs:
+                b = kwargs.pop('bce_weight')
+                args['bce_weight'] = b
+                self.name_prefix += f'_weight{m}'
+
+            self.config.update(args)
             self.criterion = RankedClassificationLoss(**args)
         else:
             raise NotImplementedError(f'{loss_type} not implemented.')
         
         #scheduler
         if scheduler_type == 'exponential':
+            self.name_prefix += f'_{scheduler_type}'
             if 'gamma' in kwargs:
                 clf_gamma = kwargs['gamma']
                 if 'tf_gamma' in kwargs:
                     tf_gamma = kwargs['tf_gamma']
                 else:
                     tf_gamma = clf_gamma
+                self.name_prefix += f'_g{clf_gamma}_tg{tf_gamma}'
+                self.config['gamma'] = clf_gamma
+                self.config['tf_gamma'] = tf_gamma
             else:
 
                 assert 'end_lr' in kwargs, 'Must give end_lr if using exponential learning rate decay scheduler.'
@@ -111,8 +127,12 @@ class Trainer():
                 else:
                     end_tf_lr = end_clf_lr
                 epochs = kwargs['epochs']
-                tf_gamma = end_tf_lr / (self.tf_lr**(1/epochs))
-                clf_gamma = end_clf_lr / (self.clf_lr**(1/epochs))
+                self.name_prefix += f'_endlr{end_clf_lr}_tfendlr{end_tf_lr}'
+                tf_gamma = end_tf_lr / (self.tf_learning_rate**(1/epochs))
+                clf_gamma = end_clf_lr / (self.learning_rate**(1/epochs))
+                self.config['end_lr'] = end_clf_lr
+                self.config['end_tf_lr'] = end_tf_lr
+                self.config['epochs'] = epochs
 
             self.tf_scheduler = ExponentialLR(self.tf_optim, gamma=tf_gamma)
             self.clf_scheduler = ExponentialLR(self.clf_optim, gamma=clf_gamma)
@@ -125,7 +145,11 @@ class Trainer():
                 tf_warmup_e = kwargs['tf_warmup_epochs']
             else:
                 tf_warmup_e = clf_warmup_e
+            self.config['warmup_epochs'] = clf_warmup_e
+            self.config['tf_warmup_epochs'] = tf_warmup_e
+            self.config['train_len'] = kwargs['train_len']
 
+            self.name_prefix += f'_we{clf_warmup_e}_tfwe{tf_warmup_e}'
             tf_warmup = LambdaLR(self.tf_optim, lr_lambda=warmup_wrapper(tf_warmup_e))
             clf_warmup = LambdaLR(self.clf_optim, lr_lambda=warmup_wrapper(clf_warmup_e))
             tf_cosine = CosineAnnealingLR(self.tf_optim, T_max = kwargs['train_len'])
@@ -135,6 +159,7 @@ class Trainer():
         
         elif scheduler_type == 'cosine':
             assert 'train_len' in kwargs, 'Must give train_len if using cosine annealing lr.'
+            self.config['train_len'] = kwargs['train_len']
             self.tf_scheduler = CosineAnnealingLR(self.tf_optim, T_max = kwargs['train_len'])
             self.clf_scheduler = CosineAnnealingLR(self.clf_optim, T_max = kwargs['train_len'])
         
@@ -146,7 +171,10 @@ class Trainer():
         
         #es 
         if early_stop:
+            self.config['early_stop'] = True
+            self.name_prefix += f'_es'
             es_params = {'patience':patience, 'delta':delta}
+            self.config.update(es_params)
             if 'test' in kwargs:
                 es_params['test'] = kwargs.pop('test')
             self.early_stop = EarlyStopping(**es_params)
@@ -154,7 +182,7 @@ class Trainer():
             self.early_stop = None
 
         self.log = {"train_loss":[], "avg_train_loss":[], "val_loss":[], "avg_val_loss":[]}
-
+        self.log.update(self.config)
 
     def train_step(self, train_loader:DataLoader):
         """
@@ -180,6 +208,7 @@ class Trainer():
         self.log['train_loss'].append(running_loss)
         self.log['avg_train_loss'].append((running_loss / len(train_loader)))
         
+        self.fit = False
 
     def val_step(self, val_loader:DataLoader, e:int):
         """
@@ -213,6 +242,9 @@ class Trainer():
         :param val_loader: DataLoader with validation data (default=None)
         :param epochs: int, number of epochs to train for
         """
+        self.epochs = epochs
+        name_prefix =  f'{self.name_prefix}_e{epochs}'
+
         for e in range(epochs):
             self.train_step(train_loader)
 
@@ -220,25 +252,29 @@ class Trainer():
                 self.val_step(val_loader, e)
 
             #FLUSH LOG 
-            with open(str(self.model.out_dir / 'train_log.json'), 'w') as f:
+            path = self.model.out_dir / name_prefix
+            path.mkdir(parents = True, exist_ok = True)
+            with open(str(path / 'train_log.json'), 'w') as f:
                 json.dump(self.log, f)
             
             if self.early_stop:
                 if self.early_stop.early_stop:
                     best_model, best_epoch, _ = self.early_stop.get_best_model()
-                    best_model.save_model_components(f'best{best_epoch}_')
+                    best_model.save_model_components(f'best{best_epoch}_', name_prefix)
                     break
             
             #checkpointing
             if (e ==0 or e % 5 == 0) and (e != epochs - 1) and self.save_checkpoints:
-                self.model.save_model_components(f'checkpoint{e}_')
+                self.model.save_model_components(f'checkpoint{e}_', name_prefix)
             
             if self.tf_scheduler:
                 self.tf_scheduler.step()
                 self.clf_scheduler.step()
         
             if e == epochs - 1:
-                self.model.save_model_components(f'final{e}_')
+                self.model.save_model_components(f'final{e}_', name_prefix)
+
+            self.fit = True 
 
     def test(self, test_loader:DataLoader):
         """
@@ -246,6 +282,10 @@ class Trainer():
 
         :param testloader: DataLoader with test data
         """
+        if self.fit:
+            name_prefix = f'{self.name_prefix}_e{self.epochs}'
+        else:
+            name_prefix = self.name_prefix
         self.model.eval()
         running_loss = 0.0
         per_feature = {}
@@ -254,7 +294,6 @@ class Trainer():
         
         with torch.no_grad():
             running_loss = 0.0
-            counter = 0
             for data in tqdm(test_loader):
                 inputs, targets = data['waveform'], data['targets'].to(self.model.device)
                 
@@ -285,7 +324,9 @@ class Trainer():
             per_feature[t] = temp
 
         metrics = {'loss':running_loss, 'avg_loss': (running_loss / len(test_loader)), 'feature_metrics': per_feature}
-        with open(str(self.model.out_dir / 'evaluation.json'), 'w') as f:
+        path = self.model.out_dir / name_prefix 
+        path.mkdir(exist_ok = True)
+        with open(str(path / 'evaluation.json'), 'w') as f:
             json.dump(metrics, f)
         
 
