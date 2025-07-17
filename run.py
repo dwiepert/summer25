@@ -67,6 +67,16 @@ def check_load(args:dict) -> dict:
             assert 'warmup_epochs' in args, 'Must give warmup_epochs for warmup lr'
 
     assert args['optim_type'] in _OPTIMIZER, 'Invalid optimizer type'
+
+    if args['bucket_name']:
+        storage_client = storage.Client()
+        bucket = storage_client.bucket(args['bucket_name'])
+        assert args['gcs_prefix']
+    else:
+        bucket = None
+
+    args['bucket'] = bucket
+
     return args
 
 def check_model(args:dict ) -> dict:
@@ -187,6 +197,10 @@ def zip_model(args:argparse.Namespace) -> dict:
     if args.virtual_tokens:
         model_args['virtual_tokens'] = args.virtual_tokens
 
+    if args.bucket:
+        model_args['bucket'] = args.bucket
+        model_args['gcs_prefix'] = args.gcs_prefix
+        
     return model_args
 
 def zip_splits(args:argparse.Namespace) -> dict:
@@ -282,6 +296,10 @@ def zip_finetune(args):
     else:
         finetune_args['target_features'] = _FEATURES
 
+    if args.bucket:
+        finetune_args['bucket'] = args.bucket
+        finetune_args['gcs_prefix'] = args.gcs_prefix
+
     return finetune_args
 
 if __name__ == "__main__":
@@ -293,6 +311,8 @@ if __name__ == "__main__":
     cfg_args.add_argument('--use_existing_cfg', action='store_true', help='Specify whether to use an existing config file if it exists in the given output_dir')
     #I/O
     io_args = parser.add_argument_group('io', 'file related arguments')
+    io_args.add_argument('--bucket_name', type=str, default=None, help='Bucket name for GCS.')
+    io_args.add_argument('--gcs_prefix', type=str, help='GCS prefix.')
     io_args.add_argument('--audio_dir', type=Path, help='Directory with audio files & a csv with information on speakers/task.')
     io_args.add_argument('--audio_ext', type=str,default='wav', help='Audio extension.')
     io_args.add_argument('--structured', action='store_true', help='Specify whether the audio directory stores audio in structured manner (uid/waveform.wav) or not (uid.wav)')
@@ -362,7 +382,6 @@ if __name__ == "__main__":
     train_args.add_argument('--epochs', type=int, default=1, help='Specify epochs for finetuning. (default = 1)')
     train_args.add_argument('--eval_only', action='store_true', help='Specify whether to only run evaluation.')
     train_args.add_argument('--debug', action='store_true')
-    
     args = parser.parse_args()
     args_dict = vars(args)
     args_dict_l = check_load(args_dict)

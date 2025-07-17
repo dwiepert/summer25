@@ -19,6 +19,7 @@ from tqdm import tqdm
 
 ##local
 from summer25.models import HFModel
+from summer25.io import upload_to_gcs
 from ._early_stop import EarlyStopping
 from ._ranked_clf_loss import RankedClassificationLoss
 
@@ -58,11 +59,13 @@ class Trainer():
     :param save_checkpoints: bool, specify whether to save checkpoints (default = True)
     :param patience: int, patience for early stopping (default = 5)
     :param delta: float, minimum change for early stopping (default = 0.0)
+    :param bucket: gcs bucket (default = None)
+    :param gcs_prefix: str, gcs prefix (default = '')
     :param kwargs: additional values for rank classification loss or schedulers (e.g., rating_threshold/margin/bce_weight for rank loss and end_lr/epochs for Exponential scheduler)
     """
     def __init__(self, model:Union[HFModel], target_features:List[str], optim_type:str="adamw", 
                  tf_learning_rate:float=None, learning_rate:float=1e-4, loss_type:str="bce", scheduler_type:str=None,
-                 early_stop:bool=False, save_checkpoints:bool=True, patience:int=5, delta:float=0.0, **kwargs):
+                 early_stop:bool=False, save_checkpoints:bool=True, patience:int=5, delta:float=0.0, bucket=None, gcs_prefix:str='', **kwargs):
         self.model = model
         self.name_prefix = f'{optim_type}_{loss_type}'
         self.target_features = target_features
@@ -184,6 +187,9 @@ class Trainer():
         self.log = {"train_loss":[], "avg_train_loss":[], "val_loss":[], "avg_val_loss":[]}
         self.log.update(self.config)
 
+        self.bucket = bucket
+        self.gcs_prefix = gcs_prefix
+
     def train_step(self, train_loader:DataLoader):
         """
         Training step
@@ -256,6 +262,8 @@ class Trainer():
             path.mkdir(parents = True, exist_ok = True)
             with open(str(path / 'train_log.json'), 'w') as f:
                 json.dump(self.log, f)
+            if self.bucket:
+                upload_to_gcs(self.gcs_prefix, path / 'train_log.json', self.bucket, overwrite=True)
             
             if self.early_stop:
                 if self.early_stop.early_stop:
@@ -328,5 +336,8 @@ class Trainer():
         path.mkdir(exist_ok = True)
         with open(str(path / 'evaluation.json'), 'w') as f:
             json.dump(metrics, f)
+        
+        if self.bucket:
+            upload_to_gcs(self.gcs_prefix, path / 'evaluation.json', self.bucket)
         
 

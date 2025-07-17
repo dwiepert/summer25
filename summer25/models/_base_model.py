@@ -21,6 +21,7 @@ import torch.nn as nn
 ##local
 from summer25.constants import _MODELS, _FREEZE, _POOL, _FINETUNE
 from ._attention_pooling import SelfAttentionPooling
+from summer25.io import upload_to_gcs 
 
 class BaseModel(nn.Module):
     """
@@ -52,7 +53,7 @@ class BaseModel(nn.Module):
                  pool_method:str = 'mean', pool_dim:Optional[Union[int, tuple]] = None,
                  pt_ckpt:Optional[Union[Path, str]]=None, ft_ckpt:Optional[Union[Path,str]]=None, clf_ckpt:Optional[Union[Path,str]]=None,  
                  in_features:int=768, out_features:int=1, nlayers:int=2, bottleneck:int=None, layernorm:bool=False, dropout:float=0.0, binary:bool=True,
-                 activation:str='relu', seed:int=42, device=torch.device("cuda" if torch.cuda.is_available() else "cpu")):
+                 activation:str='relu', seed:int=42, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"), bucket=None, gcs_prefix:str=''):
         
         super(BaseModel, self).__init__()
 
@@ -69,6 +70,8 @@ class BaseModel(nn.Module):
         self.pool_method = pool_method
         self.seed = seed
         self.device = device
+        self.bucket = bucket
+        self.gcs_prefix = gcs_prefix
 
         #SET SEED
         torch.manual_seed(self.seed)
@@ -235,10 +238,12 @@ class BaseModel(nn.Module):
         return self.clf(pool_x)
 
     ### SAVING ###
-    def save_config(self):
+    def save_config(self, bucket=None, gcs_prefix:str=''):
         """
         Save a config dictionary
         :param config: Dict
+        :param bucket: gcs bucket (default = None)
+        :param gcs_prefix: str, gcs prefix (default = '')
         """
         save_path = self.out_dir / 'configs'
         save_path.mkdir(exist_ok=True)
@@ -247,12 +252,16 @@ class BaseModel(nn.Module):
 
         with open(str(save_path), "w") as outfile:
             json.dump(self.config, outfile)
+        
+        if bucket:
+            upload_to_gcs(gcs_prefix, save_path, bucket)
 
-
-    def save_base_model(self, name:str):
+    def save_base_model(self, name:str, bucket=None, gcs_prefix:str=''):
         """
         Save the model components
         :param name: str, save name for model
+        :param bucket: gcs bucket (default = None)
+        :param gcs_prefix: str, gcs prefix (default = '')
         """
         bm_path = self.out_dir / 'weights'
 
@@ -261,5 +270,6 @@ class BaseModel(nn.Module):
 
         if bm_path.exists(): print(f'Overwriting existing model at {str(bm_path)}')
         torch.save(self.base_model.state_dict(), bm_path)
-
-    
+        
+        if bucket:
+            upload_to_gcs(gcs_prefix, bm_path, bucket)

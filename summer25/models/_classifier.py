@@ -15,6 +15,9 @@ from typing import Union, Dict, Optional
 import torch
 import torch.nn as nn
 
+#local
+from summer25.io import upload_to_gcs
+
 class Classifier(nn.Module):
     """
     Classifier class with flexible variables for initializing a variety of classifier configurations
@@ -30,10 +33,13 @@ class Classifier(nn.Module):
     :param binary:bool, specify whether output is making binary decisions (default=True)
     :param ckpt: pathlike, optional path to trained classifier (default=none)
     :param seed: int, random seed (default = 42)
+    :param bucket: gcs bucket (default = None)
+    :param gcs_prefix: str, gcs prefix (default = '')
 
     """
     def __init__(self, in_features:int, out_features:int, nlayers:int=2, bottleneck:int=None, layernorm:bool=False, 
-                 dropout:float=0.0, activation:str='relu', binary:bool=True, ckpt:Optional[Union[str,Path]]=None, seed:int=42):
+                 dropout:float=0.0, activation:str='relu', binary:bool=True, ckpt:Optional[Union[str,Path]]=None, 
+                 seed:int=42):
         
         super(Classifier, self).__init__()
         #INITIALIZE VARIABLES
@@ -175,14 +181,19 @@ class Classifier(nn.Module):
             model_name += '_ct'
         return model_name
     
-    def save_classifier(self, name:str, out_dir:Union[Path, str]):
+    def save_classifier(self, name:str, out_dir:Union[Path, str], bucket=None, gcs_prefix:str=''):
         """
         Save the model components
         :param name: str, name to save classifier to
         :param out_dir: pathlike, location to save model to
+        :param bucket: gcs bucket (default = None)
+        :param gcs_prefix: str, gcs prefix (default = '')
         """
         if not isinstance(out_dir, Path): out_dir = Path(out_dir)
         out_dir.mkdir(exist_ok = True)
         clf_path = out_dir / (name+'.pt')
         if clf_path.exists(): print(f'Overwriting existing classifier head at {str(clf_path)}')
         torch.save(self.classifier.state_dict(), clf_path)
+        
+        if bucket:
+            upload_to_gcs(gcs_prefix, clf_path, bucket)
