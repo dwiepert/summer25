@@ -52,19 +52,22 @@ CONFIG FILES:
 
 
 ## ACTIVE DEBUGGING/TASKS
-* get new speech dataset loaded
-* IMPLEMENT BEATS MODEL
-* make seeded_split/model loading/model saving compatible with gcs
-* #TODO: check what milestone should be based on warmup epoch?
+* IMPLEMENT BEATS MODEL - waiting on this, worried about LoRA/soft-prompting with non-hugging face models? also worried about model size comparison? potentially save for future iteration of project?
+* #TODO: check what milestone should be based on warmup epoch? - make sure it's aligned properly (possible test to check?)
 * max pooling done right?
+* running into issues pulling new speech dataset
 * TEST SUITE
-    * io/transforms - GCS test google cloud things????? mark to run only sometimes
-    * check when loading trained model that the weights are the same!!! output same
+    * io/transforms
+    * check when loading trained model that outputs are the same?
         * peft model - train for a handful of epochs, check when reloaded that it works as expected
+    * test uploading model to bucket
+    * test downloading checkpoints from bucket - test deleting download, from_hub stuff, etc. 
+    * test split will read in even if given a bucket
+    * test data will load if given a bucket
 
 ## All TODO
 * BEATs model
-* Make seeded_split compatible with gcs + run
+* ~~Make seeded_split compatible with gcs~~ 
 * ~~load from existing configuration~~
 * ~~load huggingface models~~ 
     * ~~wavlm~~

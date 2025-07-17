@@ -73,12 +73,14 @@ class BaseModel(nn.Module):
         self.bucket = bucket
         self.gcs_prefix = gcs_prefix
 
+        if self.bucket:
+            assert self.pt_ckpt, 'Must give pretrained checkpoint path if loading from bucket'
         #SET SEED
         torch.manual_seed(self.seed)
 
         self.clf_args = {'in_features':in_features, 'out_features':out_features, 'nlayers':nlayers,
                         'activation':activation, 'bottleneck':bottleneck, 'layernorm':layernorm, 'binary':binary,
-                        'dropout':dropout, 'seed': self.seed, 'ckpt': self.clf_ckpt}
+                        'dropout':dropout, 'seed': self.seed, 'ckpt': self.clf_ckpt, 'bucket': self.bucket, 'gcs_prefix':self.gcs_prefix}
         
         # ASSERTIONS
         assert self.model_type in list(_MODELS.keys()), f'{self.model_type} is an invalid model type. Choose one of {list(_MODELS.keys())}.'

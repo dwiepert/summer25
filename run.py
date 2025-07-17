@@ -16,7 +16,7 @@ from torch.utils.data import DataLoader
 
 ##local
 from summer25.models import HFModel, HFExtractor
-from summer25.dataset import seeded_split, WavDataset, collate_features, collate_wrapper
+from summer25.dataset import seeded_split, WavDataset, collate_features
 from summer25.constants import _MODELS,_FREEZE, _FEATURES, _FINETUNE, _LOSS, _SCHEDULER, _OPTIMIZER
 from summer25.training import Trainer
 
@@ -123,6 +123,9 @@ def check_model(args:dict ) -> dict:
     if args['freeze_method'] == 'layer': assert 'unfreeze_layers' in args, 'unfreeze_layers must be given if freeze method is `layer`.'
     
     assert 'finetune_method' in args, 'Finetune method not given. Check command line arguments or model configuration file.'
+    
+    if args['bucket']:
+        assert args['pt_ckpt'], 'Must give pt_ckpt if loading from bucket'
     return args
 
 def save_path(args:argparse.Namespace) -> argparse.Namespace:
@@ -182,8 +185,10 @@ def zip_model(args:argparse.Namespace) -> dict:
         model_args['binary'] = True
     if args.pt_ckpt:
         model_args['pt_ckpt'] = args.pt_ckpt
+        model_args['from_hub'] = False
     if args.ft_ckpt:
         model_args['ft_ckpt'] = args.ft_ckpt
+        model_args['from_hub'] = False
     if args.unfreeze_layers:
         model_args['unfreeze_layers'] = args.unfreeze_layers
 
@@ -200,7 +205,8 @@ def zip_model(args:argparse.Namespace) -> dict:
     if args.bucket:
         model_args['bucket'] = args.bucket
         model_args['gcs_prefix'] = args.gcs_prefix
-        
+        model_args['from_hub'] = False
+
     return model_args
 
 def zip_splits(args:argparse.Namespace) -> dict:
@@ -396,6 +402,7 @@ if __name__ == "__main__":
     da = zip_dataset(updated_args)
     fa = zip_finetune(updated_args) #don't forget extra scheduler args
 
+ 
     if args.hf_model:
         model = HFModel(**ma)
     else:

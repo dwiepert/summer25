@@ -26,6 +26,7 @@ from ._hf_extractor import HFExtractor
 from ._peft_model import SpeechPeft, peft_from_pretrained
 from ._classifier import Classifier
 from summer25.constants import _MODELS
+from summer25.io import upload_to_gcs, download_to_local
 
 class HFModel(BaseModel):
     """
@@ -58,6 +59,8 @@ class HFModel(BaseModel):
     :param delete_download: bool, specify whether to delete any local downloads from hugging face (default = False)
     :param test_hub_fail: bool, TESTING ONLY (default = False)
     :param test_local_fail: bool, TESTING ONLY (default = False)
+    :param bucket: gcs bucket (default = None)
+    :param gcs_prefix: str, gcs prefix (default = '')
     """
     def __init__(self, 
                  out_dir:Union[Path, str], model_type:str, finetune_method:str='none', freeze_method:str = 'required-only', unfreeze_layers:Optional[List[str]]=None,
@@ -65,7 +68,8 @@ class HFModel(BaseModel):
                  out_features:int=1, nlayers:int=2, activation:str='relu', bottleneck:int=None, layernorm:bool=False, dropout:float=0.0, binary:bool=True,
                  lora_rank:Optional[int]=8, lora_alpha:Optional[int]=16, lora_dropout:Optional[float]=0.0, virtual_tokens:Optional[int]=4,
                  seed:int=42, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
-                 from_hub:bool=True, delete_download:bool=False, test_hub_fail:bool=False, test_local_fail:bool=False):
+                 from_hub:bool=True, delete_download:bool=False, test_hub_fail:bool=False, test_local_fail:bool=False,
+                 bucket=None, gcs_prefix:str=''):
 
         self.out_dir = out_dir 
         if not isinstance(self.out_dir, Path): self.out_dir = Path(self.out_dir)
@@ -92,7 +96,7 @@ class HFModel(BaseModel):
                          pt_ckpt=pt_ckpt,ft_ckpt=ft_ckpt, clf_ckpt=clf_ckpt,
                          in_features=_MODELS[model_type]['in_features'], out_features=out_features, nlayers=nlayers, activation=activation, 
                          bottleneck=bottleneck, layernorm=layernorm, dropout=dropout, binary=binary,
-                         device=device, seed=seed, pool_dim=_MODELS[model_type]['pool_dim'])
+                         device=device, seed=seed, pool_dim=_MODELS[model_type]['pool_dim'], bucket=bucket, gcs_prefix=gcs_prefix)
 
         #HF ARGS
         self.normalize = normalize
@@ -111,8 +115,11 @@ class HFModel(BaseModel):
         self.hf_hub = _MODELS[self.model_type]['hf_hub']
 
         self.delete_download = delete_download
-
-        self.from_hub = from_hub
+        
+        if self.bucket:
+            self.from_hub = False
+        else:
+            self.from_hub = from_hub
         ckpt = None
         #CHECK IF FINETUNED CKPT
         if self.ft_ckpt:
@@ -155,6 +162,7 @@ class HFModel(BaseModel):
         self.base_model = self.base_model.to(self.device)
 
         # INITIALIZE CLASSIFIER (doesn't need to be overwritten)
+        self.clf_args['delete_download'] = self.delete_download
         self.clf = Classifier(**self.clf_args)
         self.clf = self.clf.to(self.device)
 
@@ -166,11 +174,18 @@ class HFModel(BaseModel):
         
         self.config.update(self.base_config)
         self.config.update(self.clf.get_config())
-        self.save_config()
+        self.save_config(self.bucket, self.gcs_prefix)
 
         # INITIALIZE FEATURE EXTRACTOR
+        if self.bucket: 
+            self.pt_ckpt = self.local_path
+
         self.feature_extractor = HFExtractor(model_type=self.model_type, pt_ckpt=self.pt_ckpt, from_hub=from_hub, delete_download=self.delete_download,normalize=self.normalize)
-    
+
+        if self.bucket and self.delete_download:
+                print('Deleting local copy of checkpoint')
+                shutil.rmtree(str(self.local_path))
+        
     def get_model_name(self) -> str:
         """
         Get name for model type, including how it was freezed and whether it has been finetuned
@@ -188,7 +203,7 @@ class HFModel(BaseModel):
         """
         Load pretrained model from hugging face
 
-        :param ckpt:
+        :param ckpt: TODO
         :param test_hub_fail: bool, for testing purposes to confirm that non-hugging face functionality works (default=False)
         :param test_local_fail: bool, for testing purposes to confirm that failing a local load raises errors (default=False)
         """
@@ -225,8 +240,17 @@ class HFModel(BaseModel):
                     print('Downloading from hub failed. Trying pt_ckpt.')
 
         try:
+            if self.bucket:
+                if not ckpt.exists():
+                    if self.gcs_prefix not in str(ckpt):
+                        ckpt = Path(self.gcs_prefix) / ckpt
+                    save_path = Path('.') / ckpt.replace(self.gcs_prefix, "")
+                    download_to_local(ckpt, save_path, self.bucket)
+                    ckpt = save_path
+
             self.base_model = AutoModel.from_pretrained(str(ckpt), output_hidden_states=True)
             self.local_path = ckpt
+
         except:
             raise ValueError('Checkpoint is incompatible with HuggingFace models. Confirm this is a path to a local hugging face checkpoint.')
         
@@ -435,6 +459,9 @@ class HFModel(BaseModel):
         if save_dir.exists(): print('Overwriting existing base model file!')
         self.base_model.save_pretrained(save_dir)
 
+        if self.bucket:
+            upload_to_gcs(self.gcs_prefix, save_dir, self.bucket)
+
     def save_model_components(self, name_prefix:str=None, sub_dir:Path = None):
         """
         Save base model and classifier separately
@@ -454,5 +481,5 @@ class HFModel(BaseModel):
         out_path = path / 'weights'
         out_path.mkdir(parents=True, exist_ok=True)
         self.save_base_model(name_model, out_path)
-        self.clf.save_classifier(name_clf, out_path)
+        self.clf.save_classifier(name_clf, out_path, bucket=self.bucket, gcs_prefix=self.gcs_prefix)
     

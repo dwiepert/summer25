@@ -8,6 +8,7 @@ Last modified: 06/2025
 #IMPORT
 ##built-in
 from collections import OrderedDict
+import os
 from pathlib import Path
 from typing import Union, Dict, Optional
 
@@ -16,7 +17,7 @@ import torch
 import torch.nn as nn
 
 #local
-from summer25.io import upload_to_gcs
+from summer25.io import upload_to_gcs, download_to_local
 
 class Classifier(nn.Module):
     """
@@ -35,11 +36,11 @@ class Classifier(nn.Module):
     :param seed: int, random seed (default = 42)
     :param bucket: gcs bucket (default = None)
     :param gcs_prefix: str, gcs prefix (default = '')
-
+    :param delete_download: bool, specify whether to delete any local downloads from hugging face (default = False)
     """
     def __init__(self, in_features:int, out_features:int, nlayers:int=2, bottleneck:int=None, layernorm:bool=False, 
                  dropout:float=0.0, activation:str='relu', binary:bool=True, ckpt:Optional[Union[str,Path]]=None, 
-                 seed:int=42):
+                 seed:int=42, bucket=None, gcs_prefix:str='', delete_download:bool=False):
         
         super(Classifier, self).__init__()
         #INITIALIZE VARIABLES
@@ -56,6 +57,9 @@ class Classifier(nn.Module):
         self.layernorm = layernorm 
         self.dropout = dropout
         self.ckpt = ckpt
+        self.bucket = bucket
+        self.gcs_prefix = gcs_prefix
+        self.delete_download = delete_download
 
         #SET SEED
         self.seed = seed
@@ -151,7 +155,17 @@ class Classifier(nn.Module):
         """
         if self.ckpt is not None:
             try:
+                if self.bucket:
+                    if not self.ckpt.exists():
+                        if self.gcs_prefix not in str(self.ckpt):
+                            self.ckpt = Path(self.gcs_prefix) / self.ckpt
+                        save_path = Path('.') / self.ckpt.replace(self.gcs_prefix, "")
+                        download_to_local(self.ckpt, save_path, self.bucket)
+                        self.ckpt = save_path
                 self.classifier.load_state_dict(torch.load(self.ckpt, weights_only=True))
+
+                if self.delete_download:
+                    os.remove(self.ckpt)
             except:
                 raise ValueError('Classifier checkpoint could not be loaded. Weights may not be compatible with the initialized models.')
                 
