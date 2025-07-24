@@ -26,12 +26,14 @@ class SelfAttentionPooling(nn.Module):
         """
         Run attention pooling
 
-        :param batch_rep: torch.Tensor of batched output, size (N, T, H), N: batch size, T: sequence length, H: Hidden dimension
+        :param x: torch.Tensor of batched output, size (N, T, H), N: batch size, T: sequence length, H: Hidden dimension
+        :param lengths: torch.Tensor with actual lengths of each item in the batch (for building padding mask)
+
         
-        attention_weight:
+        attn_weight:
             att_w : size (N, T, 1)
         
-        :return utter_rep:torch.Tensor, pooled output, size (N, H)
+        :return:torch.Tensor, pooled output, size (N, H)
         """
         mask = torch.arange(x.size(1), device=x.device)[None, :] < lengths[:, None]
         weights = self.W(x).squeeze(-1)  # [batch, time]

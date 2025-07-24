@@ -18,6 +18,7 @@ from transformers import AutoFeatureExtractor, WhisperFeatureExtractor
 
 ##local
 from summer25.constants import _MODELS
+from summer25.io import search_gcs, download_to_local
 from ._base_extractor import BaseExtractor
 
 class HFExtractor(BaseExtractor):
@@ -29,14 +30,15 @@ class HFExtractor(BaseExtractor):
     :param from_hub: bool, specify whether to load from hub or from existing pt_ckpt
     :param delete_download: bool, specify whether to delete any local downloads from hugging face (default = False)
     :param normalize: bool, specify whether to normalize audio
+    :param bucket: gcs bucket
     :param test_hub_fail: bool, TESTING ONLY
     :param test_local_fail: bool, TESTING ONLY
     """
     def __init__(self, model_type:str, pt_ckpt:Optional[Union[Path,str]]=None, from_hub:bool=True, delete_download:bool=False, normalize:bool=False, 
-                test_hub_fail:bool=False, test_local_fail:bool=False):
+                bucket=None, test_hub_fail:bool=False, test_local_fail:bool=False):
         
         super().__init__(model_type, pt_ckpt)
-
+        self.bucket = bucket
         assert 'hf_hub' in _MODELS[self.model_type], f'{self.model_type} is incompatible with HFModel class.'
 
         if _MODELS[self.model_type]['use_featext']:
@@ -47,14 +49,28 @@ class HFExtractor(BaseExtractor):
 
             if not self.from_hub: 
                 assert self.pt_ckpt is not None, 'Must give pt_ckpt if not loading from the hub'
-                if not isinstance(self.pt_ckpt, Path): self.pt_ckpt = Path(self.pt_ckpt)
-                assert self.pt_ckpt.exists(), 'Given pt_ckpt does not exist.'
+                if self.bucket:
+                    existing = search_gcs(self.pt_ckpt, self.pt_ckpt, self.bucket)
+                    assert existing != [], 'Given pt_ckpt does not exist.'
+                else:
+                    if not isinstance(self.pt_ckpt, Path): self.pt_ckpt = Path(self.pt_ckpt)
+                    assert self.pt_ckpt.exists(), 'Given pt_ckpt does not exist.'
             
             #if self.pt_ckpt is not None: #hugging face models don't require pt ckpt but could be used as a backup
             #    if not isinstance(self.pt_ckpt,str): self.pt_ckpt = str(self.pt_ckpt)
             
             self._load_extractor(test_hub_fail=test_hub_fail, test_local_fail=test_local_fail)
             self._set_kwargs()
+
+            if (self.bucket or self.from_hub) and self.delete_download:
+                shutil.rmtree(str(self.local_path))
+
+                bp = Path('.').absolute()
+                curr_parent = Path(self.local_path).parent
+                while bp.name != curr_parent.name: 
+                    os.rmdir(curr_parent)
+                    temp = curr_parent.parent 
+                    curr_parent = temp
         else:
             self.feature_extractor=None
             self.local_path = None
@@ -83,16 +99,6 @@ class HFExtractor(BaseExtractor):
                     self.local_path.mkdir(parents=True, exist_ok=True)
                     snapshot_download(repo_id=self.hf_hub, local_dir=str(self.local_path))
                     self.feature_extractor = AutoFeatureExtractor.from_pretrained(str(self.local_path))
-                    if self.delete_download:
-                        print('Deleting local copy of checkpoint')
-                        shutil.rmtree(str(self.local_path))
-
-                        bp = Path('.').absolute()
-                        curr_parent = self.local_path.parent
-                        while bp.name != curr_parent.name: 
-                            os.rmdir(curr_parent)
-                            temp = curr_parent.parent 
-                            curr_parent = temp
                     return 
 
                 except: 
@@ -100,9 +106,24 @@ class HFExtractor(BaseExtractor):
                     print('Downloading from hub failed. Trying pt_ckpt.')
 
         try:
+            if self.bucket:
+                local_path = Path('.')
+                files = download_to_local(self.pt_ckpt, local_path, self.bucket)
+                self.pt_ckpt = files[0].parents[0].absolute()
+                
             self.feature_extractor = AutoFeatureExtractor.from_pretrained(str(self.pt_ckpt))
             self.local_path = self.pt_ckpt
+
         except:
+            if (self.bucket or self.from_hub) and self.delete_download:
+                shutil.rmtree(str(self.local_path))
+
+                bp = Path('.').absolute()
+                curr_parent = Path(self.local_path).parent
+                while bp.name != curr_parent.name: 
+                    os.rmdir(curr_parent)
+                    temp = curr_parent.parent 
+                    curr_parent = temp
             raise ValueError('Pretrained checkpoint is incompatible with HuggingFace models. Confirm this is a path to a local hugging face checkpoint.')
     
     def _set_kwargs(self):

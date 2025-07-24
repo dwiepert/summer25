@@ -4,6 +4,7 @@ Load waveform from local machine
 Author(s): Daniela Wiepert
 Last modified: 06/2025
 """
+
 #IMPORTS
 ##built-in
 from pathlib import Path
@@ -21,7 +22,6 @@ def load_waveform_from_local(input_dir:Union[str,Path], uid:str, extension:str='
     :param extension: audio type (default = wav)
     :param lib: boolean indicating to load with librosa rather than torchaudio (default = False)
     :param structured: boolean indicating whether to load from a structured directory (prefix/uid/waveform.wav) or not (default = False)
-
     :return waveform: torch tensor, loaded audio waveform
     :return sr: int, sample rate
     """

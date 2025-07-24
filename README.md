@@ -15,13 +15,14 @@ CONFIG FILES:
 * loss: rank
     * bce_weight: 0, 0.25, 0.5, 1
 * number of classifier layers: TODO
-* freezing/finetuning:
+* freezing/finetuning: (if you are going to add parameters to model - could add to classifier level, limited compute/limited data - where to add it? Add one more classifier layer and see what happens? More data you have, the more parameters you can reasonably optimize - we're always low data, so what's the best way to limit the data.)
     * all 
     * exclude-last 
     * half
     * required-only
     * LoRA
     * soft-prompting
+    * add one layer to classifier
 * pooling
     * mean
     * max
@@ -31,45 +32,36 @@ CONFIG FILES:
     * hubert-large
     * whisper-medium
 * scheduler: TODO
-    * warmup-cosine, # warmup epochs
+    * cosine, #skip warmup
+    * do by epoch not training step bc it's a small thought
 
 
 ## QUESTIONS/RESEARCH
 *  5 MOST COMMON FEATURES IN SENTENCE REPETITION - REDO WITH NEW DC EVENTUALLY TODO:
-        * hoarse_harsh: 430
-        * slow_rate: 355
-        * sound_distortions: 312
-        * monopitch_monoloudness: 299
-        * inappropriate_silences_or_prolonged_intervals: 251
+        * hoarse_harsh: 452
+        * slow_rate: 402
+        * sound_distortions: 349
+        * monopitch_monoloudness: 341
+        * inappropriate_silences_or_prolonged_intervals: 264
         ```
         data = pd.read_csv('CSV')
         data_feats = data[_FEATURES]
         freq = (data_feats > 1).sum()
-        freq.sort_values()[-5]
+        print(freq.sort_values()[-5:])
         ```
-* determine what classifier build to use with Rankings? It's not going to work the same as BCE loss...not entirely sure how to predict rank - multiclass/multicategory? ask leland what he did? ask what had been done before? - if you are going to add parameters to model - could add to classifier level, limited compute/limited data - where to add it? Add one more classifier layer and see what happens? More data you have, the more parameters you can reasonably optimize - we're always low data, so what's the best way to limit the data. 
-* check 2024/2025 papers for audio classification to see what learning rates/schedulers they use - just choose a scheduler/learning rate - probably do a mini search - 
+
 
 
 ## ACTIVE DEBUGGING/TASKS
-* IMPLEMENT BEATS MODEL - waiting on this, worried about LoRA/soft-prompting with non-hugging face models? also worried about model size comparison? potentially save for future iteration of project?
-* #TODO: check what milestone should be based on warmup epoch? - make sure it's aligned properly (possible test to check?)
+* #TODO: check what milestone should be based on warmup epoch? - make sure it's aligned properly (possible test to check?)* not important
 * max pooling done right?
-* running into issues pulling new speech dataset
-* TEST SUITE
-    * io/transforms
-    * check when loading trained model that outputs are the same?
-        * peft model - train for a handful of epochs, check when reloaded that it works as expected
-    * test uploading model to bucket
-    * test downloading checkpoints from bucket - test deleting download, from_hub stuff, etc. 
-    * test split will read in even if given a bucket
-    * test data will load if given a bucket
+* fix run.py for proper inputs
+* LATER LATER LATER: make code more concise?
 
 ## All TODO
-* BEATs model
 * ~~Make seeded_split compatible with gcs~~ 
 * ~~load from existing configuration~~
-* ~~load huggingface models~~ 
+* ~~load huggingface models~~ 3
     * ~~wavlm~~
     * ~~hubert~~
     * ~~whisper (make sure it recognizes whisper separately)~~

@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import List
 
 ##third-party
+from google.cloud import storage
 from torch.utils.data import DataLoader
 
 ##local

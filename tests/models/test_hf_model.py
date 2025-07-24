@@ -16,8 +16,31 @@ import torch
 
 ##local
 from summer25.models import HFModel
+from summer25.models import search_gcs
 
+##### HELPERS #####
+def load_json():
+    with open('./private_loading/gcs.json', 'r') as file:
+        data = json.load(file)
 
+    gcs_prefix = data['gcs_prefix']
+    checkpoint_prefix = data['checkpoint_prefix']
+    bucket_name = data['bucket_name']
+    project_name = data['project_name']
+    storage_client = storage.Client(project=project_name)
+    bucket = storage_client.get_bucket(bucket_name)
+    return gcs_prefix, checkpoint_prefix, bucket
+
+def remove_gcs_directories(gcs_prefix,bucket, directory='test_split', pattern="*"):
+    dir = gcs_prefix + f'{directory}'
+    existing = search_gcs(pattern, dir, bucket)
+    for e in existing:
+        blob = bucket.blob(e)
+        blob.delete()
+    existing = search_gcs(pattern, dir, bucket)
+    assert existing == []
+
+##### TESTS #####
 @pytest.mark.hf
 def test_hfmodel_pretrained_base():
     params = {'out_dir':Path('./out_dir')}
@@ -92,6 +115,31 @@ def test_hfmodel_pretrained_base():
     if pt_ckpt.exists():
         shutil.rmtree(pt_ckpt)
 
+@pytest.mark.gcs
+def test_hfmodel_pretrained_base_gcs():
+    gcs_prefix, ckpt_prefix, bucket = load_json()
+    params = {'model_type': 'wavlm-base', 'out_dir':f'{gcs_prefix}test_model', 'pt_ckpt': ckpt_prefix, 'from_hub': False, 'bucket':bucket, 'delete_download': False}
+    
+    #base test
+    m = HFModel(**params)
+    assert m is not None, 'Model not running properly.'
+    assert m.local_path.exists(), 'Checkpoint not downloaded'
+
+    #ckpt named but doesn't exist
+    params['pt_ckpt'] = f'{gcs_prefix}other'
+    with pytest.raises(AssertionError):
+        m = HFModel(**params)
+
+    #check that you can delete a checkpoint download
+    params['delete_download'] = True
+    params['pt_ckpt'] = ckpt_prefix
+
+    m = HFModel(**params)
+    assert not m.local_path.exists(), 'Local path to checkpoint not deleted.'
+    remove_gcs_directories(gcs_prefix, bucket, 'test_model')
+    existing = search_gcs(params['out_dir'], params['out_dir'], bucket)
+    assert existing == [], 'Not all checkpoints deleted'
+
 @pytest.mark.hf    
 def test_hfmodel_finetuned_base():
     params = {'out_dir':Path('./out_dir')}
@@ -118,6 +166,7 @@ def test_hfmodel_finetuned_base():
 
     # check SAVING - NOT LORA
     m = HFModel(**params)
+    assert m is not None, 'Model not running properly.'
     m.save_model_components()
     assert (ft_ckpt/(m.model_name)).exists() and os.listdir(ft_ckpt/(m.model_name)) != [], 'Base model properly saved.'
     assert (ft_ckpt/(m.clf.config['clf_name'] + '.pt')).exists(), 'Classifier properly saved.'
@@ -127,24 +176,29 @@ def test_hfmodel_finetuned_base():
     model_ft_ckpt = ft_ckpt/(m.model_name)
     params['ft_ckpt'] = model_ft_ckpt
     m = HFModel(**params)
+    assert m is not None, 'Model not running properly.'
 
     # give path to only clf ckpt (no ft_ckpt, just uploads from hub)
     del params['ft_ckpt']
     params['clf_ckpt'] = ft_ckpt/(m.config['clf_name'] + '.pt')
     m = HFModel(**params)
+    assert m is not None, 'Model not running properly.'
 
     # give path to both ft_ckpt (parent_dir) and clf_ckpt (use given clf_ckpt)
     params['ft_ckpt'] = ft_ckpt
     m = HFModel(**params)
+    assert m is not None, 'Model not running properly.'
 
     # give path to both ft_ckpt (actual dir) and clf_ckpt
     params['ft_ckpt'] = model_ft_ckpt
     m = HFModel(**params)
+    assert m is not None, 'Model not running properly.'
 
     # give path to parent dir for ft_ckpt and no clf_ckpt
     del params['clf_ckpt']
     params['ft_ckpt'] = ft_ckpt
     m = HFModel(**params)
+    assert m is not None, 'Model not running properly.'
 
     # Incompatible ft_ckpt
     params['model_type'] = 'whisper-base'
@@ -159,6 +213,65 @@ def test_hfmodel_finetuned_base():
     shutil.rmtree(params['out_dir'])
     if ft_ckpt.exists():
         shutil.rmtree(ft_ckpt)
+
+@pytest.mark.gcs
+def test_hfmodel_finetuned_base_gcs():
+    gcs_prefix, ckpt_prefix, bucket = load_json()
+    params = {'model_type': 'wavlm-base', 'out_dir':f'{gcs_prefix}test_model', 'pt_ckpt': ckpt_prefix, 'from_hub': False, 'bucket':bucket, 'delete_download': False}
+
+    ### FINETUNED CHECKPOINT
+    ft_ckpt = f'{gcs_prefix}test_model/weights'
+    params['ft_ckpt'] = ft_ckpt
+
+    # doesn't exist
+    with pytest.raises(AssertionError):
+        m = HFModel(**params)
+
+    del params['ft_ckpt']
+    # check SAVING - NOT LORA
+    m = HFModel(**params)
+    assert m is not None, 'Model not running properly.'
+    m.save_model_components()
+    model_folder = f'{ft_ckpt}/{m.model_name}'
+    existing = search_gcs(model_folder, model_folder, bucket)
+    assert existing != [], 'Base model not properly saved'
+    clf = m.clf.config['clf_name']
+    clf_folder = f'{ft_ckpt}/{clf}.pt'
+    existing = search_gcs(clf_folder, clf_folder, bucket)
+    assert existing != [], 'Classifier not properly saved.'
+
+    #FT POSSIBILITIES:
+    # give path to only base_model directory (no classifier ckpt in dir, no subdirs)
+    params['ft_ckpt'] = model_folder
+    m = HFModel(**params)
+    assert m is not None, 'Model not running properly.'
+
+    # give path to only clf ckpt (no ft_ckpt, just uploads from hub)
+    del params['ft_ckpt']
+    params['clf_ckpt'] = clf_folder
+    m = HFModel(**params)
+    assert m is not None, 'Model not running properly.'
+
+    # give path to both ft_ckpt (parent_dir) and clf_ckpt (use given clf_ckpt)
+    params['ft_ckpt'] = ft_ckpt
+    m = HFModel(**params)
+    assert m is not None, 'Model not running properly.'
+
+    # give path to both ft_ckpt (actual dir) and clf_ckpt
+    params['ft_ckpt'] = model_folder
+    m = HFModel(**params)
+    assert m is not None, 'Model not running properly.'
+
+    # give path to parent dir for ft_ckpt and no clf_ckpt
+    del params['clf_ckpt']
+    params['ft_ckpt'] = ft_ckpt
+    params['delete_download'] = True
+    m = HFModel(**params)
+    assert m is not None, 'Model not running properly.'
+    assert not m.local_path.exists(), 'Local path to checkpoint not deleted.'
+    remove_gcs_directories(gcs_prefix, bucket, 'test_model')
+    existing = search_gcs(params['out_dir'], params['out_dir'], bucket)
+    assert existing == [], 'Not all checkpoints deleted'
 
 @pytest.mark.hf
 def test_lora():
@@ -222,6 +335,45 @@ def test_lora():
     shutil.rmtree(params['out_dir'])
     if ft_ckpt.exists():
         shutil.rmtree(ft_ckpt)
+
+@pytest.mark.gcs
+def test_lora_gcs():
+    gcs_prefix, ckpt_prefix, bucket = load_json()
+    params = {'model_type': 'wavlm-base', 'out_dir':f'{gcs_prefix}test_model', 'pt_ckpt': ckpt_prefix, 'from_hub': False, 'bucket':bucket, 'delete_download': False, 'finetune_method':'lora'}
+    ft_ckpt = f'{gcs_prefix}test_model/weights'
+
+
+    m = HFModel(**params)
+    assert m is not None, 'Model not running properly.'
+    m.save_model_components()
+    model_folder = f'{ft_ckpt}/{m.model_name}'
+    existing = search_gcs(model_folder, model_folder, bucket)
+    assert existing != [], 'Base model not properly saved'
+    clf = m.clf.config['clf_name']
+    clf_folder = f'{ft_ckpt}/{clf}.pt'
+    existing = search_gcs(clf_folder, clf_folder, bucket)
+    assert existing != [], 'Classifier not properly saved.'
+    assert check_lora(m)
+    n_params = sum(p.numel() for p in m.base_model.parameters() if p.requires_grad)
+
+    #FT POSSIBILITIES:
+    # give path to only base_model directory (no classifier ckpt in dir, no subdirs)
+    params['ft_ckpt'] = model_folder
+    params['delete_download'] = True
+    m = HFModel(**params)
+    assert check_lora(m)
+    n_params2 = sum(p.numel() for p in m.base_model.parameters() if p.requires_grad)
+    assert n_params == n_params2, 'Different models during lora'
+    assert m is not None, 'Model not running properly.'
+    assert not m.local_path.exists(), 'Local path to checkpoint not deleted.'
+    remove_gcs_directories(gcs_prefix, bucket, 'test_model')
+    existing = search_gcs(params['out_dir'], params['out_dir'], bucket)
+    assert existing == [], 'Not all checkpoints deleted'
+
+    remove_gcs_directories(gcs_prefix, bucket, 'test_model')
+    existing = search_gcs(params['out_dir'], params['out_dir'], bucket)
+    assert existing == [], 'Not all checkpoints deleted'
+
 
 @pytest.mark.hf
 def test_softprompt():
@@ -296,6 +448,44 @@ def test_softprompt():
     shutil.rmtree(params['out_dir'])
     if ft_ckpt.exists():
         shutil.rmtree(ft_ckpt)
+
+@pytest.mark.gcs
+def test_softprompt_gcs():
+    gcs_prefix, ckpt_prefix, bucket = load_json()
+    params = {'model_type': 'wavlm-base', 'out_dir':f'{gcs_prefix}test_model', 'pt_ckpt': ckpt_prefix, 'from_hub': False, 'bucket':bucket, 'delete_download': False, 'finetune_method':'soft-prompt'}
+    ft_ckpt = f'{gcs_prefix}test_model/weights'
+
+
+    m = HFModel(**params)
+    assert m is not None, 'Model not running properly.'
+    m.save_model_components()
+    model_folder = f'{ft_ckpt}/{m.model_name}'
+    existing = search_gcs(model_folder, model_folder, bucket)
+    assert existing != [], 'Base model not properly saved'
+    clf = m.clf.config['clf_name']
+    clf_folder = f'{ft_ckpt}/{clf}.pt'
+    existing = search_gcs(clf_folder, clf_folder, bucket)
+    assert existing != [], 'Classifier not properly saved.'
+    assert check_softprompt(m)
+    n_params = sum(p.numel() for p in m.base_model.parameters() if p.requires_grad)
+
+    #FT POSSIBILITIES:
+    # give path to only base_model directory (no classifier ckpt in dir, no subdirs)
+    params['ft_ckpt'] = model_folder
+    params['delete_download'] = True
+    m = HFModel(**params)
+    assert check_softprompt(m)
+    n_params2 = sum(p.numel() for p in m.base_model.parameters() if p.requires_grad)
+    assert n_params == n_params2, 'Different models during lora'
+    assert m is not None, 'Model not running properly.'
+    assert not m.local_path.exists(), 'Local path to checkpoint not deleted.'
+    remove_gcs_directories(gcs_prefix, bucket, 'test_model')
+    existing = search_gcs(params['out_dir'], params['out_dir'], bucket)
+    assert existing == [], 'Not all checkpoints deleted'
+
+    remove_gcs_directories(gcs_prefix, bucket, 'test_model')
+    existing = search_gcs(params['out_dir'], params['out_dir'], bucket)
+    assert existing == [], 'Not all checkpoints deleted'
 
 def check_requires_grad(model):
     unfrozen = model.unfreeze
@@ -497,6 +687,34 @@ def test_forward():
     output = whisper(waveforms)
     assert output.shape[0] == 1 and output.shape[1] == 1, 'outputs correct output features'
 
+@pytest.mark.gcs
+def test_forward_gcs():
+    gcs_prefix, ckpt_prefix, bucket = load_json()
+    params = {'model_type': 'wavlm-base', 'out_dir':f'{gcs_prefix}test_model', 'pt_ckpt': ckpt_prefix, 'from_hub': False, 'bucket':bucket, 'delete_download': False}
+    ft_ckpt = f'{gcs_prefix}test_model/weights'
+    sample1, sample2 = load_audio()
+    waveforms = [sample1['waveform'], sample2['waveform']]
+
+    m = HFModel(**params)
+    assert m is not None, 'Model not running properly.'
+    m.save_model_components()
+    model_folder = f'{ft_ckpt}/{m.model_name}'
+    clf = m.clf.config['clf_name']
+    clf_folder = f'{ft_ckpt}/{clf}.pt'
+    output = m(waveforms)
+    assert output.shape[0] == 2 and output.shape[1] == 1, 'outputs correct output features'
+
+    #FT POSSIBILITIES:
+    # give path to only base_model directory (no classifier ckpt in dir, no subdirs)
+    params['ft_ckpt'] = model_folder
+    params['delete_download'] = True
+    m = HFModel(**params)
+    output = m(waveforms)
+    assert output.shape[0] == 2 and output.shape[1] == 1, 'outputs correct output features'
+    remove_gcs_directories(gcs_prefix, bucket, 'test_model')
+    existing = search_gcs(params['out_dir'], params['out_dir'], bucket)
+    assert existing == [], 'Not all checkpoints deleted'
+
 @pytest.mark.hf
 def test_peft_forward():
     sample1, sample2 = load_audio()
@@ -540,3 +758,32 @@ def test_peft_forward():
     assert torch.equal(output1, output2)
 
     shutil.rmtree(params['out_dir'])
+
+@pytest.mark.gcs
+def test_peft_forward_gcs():
+    gcs_prefix, ckpt_prefix, bucket = load_json()
+    params = {'model_type': 'wavlm-base', 'out_dir':f'{gcs_prefix}test_model', 'pt_ckpt': ckpt_prefix, 'from_hub': False, 'bucket':bucket, 'delete_download': False, 'finetune_method':'lora'}
+    ft_ckpt = f'{gcs_prefix}test_model/weights'
+    sample1, sample2 = load_audio()
+    waveforms = [sample1['waveform'], sample2['waveform']]
+
+    m = HFModel(**params)
+    assert m is not None, 'Model not running properly.'
+    m.save_model_components()
+    model_folder = f'{ft_ckpt}/{m.model_name}'
+    clf = m.clf.config['clf_name']
+    clf_folder = f'{ft_ckpt}/{clf}.pt'
+    output = m(waveforms)
+    assert output.shape[0] == 2 and output.shape[1] == 1, 'outputs correct output features'
+
+    #FT POSSIBILITIES:
+    # give path to only base_model directory (no classifier ckpt in dir, no subdirs)
+    params['ft_ckpt'] = model_folder
+    params['delete_download'] = True
+    m = HFModel(**params)
+    output = m(waveforms)
+    assert output.shape[0] == 2 and output.shape[1] == 1, 'outputs correct output features'
+
+    remove_gcs_directories(gcs_prefix, bucket, 'test_model')
+    existing = search_gcs(params['out_dir'], params['out_dir'], bucket)
+    assert existing == [], 'Not all checkpoints deleted'

@@ -1,8 +1,15 @@
-#built-in
+"""
+Load waveform from gcs
+
+Author(s): Daniela Wiepert
+Last modified: 07/2025
+"""
+#IMPORTS
+##built-in
 import io
 from typing import Tuple
 
-#third party
+##third party
 import librosa
 import torch
 import torchaudio

@@ -17,7 +17,7 @@ import torch
 import torch.nn as nn
 
 #local
-from summer25.io import upload_to_gcs, download_to_local
+from summer25.io import upload_to_gcs, download_to_local, search_gcs
 
 class Classifier(nn.Module):
     """
@@ -35,12 +35,11 @@ class Classifier(nn.Module):
     :param ckpt: pathlike, optional path to trained classifier (default=none)
     :param seed: int, random seed (default = 42)
     :param bucket: gcs bucket (default = None)
-    :param gcs_prefix: str, gcs prefix (default = '')
     :param delete_download: bool, specify whether to delete any local downloads from hugging face (default = False)
     """
     def __init__(self, in_features:int, out_features:int, nlayers:int=2, bottleneck:int=None, layernorm:bool=False, 
                  dropout:float=0.0, activation:str='relu', binary:bool=True, ckpt:Optional[Union[str,Path]]=None, 
-                 seed:int=42, bucket=None, gcs_prefix:str='', delete_download:bool=False):
+                 seed:int=42, bucket=None, delete_download:bool=False):
         
         super(Classifier, self).__init__()
         #INITIALIZE VARIABLES
@@ -58,7 +57,6 @@ class Classifier(nn.Module):
         self.dropout = dropout
         self.ckpt = ckpt
         self.bucket = bucket
-        self.gcs_prefix = gcs_prefix
         self.delete_download = delete_download
 
         #SET SEED
@@ -66,16 +64,25 @@ class Classifier(nn.Module):
         torch.manual_seed(self.seed)
 
         if self.ckpt:
-            if not isinstance(self.ckpt, Path): self.ckpt = Path(self.ckpt)
-            assert self.ckpt.exists(), f'Cannot load from given checkpoint: {self.ckpt}'
-            if self.ckpt.suffix != '.pt' and self.ckpt.suffix != '.pth':
-                poss_files = [p for p in self.ckpt.rglob("*.pt")]
-                poss_files += [p for p in self.ckpt.rglob("*.pth")]
+            if self.bucket:
+                poss_files = search_gcs(self.ckpt, self.ckpt, self.bucket)
+                assert poss_files != [], f'Cannot load from given checkpoint: {self.ckpt}'
+                suffix = self.ckpt.split(".")[-1]
+            else:
+                if not isinstance(self.ckpt, Path): self.ckpt = Path(self.ckpt)
+                assert self.ckpt.exists(), f'Cannot load from given checkpoint: {self.ckpt}'
+                suffix = self.ckpt.suffix
+            if suffix not in ['pt', '.pt', 'pth', '.pth']:
+                if self.bucket:
+                    poss_files = [p for p in poss_files if ('.pt' in p or '.pth' in p)]
+                else:
+                    poss_files = [p for p in self.ckpt.rglob("*.pt")]
+                    poss_files += [p for p in self.ckpt.rglob("*.pth")]
+                    poss_files = [str(p) for p in poss_files]
 
                 assert poss_files != [], 'No checkpoints exist in given directory.'
-                paths = [str(p) for p in poss_files]
-                paths2 = [p for p in paths if 'Classifier' in p]
-                self.ckpt = paths2[0]
+                paths = [p for p in poss_files if 'Classifier' in p]
+                self.ckpt = paths[0]
 
         #ASSERTIONS
         #SET UP CLASSIFIER
@@ -156,17 +163,19 @@ class Classifier(nn.Module):
         if self.ckpt is not None:
             try:
                 if self.bucket:
-                    if not self.ckpt.exists():
-                        if self.gcs_prefix not in str(self.ckpt):
-                            self.ckpt = Path(self.gcs_prefix) / self.ckpt
-                        save_path = Path('.') / self.ckpt.replace(self.gcs_prefix, "")
-                        download_to_local(self.ckpt, save_path, self.bucket)
-                        self.ckpt = save_path
+                    save_path = Path('.')
+                    files = download_to_local(self.ckpt, save_path, self.bucket)
+                    self.ckpt = files[0]
+               
                 self.classifier.load_state_dict(torch.load(self.ckpt, weights_only=True))
-
-                if self.delete_download:
+  
+                if self.delete_download and self.bucket:
                     os.remove(self.ckpt)
+
             except:
+                if self.delete_download and self.bucket:
+                    os.remove(self.ckpt)
+
                 raise ValueError('Classifier checkpoint could not be loaded. Weights may not be compatible with the initialized models.')
                 
     
@@ -195,19 +204,24 @@ class Classifier(nn.Module):
             model_name += '_ct'
         return model_name
     
-    def save_classifier(self, name:str, out_dir:Union[Path, str], bucket=None, gcs_prefix:str=''):
+    def save_classifier(self, name:str, out_dir:Union[Path, str]):
         """
         Save the model components
-        :param name: str, name to save classifier to
+        :param name: str, name to save cxwlassifier to
         :param out_dir: pathlike, location to save model to
-        :param bucket: gcs bucket (default = None)
-        :param gcs_prefix: str, gcs prefix (default = '')
         """
-        if not isinstance(out_dir, Path): out_dir = Path(out_dir)
-        out_dir.mkdir(exist_ok = True)
-        clf_path = out_dir / (name+'.pt')
-        if clf_path.exists(): print(f'Overwriting existing classifier head at {str(clf_path)}')
+        if out_dir[-1] != '/': out_dir = out_dir + '/'
+        if self.bucket:
+            clf_path = Path('.') / (name+'.pt')
+            existing = search_gcs(f'{name}.pt', str(out_dir), self.bucket)
+            if existing != []: print(f'Overwriting existing classifier head at {str(out_dir)}')
+        else:
+            if not isinstance(out_dir, Path): out_dir = Path(out_dir)
+            out_dir.mkdir(exist_ok = True)
+            clf_path = out_dir / (name+'.pt')
+            if clf_path.exists(): print(f'Overwriting existing classifier head at {str(clf_path)}')
         torch.save(self.classifier.state_dict(), clf_path)
         
-        if bucket:
-            upload_to_gcs(gcs_prefix, clf_path, bucket)
+        if self.bucket:
+            upload_to_gcs(str(out_dir), clf_path, self.bucket)
+            os.remove(clf_path)

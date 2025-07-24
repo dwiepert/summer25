@@ -19,20 +19,65 @@ from summer25.models import HFModel, HFExtractor
 from summer25.dataset import WavDataset, collate_features
 from summer25.training import Trainer
 from summer25.constants import _FEATURES
+from summer25.io import search_gcs
+
+def load_json():
+    with open('./private_loading/gcs.json', 'r') as file:
+        data = json.load(file)
+
+    gcs_prefix = data['gcs_prefix']
+    checkpoint_prefix = data['checkpoint_prefix']
+    bucket_name = data['bucket_name']
+    project_name = data['project_name']
+    storage_client = storage.Client(project=project_name)
+    bucket = storage_client.get_bucket(bucket_name)
+    return gcs_prefix, checkpoint_prefix, bucket
+
+def remove_gcs_directories(gcs_prefix,bucket, directory='test_split', pattern="*"):
+    dir = gcs_prefix + f'{directory}'
+    existing = search_gcs(pattern, dir, bucket)
+    for e in existing:
+        blob = bucket.blob(e)
+        blob.delete()
+    existing = search_gcs(pattern, dir, bucket)
+    assert existing == []
 
 def check_checkpoints(m, name_prefix, checkpoints=[0], epochs=7, val=True, args=[], train_params={}, early_stop=False):
-    path = m.out_dir / name_prefix 
-    assert (path / 'train_log.json').exists(), 'Training log not dumped correctly'
-    out_path = path / 'weights'
-    for c in checkpoints:
-        assert (out_path / f'checkpoint{c}_{m.model_name}').exists(), 'Model checkpoint not saved correctly'
+    if m.bucket:
+        path = f'{m.out_dir}{name_prefix}'
+        existing = search_gcs(path, path, m.bucket)
+        assert any(['train_log.json' in e for e in existing]), 'Training log not dumped correctly'
+        out_path = f'{path}/weights'
+        for c in checkpoints:
+            name = f'checkpoint{c}_{m.model_name}'
+            assert any([name in e for e in existing]), 'Model checkpoint not saved correctly'
+        
+        if not early_stop:
+            name = f'final{epochs-1}_{m.model_name}'
+            assert any([name in e for e in existing]), 'Final model not saved correctly'
+        else:
+            name = f'best{epochs-1}_{m.model_name}'
+            assert any([name in e for e in existing]), 'Best model not saved correctly.'
+        
+        p = f'{path}/train_log.json'
+        blob = m.bucket.blob(p)
+        data = json.loads(blob.download_as_string())
+
+    else:   
+        path = m.out_dir / name_prefix 
+        assert (path / 'train_log.json').exists(), 'Training log not dumped correctly'
+        out_path = path / 'weights'
     
-    if not early_stop:
-        assert (out_path / f'final{epochs-1}_{m.model_name}').exists(), 'Final model not saved correctly'
-    else:
-        assert(out_path / f'best{epochs-1}_{m.model_name}').exists(), 'Best model not saved correctly.'
-    with open(str(path / 'train_log.json'), 'r') as f:
-        data = json.load(f)
+        for c in checkpoints:
+            assert (out_path / f'checkpoint{c}_{m.model_name}').exists(), 'Model checkpoint not saved correctly'
+    
+        if not early_stop:
+            assert (out_path / f'final{epochs-1}_{m.model_name}').exists(), 'Final model not saved correctly'
+        else:
+            assert(out_path / f'best{epochs-1}_{m.model_name}').exists(), 'Best model not saved correctly.'
+        with open(str(path / 'train_log.json'), 'r') as f:
+            data = json.load(f)
+
     assert len(data['train_loss']) == epochs
     if val:
         assert len(data['val_loss']) == epochs
@@ -379,3 +424,49 @@ def test_eval():
     feat1 = feats[_FEATURES[0]]
     assert 'bacc' in feat1 and 'acc' in feat1 and 'roc_auc' in feat1
     shutil.rmtree(params['out_dir'])
+
+@pytest.mark.gcs
+def test_fit_gcs():
+    gcs_prefix, ckpt_prefix, bucket = load_json()
+    params = {'model_type': 'wavlm-base', 'out_dir':f'{gcs_prefix}test_model', 'pt_ckpt': ckpt_prefix, 'from_hub': False, 'bucket':bucket, 'delete_download': False, 'finetune_method':'lora'}
+
+    #base test
+    m = HFModel(**params)
+
+    trainer_params = {'model': m, 'target_features':[_FEATURES[0]], 'early_stop':False, 'loss_type':'bce', 'scheduler_type':None, 'optim_type':'adamw', 'learning_rate':0.001, 'tf_learning_rate':0.0001}
+    #initialize with valid params 
+    t = Trainer(**trainer_params)
+    
+    df = data_dictionary()
+    config = create_config()
+
+    # AUDIO ONLY
+    d = WavDataset(data=df, prefix='./tests/audio_examples/', uid_col='original_audio_id', model_type='wavlm-base', config=config, target_labels=[_FEATURES[0]], bucket=None, extension='flac')
+    
+    #train_loader
+    train_loader = DataLoader(d, batch_size=1, shuffle=True, collate_fn=collate_features)
+    #val_loader
+    val_loader = DataLoader(d, batch_size=1, shuffle=False, collate_fn=collate_features)
+    test_loader = DataLoader(d, batch_size=1, shuffle=False, collate_fn=collate_features)
+
+    args = ['loss_type', 'optim_type', 'scheduler_type', 'learning_rate', 'tf_learning_rate']
+
+    #fit with val loader - check that train log is in output, run for 7 epochs, assert there is a checkpoint for 0,5 and final for e = 6
+    t = Trainer(**trainer_params)
+    t.fit(train_loader=train_loader,val_loader=val_loader, epochs=7)
+    check_checkpoints(m,name_prefix=f'{t.name_prefix}_e7', checkpoints=[0,5],epochs=7, val=True, args=args, train_params = trainer_params)
+
+    t.test(test_loader = test_loader)
+    name_prefix = f'{t.name_prefix}_e{t.epochs}'
+    path = f'{m.out_dir}{name_prefix}'
+    existing = search_gcs(path, path, m.bucket)
+    assert any(['evaluation.json' in e for e in existing]), 'Training log not dumped correctly'
+    p = f'{path}/evaluation.json'
+    blob = m.bucket.blob(p)
+    data = json.loads(blob.download_as_string())
+    assert 'loss' in data and 'feature_metrics' in data
+    feats = data['feature_metrics']
+    assert all([f in feats for f in t.target_features])
+    feat1 = feats[_FEATURES[0]]
+    assert 'bacc' in feat1 and 'acc' in feat1 and 'roc_auc' in feat1
+    remove_gcs_directories(gcs_prefix, bucket, 'test_model')  

@@ -21,7 +21,7 @@ import torch.nn as nn
 ##local
 from summer25.constants import _MODELS, _FREEZE, _POOL, _FINETUNE
 from ._attention_pooling import SelfAttentionPooling
-from summer25.io import upload_to_gcs 
+from summer25.io import upload_to_gcs, search_gcs
 
 class BaseModel(nn.Module):
     """
@@ -47,21 +47,27 @@ class BaseModel(nn.Module):
     :param activation: str, activation function to use for classification head (default=relu)
     :param seed: int, random seed (default = 42)
     :param device: torch device (default = cuda)
+    :param bucket: gcs bucket (default = None)
+    :param delete_download: bool, specify whether to delete any local downloads from hugging face (default = False)
     """
     def __init__(self, model_type:str, out_dir:Union[Path, str], finetune_method:str='none', 
                  freeze_method:str = 'required-only', unfreeze_layers:Optional[List[str]]=None, 
                  pool_method:str = 'mean', pool_dim:Optional[Union[int, tuple]] = None,
                  pt_ckpt:Optional[Union[Path, str]]=None, ft_ckpt:Optional[Union[Path,str]]=None, clf_ckpt:Optional[Union[Path,str]]=None,  
                  in_features:int=768, out_features:int=1, nlayers:int=2, bottleneck:int=None, layernorm:bool=False, dropout:float=0.0, binary:bool=True,
-                 activation:str='relu', seed:int=42, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"), bucket=None, gcs_prefix:str=''):
+                 activation:str='relu', seed:int=42, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"), bucket=None, delete_download:bool=False):
         
         super(BaseModel, self).__init__()
 
         # INITIALIZE VARIABLES
         self.model_type = model_type
         self.out_dir = out_dir
-        if not isinstance(self.out_dir, Path): self.out_dir = Path(self.out_dir)
-        self.out_dir.mkdir(parents=True, exist_ok=True)
+        if not bucket:
+            if not isinstance(self.out_dir, Path): self.out_dir = Path(self.out_dir)
+            self.out_dir.mkdir(parents=True, exist_ok=True)
+        else:
+            self.out_dir = str(out_dir)
+            if self.out_dir[-1] != '/': self.out_dir = self.out_dir + '/'
         self.pt_ckpt=pt_ckpt
         self.ft_ckpt=ft_ckpt
         self.clf_ckpt = clf_ckpt
@@ -71,7 +77,7 @@ class BaseModel(nn.Module):
         self.seed = seed
         self.device = device
         self.bucket = bucket
-        self.gcs_prefix = gcs_prefix
+        self.delete_download = delete_download
 
         if self.bucket:
             assert self.pt_ckpt, 'Must give pretrained checkpoint path if loading from bucket'
@@ -80,20 +86,28 @@ class BaseModel(nn.Module):
 
         self.clf_args = {'in_features':in_features, 'out_features':out_features, 'nlayers':nlayers,
                         'activation':activation, 'bottleneck':bottleneck, 'layernorm':layernorm, 'binary':binary,
-                        'dropout':dropout, 'seed': self.seed, 'ckpt': self.clf_ckpt, 'bucket': self.bucket, 'gcs_prefix':self.gcs_prefix}
+                        'dropout':dropout, 'seed': self.seed, 'ckpt': self.clf_ckpt, 'bucket': self.bucket, 'delete_download':self.delete_download}
         
         # ASSERTIONS
         assert self.model_type in list(_MODELS.keys()), f'{self.model_type} is an invalid model type. Choose one of {list(_MODELS.keys())}.'
         if self.pt_ckpt is not None:
-            if not isinstance(self.pt_ckpt, Path): self.pt_ckpt = Path(self.pt_ckpt)
-            assert self.pt_ckpt.exists(), f'Pretrained model path {self.pt_ckpt} does not exist.'
+            if self.bucket:
+                existing = search_gcs(self.pt_ckpt, self.pt_ckpt, self.bucket)
+                assert existing != [], f'Pretrained model path {self.pt_ckpt} does not exist.'
+            else:
+                if not isinstance(self.pt_ckpt, Path): self.pt_ckpt = Path(self.pt_ckpt)
+                assert self.pt_ckpt.exists(), f'Pretrained model path {self.pt_ckpt} does not exist.'
         if self.ft_ckpt is not None:
-            if not isinstance(self.ft_ckpt, Path): self.ft_ckpt = Path(self.ft_ckpt)
-            assert self.ft_ckpt.exists(), f'Finetuned model path {self.ft_ckpt} does not exist.'
-            if self.ft_ckpt.is_dir(): 
-                assert os.listdir(self.ft_ckpt) != [], 'Finetuned checkpoint must be a non-empty directory'
-            else: 
-                assert '.pt' in str(self.ft_ckpt) or '.pth' in str(self.ft_ckpt), 'Must give .pt or .pth if not giving a directory'
+            if self.bucket:
+                existing = search_gcs(self.ft_ckpt, self.ft_ckpt, self.bucket)
+                assert existing != [], f'Finetuned model path {self.ft_ckpt} does not exist.'
+            else:
+                if not isinstance(self.ft_ckpt, Path): self.ft_ckpt = Path(self.ft_ckpt)
+                assert self.ft_ckpt.exists(), f'Finetuned model path {self.ft_ckpt} does not exist.'
+                if self.ft_ckpt.is_dir(): 
+                    assert os.listdir(self.ft_ckpt) != [], 'Finetuned checkpoint must be a non-empty directory'
+                else: 
+                    assert '.pt' in str(self.ft_ckpt) or '.pth' in str(self.ft_ckpt), 'Must give .pt or .pth if not giving a directory'
         ### finetune method 
         assert self.finetune_method in _FINETUNE, f'self.finetune_method is not a valid finetuning method. Choose one of {_FINETUNE}.'
         ### freeze method
@@ -240,38 +254,27 @@ class BaseModel(nn.Module):
         return self.clf(pool_x)
 
     ### SAVING ###
-    def save_config(self, bucket=None, gcs_prefix:str=''):
+    def save_config(self):
         """
         Save a config dictionary
         :param config: Dict
-        :param bucket: gcs bucket (default = None)
-        :param gcs_prefix: str, gcs prefix (default = '')
         """
-        save_path = self.out_dir / 'configs'
-        save_path.mkdir(exist_ok=True)
-        save_path = save_path / 'model_config.json'
-        if save_path.exists(): print(f'Overwriting model config file saved at {str(save_path)}')
+        if self.bucket:
+            save_path = Path('.') 
+            save_path.mkdir(exist_ok=True)
+            save_path = save_path / 'model_config.json'
+            out_path = f'{self.out_dir}configs'
+        else:
+            save_path = self.out_dir / 'configs'
+            save_path.mkdir(exist_ok=True)
+            save_path = save_path / 'model_config.json'
+            if save_path.exists(): print(f'Overwriting model config file saved at {str(save_path)}')
 
         with open(str(save_path), "w") as outfile:
             json.dump(self.config, outfile)
         
-        if bucket:
-            upload_to_gcs(gcs_prefix, save_path, bucket)
+        if self.bucket:
+            upload_to_gcs(out_path, save_path, self.bucket)
+            os.remove(save_path)
 
-    def save_base_model(self, name:str, bucket=None, gcs_prefix:str=''):
-        """
-        Save the model components
-        :param name: str, save name for model
-        :param bucket: gcs bucket (default = None)
-        :param gcs_prefix: str, gcs prefix (default = '')
-        """
-        bm_path = self.out_dir / 'weights'
 
-        bm_path.mkdir(exist_ok=True)
-        bm_path = bm_path / (name+'.pt')
-
-        if bm_path.exists(): print(f'Overwriting existing model at {str(bm_path)}')
-        torch.save(self.base_model.state_dict(), bm_path)
-        
-        if bucket:
-            upload_to_gcs(gcs_prefix, bm_path, bucket)

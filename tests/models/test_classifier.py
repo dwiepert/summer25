@@ -14,7 +14,21 @@ import torch
 
 ##local
 from summer25.models import Classifier
+from summer25.io import search_gcs
 
+##### HELPERS #####
+def load_json():
+    with open('./private_loading/gcs.json', 'r') as file:
+        data = json.load(file)
+
+    gcs_prefix = data['gcs_prefix']
+    bucket_name = data['bucket_name']
+    project_name = data['project_name']
+    storage_client = storage.Client(project=project_name)
+    bucket = storage_client.get_bucket(bucket_name)
+    return gcs_prefix, bucket
+
+##### TESTS #####
 def test_classifier_params():
     params = {'in_features':1, 'out_features':1}
     m = Classifier(**params)
@@ -76,6 +90,45 @@ def test_classifier_checkpoints():
 
     if ckpt.exists():
         shutil.rmtree(ckpt)
+
+@pytest.mark.gcs
+def test_classifier_checkpoints_gcs():
+    gcs_prefix, bucket = load_json()
+    ckpt_dir = f'{gcs_prefix}checkpoints'
+    
+    #Test saving w/out delete download
+    params = {'in_features':1, 'out_features':1, 'bucket':bucket}
+    m = Classifier(**params)
+    name = m.config['clf_name']
+    m.save_classifier(m.config['clf_name'], ckpt_dir)
+    out_path = f'{ckpt_dir}/{name}.pt'
+    existing = search_gcs(out_path, out_path, bucket)
+    assert existing != [], 'Classifier not saved properly'
+    assert (Path('.') / (name+'.pt')).exists() is False, 'Local classifier not saved correctly.'
+
+    #load with newly saved ckpt
+    params['ckpt'] = out_path
+    m = Classifier(**params)
+    assert m.ckpt.exists(), 'Deleted download when not expected'
+    
+    #load with directory
+    params['ckpt'] = ckpt_dir
+    params['delete_download'] = True
+    m = Classifier(**params)
+    assert not m.ckpt.exists(), 'Did not delete download when expected'
+
+    #create new model with different params and try to load old ckpt
+    params['nlayers'] = 1
+    with pytest.raises(ValueError):
+        m = Classifier(**params)
+    assert not m.ckpt.exists(), 'Did not delete download when expected'
+
+    #invalid ckpt
+    params['ckpt'] = f'{gcs_prefix}other'
+    with pytest.raises(AssertionError):
+        m = Classifier(**params)
+
+    
 
 def test_weight_initialization():
     m1 = Classifier(in_features=768, out_features=2, nlayers=2, seed=100)

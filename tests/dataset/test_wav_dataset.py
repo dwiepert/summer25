@@ -6,9 +6,11 @@ Last modified: 06/2025
 """
 #IMPORTS
 ##built-in
+import json
 from pathlib import Path
 
 ##third-party
+from google.cloud import storage
 import pandas as pd
 import pytest
 import torch
@@ -19,8 +21,9 @@ from summer25.dataset import WavDataset
 from summer25.transforms import UidToPath
 from summer25.constants import _FEATURES
 from summer25.models import HFExtractor
+from summer25.io import search_gcs
 
-def data_dictionary():
+def data_dictionary(aud_name='wav'):
     sub_list = ['1919-142785-0008']
     aud_list = ['1919-142785-0008']
     date_list = ['2025-01-01']
@@ -30,7 +33,37 @@ def data_dictionary():
 
     for i in range(100):
         sub_list.append(f'sub{i}')
-        aud_list.append(f'wav{i}')
+        aud_list.append(f'{aud_name}{i}')
+        date_list.append('2025-01-01')
+        task_name.append('sentence_repetition')
+        feat1_list.append(2.0)
+        feat2_list.append(2.0)
+
+    sub_list[10] = sub_list[9]
+    date_list[10] = '2024-01-01'
+    task_name[20] = 'word_repetition'
+    data_dict = {'subject': sub_list, 
+                'task_name': task_name,
+                'incident_date': date_list, 
+                'original_audio_id': aud_list, 
+                _FEATURES[0]: feat1_list,
+                _FEATURES[2]: feat2_list}
+
+    data_df = pd.DataFrame(data_dict)
+    data_df = data_df.set_index('subject')
+    return data_df
+
+def data_dictionary2(aud_name='wav'):
+    sub_list = ['1919-142785-0008']
+    aud_list = ['test1']
+    date_list = ['2025-01-01']
+    task_name = ['random']
+    feat1_list = [1.0]
+    feat2_list = [1.0]
+
+    for i in range(100):
+        sub_list.append(f'sub{i}')
+        aud_list.append(f'{aud_name}{i}')
         date_list.append('2025-01-01')
         task_name.append('sentence_repetition')
         feat1_list.append(2.0)
@@ -129,6 +162,27 @@ def test_get_item():
     assert isinstance(out['waveform'],torch.Tensor)
     assert isinstance(out['sample_rate'],int)
 
+def load_json():
+    with open('./private_loading/gcs.json', 'r') as file:
+        data = json.load(file)
+
+    gcs_prefix = data['gcs_prefix']
+    bucket_name = data['bucket_name']
+    project_name = data['project_name']
+    storage_client = storage.Client(project=project_name)
+    bucket = storage_client.get_bucket(bucket_name)
+    return gcs_prefix, bucket
+
 @pytest.mark.gcs
-def test_gcs_functionality():
-    pass
+def test_get_item_gcs():
+    df = data_dictionary2(aud_name='test')
+    config = create_config()
+    gcs_prefix, bucket = load_json()
+
+    d = WavDataset(data=df, prefix=gcs_prefix+'/test_audio', model_type='wavlm-base',  uid_col='original_audio_id', config=config, target_labels=[_FEATURES[0]], bucket=bucket)
+    out = d[0]
+    assert all([u in out for u in ['uid','targets','waveform','sample_rate']])
+    assert isinstance(out['uid'],str)
+    assert isinstance(out['targets'],torch.Tensor)
+    assert isinstance(out['waveform'],torch.Tensor)
+    assert isinstance(out['sample_rate'],int)

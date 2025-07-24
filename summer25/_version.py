@@ -1,4 +1,4 @@
-__version__ = '0.4.4'
+__version__ = '0.4.5'
 
 #change log:
 # 0.0.0: initial commit
@@ -23,3 +23,4 @@ __version__ = '0.4.4'
 # 0.4.2: untested changes to pooling
 # 0.4.3: tests added (excluding gcs tests)
 # 0.4.4: untested gcs upload/download
+# 0.4.5: tested gcs upload/download

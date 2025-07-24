@@ -26,7 +26,7 @@ from ._hf_extractor import HFExtractor
 from ._peft_model import SpeechPeft, peft_from_pretrained
 from ._classifier import Classifier
 from summer25.constants import _MODELS
-from summer25.io import upload_to_gcs, download_to_local
+from summer25.io import upload_to_gcs, download_to_local, search_gcs
 
 class HFModel(BaseModel):
     """
@@ -60,7 +60,6 @@ class HFModel(BaseModel):
     :param test_hub_fail: bool, TESTING ONLY (default = False)
     :param test_local_fail: bool, TESTING ONLY (default = False)
     :param bucket: gcs bucket (default = None)
-    :param gcs_prefix: str, gcs prefix (default = '')
     """
     def __init__(self, 
                  out_dir:Union[Path, str], model_type:str, finetune_method:str='none', freeze_method:str = 'required-only', unfreeze_layers:Optional[List[str]]=None,
@@ -71,32 +70,43 @@ class HFModel(BaseModel):
                  from_hub:bool=True, delete_download:bool=False, test_hub_fail:bool=False, test_local_fail:bool=False,
                  bucket=None, gcs_prefix:str=''):
 
-        self.out_dir = out_dir 
-        if not isinstance(self.out_dir, Path): self.out_dir = Path(self.out_dir)
-        
         #optionally split ft_ckpt into base_model ckpt and clf_ckpt
         if ft_ckpt:
-            if not isinstance(ft_ckpt, Path): ft_ckpt = ft_ckpt(Path)
-            assert ft_ckpt.is_dir(), 'Hugging face finetuned model checkpoints should be directories.'
-            #check first if there is a given clf_ckpt already
-            if clf_ckpt is None:
-                poss_ckpts = [r for r in ft_ckpt.glob('Classifier*')]
-                if poss_ckpts != []:
-                    clf_ckpt = poss_ckpts[0]
+            if not bucket:
+                if not isinstance(ft_ckpt, Path): ft_ckpt = ft_ckpt(Path)
+                assert ft_ckpt.is_dir(), 'Hugging face finetuned model checkpoints should be directories.'
+                #check first if there is a given clf_ckpt already
+                if clf_ckpt is None:
+                    poss_ckpts = [r for r in ft_ckpt.glob('Classifier*')]
+                    if poss_ckpts != []:
+                        clf_ckpt = poss_ckpts[0]
+                
+                base_ckpt = None
+                for entry in ft_ckpt.iterdir():
+                    if entry.is_dir():
+                        base_ckpt = entry
+                if base_ckpt is not None:
+                    ft_ckpt = base_ckpt
 
-            base_ckpt = None
-            for entry in ft_ckpt.iterdir():
-                if entry.is_dir():
-                    base_ckpt = entry
-            if base_ckpt is not None:
-                ft_ckpt = base_ckpt
-         
+            else:
+                existing = search_gcs(ft_ckpt, ft_ckpt, bucket)
+                assert existing != [] and all([e != ft_ckpt for e in existing]), 'Hugging face finetuned model checkpoints should be directories.'
+                if clf_ckpt is None:
+                    poss_ckpts = [r for r in existing if 'Classifier' in r]
+                    if poss_ckpts != []:
+                        clf_ckpt = poss_ckpts[0]
+
+                poss_ckpts = list(set(["/".join(r.split("/")[:-1]) for r in existing if 'Classifier' not in r]))
+                poss_ckpts = [r for r in poss_ckpts if r != ft_ckpt]
+                if poss_ckpts != []:
+                    ft_ckpt = poss_ckpts[0]
+                    
         super().__init__(model_type=model_type, out_dir=out_dir, finetune_method=finetune_method,
                          freeze_method=freeze_method, unfreeze_layers=unfreeze_layers, pool_method=pool_method, 
                          pt_ckpt=pt_ckpt,ft_ckpt=ft_ckpt, clf_ckpt=clf_ckpt,
                          in_features=_MODELS[model_type]['in_features'], out_features=out_features, nlayers=nlayers, activation=activation, 
                          bottleneck=bottleneck, layernorm=layernorm, dropout=dropout, binary=binary,
-                         device=device, seed=seed, pool_dim=_MODELS[model_type]['pool_dim'], bucket=bucket, gcs_prefix=gcs_prefix)
+                         device=device, seed=seed, pool_dim=_MODELS[model_type]['pool_dim'], bucket=bucket, delete_download=delete_download)
 
         #HF ARGS
         self.normalize = normalize
@@ -113,8 +123,6 @@ class HFModel(BaseModel):
 
         assert 'hf_hub' in _MODELS[self.model_type], f'{self.model_type} is incompatible with HFModel class.'
         self.hf_hub = _MODELS[self.model_type]['hf_hub']
-
-        self.delete_download = delete_download
         
         if self.bucket:
             self.from_hub = False
@@ -123,15 +131,23 @@ class HFModel(BaseModel):
         ckpt = None
         #CHECK IF FINETUNED CKPT
         if self.ft_ckpt:
-            assert self.ft_ckpt.exists(), 'Given ft_ckpt does not exist.'
-            assert self.ft_ckpt.is_dir(), 'Expects a directory for hugging face model checkpoints'
+            if not self.bucket:
+                assert self.ft_ckpt.exists(), 'Given ft_ckpt does not exist.'
+                assert self.ft_ckpt.is_dir(), 'Expects a directory for hugging face model checkpoints'
+            else:
+                existing = search_gcs(self.ft_ckpt, self.ft_ckpt, self.bucket)
+                assert existing != [] and all([e != self.ft_ckpt for e in existing]), 'Hugging face finetuned model checkpoints should be directories.'
             #CHECK IF LORA FT CHECKPOINT
             if self.finetune_method == 'lora' or self.finetune_method == 'soft-prompt':
                 #IF NOT FROM HUB, CHECK THAT PT CKPT EXISTS
                 if not self.from_hub:
                     assert self.pt_ckpt is not None, 'Must give a pt checkpoint'
-                    assert self.pt_ckpt.exists(), 'Given pt_ckpt does not exist.'
-                    assert self.pt_ckpt.is_dir(), 'Expects a directory for hugging face model checkpoints'
+                    if not self.bucket:
+                        assert self.pt_ckpt.exists(), 'Given pt_ckpt does not exist.'
+                        assert self.pt_ckpt.is_dir(), 'Expects a directory for hugging face model checkpoints'
+                    else:
+                        existing = search_gcs(self.pt_ckpt, self.pt_ckpt, self.bucket)
+                        assert existing != [] and all([e != self.pt_ckpt for e in existing]), 'Hugging face finetuned model checkpoints should be directories.'
                     ckpt = self.pt_ckpt
                 #IF FROM HUB, DO NOTHING IT'S FINE
             else:
@@ -141,8 +157,13 @@ class HFModel(BaseModel):
         elif not self.from_hub or self.pt_ckpt:
             # IF NOT LOADING FROM HUB AND NOT FT MODEL PATH
             assert self.pt_ckpt is not None, 'Must give a pt checkpoint'
-            assert self.pt_ckpt.exists(), 'Given pt_ckpt does not exist.'
-            assert self.pt_ckpt.is_dir(), 'Expects a directory for hugging face model checkpoints'
+
+            if not self.bucket:
+                assert self.pt_ckpt.exists(), 'Given pt_ckpt does not exist.'
+                assert self.pt_ckpt.is_dir(), 'Expects a directory for hugging face model checkpoints'
+            else:
+                existing = search_gcs(self.pt_ckpt, self.pt_ckpt, self.bucket)
+                assert existing != [] and all([e != self.pt_ckpt for e in existing]), 'Hugging face finetuned model checkpoints should be directories.'
             ckpt = self.pt_ckpt         
 
         #INITIALIZE MODEL COMPONENTS
@@ -174,17 +195,26 @@ class HFModel(BaseModel):
         
         self.config.update(self.base_config)
         self.config.update(self.clf.get_config())
-        self.save_config(self.bucket, self.gcs_prefix)
+        self.save_config()
 
         # INITIALIZE FEATURE EXTRACTOR
-        if self.bucket: 
+        bucket = None
+        if self.bucket and not self.ft_ckpt: 
             self.pt_ckpt = self.local_path
+        elif self.bucket:
+            bucket = self.bucket
 
-        self.feature_extractor = HFExtractor(model_type=self.model_type, pt_ckpt=self.pt_ckpt, from_hub=from_hub, delete_download=self.delete_download,normalize=self.normalize)
+        self.feature_extractor = HFExtractor(model_type=self.model_type, pt_ckpt=self.pt_ckpt, from_hub=from_hub, normalize=self.normalize, bucket=bucket)
 
-        if self.bucket and self.delete_download:
-                print('Deleting local copy of checkpoint')
-                shutil.rmtree(str(self.local_path))
+        if (self.bucket or self.from_hub) and self.delete_download:
+            shutil.rmtree(str(self.local_path))
+
+            bp = Path('.').absolute()
+            curr_parent = Path(self.local_path).parent
+            while bp.name != curr_parent.name: 
+                os.rmdir(curr_parent)
+                temp = curr_parent.parent 
+                curr_parent = temp
         
     def get_model_name(self) -> str:
         """
@@ -199,11 +229,11 @@ class HFModel(BaseModel):
             model_name += f'_{self.finetune_method}'
         return model_name
 
-    def _load_model(self, ckpt, test_hub_fail:bool=False, test_local_fail:bool=False):
+    def _load_model(self, ckpt:Union[str,Path], test_hub_fail:bool=False, test_local_fail:bool=False):
         """
         Load pretrained model from hugging face
 
-        :param ckpt: TODO
+        :param ckpt: pathlike, path to model checkpoint
         :param test_hub_fail: bool, for testing purposes to confirm that non-hugging face functionality works (default=False)
         :param test_local_fail: bool, for testing purposes to confirm that failing a local load raises errors (default=False)
         """
@@ -220,20 +250,11 @@ class HFModel(BaseModel):
                         raise Exception()
                     
                     print('Loading directly from hugging face hub failed. Downloading model locally...')
-                    self.local_path = Path(f'./{self.hf_hub}').absolute()
+                    self.local_path = Path(f'./checkpoints/{self.hf_hub}').absolute()
                     self.local_path.mkdir(parents=True, exist_ok=True)
                     snapshot_download(repo_id=self.hf_hub, local_dir=str(self.local_path))
                     self.base_model = AutoModel.from_pretrained(str(self.local_path), output_hidden_states=True)
-                    if self.delete_download:
-                        print('Deleting local copy of checkpoint')
-                        shutil.rmtree(str(self.local_path))
-
-                        bp = Path('.').absolute()
-                        curr_parent = self.local_path.parent
-                        while bp.name != curr_parent.name: 
-                            os.rmdir(curr_parent)
-                            temp = curr_parent.parent 
-                            curr_parent = temp
+        
                     return
                 except: 
                     assert ckpt is not None, 'Downloading from hub failed, but backup pt_ckpt not available.'
@@ -241,17 +262,23 @@ class HFModel(BaseModel):
 
         try:
             if self.bucket:
-                if not ckpt.exists():
-                    if self.gcs_prefix not in str(ckpt):
-                        ckpt = Path(self.gcs_prefix) / ckpt
-                    save_path = Path('.') / ckpt.replace(self.gcs_prefix, "")
-                    download_to_local(ckpt, save_path, self.bucket)
-                    ckpt = save_path
+                local_path = Path('.')
+                files = download_to_local(ckpt, local_path, self.bucket)
+                ckpt = files[0].parents[0].absolute()
 
             self.base_model = AutoModel.from_pretrained(str(ckpt), output_hidden_states=True)
             self.local_path = ckpt
 
         except:
+            if (self.bucket or self.from_hub) and self.delete_download:
+                shutil.rmtree(str(self.local_path))
+
+                bp = Path('.').absolute()
+                curr_parent = Path(self.local_path).parent
+                while bp.name != curr_parent.name: 
+                    os.rmdir(curr_parent)
+                    temp = curr_parent.parent 
+                    curr_parent = temp
             raise ValueError('Checkpoint is incompatible with HuggingFace models. Confirm this is a path to a local hugging face checkpoint.')
         
         return
@@ -333,6 +360,11 @@ class HFModel(BaseModel):
         else:
             is_trainable = True
 
+        if self.bucket:
+            local_path = Path('.')
+            files = download_to_local(ckpt, local_path, self.bucket)
+            ckpt = files[0].parents[0].absolute()
+            
         if ckpt:
             self.base_model = peft_from_pretrained(SpeechPeft, model = self.base_model, 
                                                         model_id = ckpt,
@@ -453,14 +485,23 @@ class HFModel(BaseModel):
         :param name: str, name to save to
         :param save_dir: pathlike, directory to save to
         """
-        if not isinstance(save_dir, Path): save_dir = Path(save_dir)
-        save_dir.mkdir(exist_ok=True)
-        save_dir = save_dir / name
-        if save_dir.exists(): print('Overwriting existing base model file!')
+        if not self.bucket:
+            if not isinstance(save_dir, Path): save_dir = Path(save_dir)
+            save_dir.mkdir(exist_ok=True)
+            save_dir = save_dir / name
+            if save_dir.exists(): print('Overwriting existing base model file!')
+        else:
+            upload_dir = f'{save_dir}/{name}'
+            save_dir = Path('.') / name
+            save_dir = save_dir / name
+            existing = search_gcs(str(upload_dir), str(upload_dir), self.bucket)
+            if existing != [] : print('Overwriting existing base model file!')
+        
         self.base_model.save_pretrained(save_dir)
 
         if self.bucket:
-            upload_to_gcs(self.gcs_prefix, save_dir, self.bucket)
+            upload_to_gcs(upload_dir, save_dir, self.bucket)
+            shutil.rmtree(save_dir)
 
     def save_model_components(self, name_prefix:str=None, sub_dir:Path = None):
         """
@@ -468,18 +509,27 @@ class HFModel(BaseModel):
         :param name_prefix: str, name prefix for model and classifier (default = None)
         :param sub_dir: Path, optional sub dir to save model components to
         """
-        if sub_dir:
-            path = self.out_dir / sub_dir 
+        if self.bucket:
+            if sub_dir: path = f'{self.out_dir}{sub_dir}'
+            else: path = self.out_dir 
         else:
-            path = self.out_dir
+            if sub_dir:
+                path = self.out_dir / sub_dir 
+            else:
+                path = self.out_dir
         name_model = self.model_name
         name_clf = self.clf.config['clf_name']
         if name_prefix:
             name_model = name_prefix + name_model
             name_clf = name_prefix + name_clf
-       
-        out_path = path / 'weights'
-        out_path.mkdir(parents=True, exist_ok=True)
+
+        if self.bucket:
+            out_path = f'{path}/weights'
+        else:
+            out_path = path / 'weights'
+            out_path.mkdir(parents=True, exist_ok=True)
         self.save_base_model(name_model, out_path)
-        self.clf.save_classifier(name_clf, out_path, bucket=self.bucket, gcs_prefix=self.gcs_prefix)
+        self.clf.save_classifier(name_clf, out_path)
+
+
     

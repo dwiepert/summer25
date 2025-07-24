@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Union
 
 ##local
-from summer25.io import download_file_to_local
+from summer25.io import download_to_local
 
 class UidToPath(object):
     """
@@ -71,9 +71,9 @@ class UidToPath(object):
                 else:
                     save_path = self.savedir / f"{uid}.{self.ext}"
 
-                download_file_to_local(temp_audio_path, save_path, self.bucket)
+                download_to_local(temp_audio_path, save_path, self.bucket)
                 
-                cache['waveform'] = str(download_file_to_local(temp_audio_path, save_path, self.bucket))
+                cache['waveform'] = str(download_to_local(temp_audio_path, save_path, self.bucket))
                 self.cache[uid] = cache
 
         cache = self.cache[uid]

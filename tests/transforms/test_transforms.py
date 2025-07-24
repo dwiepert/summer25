@@ -201,7 +201,7 @@ def test_uid_to_path():
     shutil.rmtree('./tests/structured')
 
 @pytest.mark.gcs
-def test_uid_to_path_bucket():
+def test_uid_to_path_gcs():
     #bucket
     #TODO
     pass
@@ -237,6 +237,12 @@ def test_uid_to_waveform():
     assert isinstance(outsample['waveform'],  torch.Tensor), 'Waveform not loaded'
     assert outsample['sample_rate'] == 16000, 'Incorrectly loaded sample rate'
 
+@pytest.mark.gcs
+def test_uid_to_waveform_gcs():
+    #BUCKET - unstructured and structured, librosa
+    #TODO
+    pass
+
 def test_pad():
     sample1, _ = load_audio()
     with pytest.raises(AssertionError):
@@ -253,8 +259,3 @@ def test_pad():
     assert outsample2['waveform'].shape[1] == max_len, 'Not padded to proper len'
     assert torch.equal(outsample2['waveform'][:,-1000:], torch.zeros((1,1000))), 'Not padded with proper values.'
 
-@pytest.mark.gcs
-def test_uid_to_waveform_bucket():
-    #BUCKET - unstructured and structured, librosa
-    #TODO
-    pass

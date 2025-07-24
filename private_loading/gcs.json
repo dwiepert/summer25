@@ -1,0 +1,4 @@
+{"gcs_prefix": "m144443/gcs_tests/",
+"checkpoint_prefix": "m144443/checkpoints/wavlm-base/",
+"bucket_name":"data-ingest-quarantine",
+"project_name": "aif-usr-p-naip-netd-d2d1"}

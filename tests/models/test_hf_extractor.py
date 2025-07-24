@@ -13,7 +13,21 @@ import pytest
 
 ##local
 from summer25.models import HFExtractor
+from summer25.io import search_gcs
 
+##### HELPERS #####
+def load_json():
+    with open('./private_loading/gcs.json', 'r') as file:
+        data = json.load(file)
+
+    gcs_prefix = data['checkpoint_prefix']
+    bucket_name = data['bucket_name']
+    project_name = data['project_name']
+    storage_client = storage.Client(project=project_name)
+    bucket = storage_client.get_bucket(bucket_name)
+    return gcs_prefix, bucket
+
+##### TESTS #####
 @pytest.mark.hf
 def test_extractor_pretrained():
     #base test - load from hub
@@ -73,3 +87,19 @@ def test_extractor_pretrained():
     
     if pt_ckpt.exists():
         shutil.rmtree(pt_ckpt)
+
+@pytest.mark.gcs
+def test_extractor_pretrained_gcs():
+    #base test - don't load from hub
+    ckpt, bucket = load_json()
+    params = {'model_type': 'wavlm-base', 'from_hub':False, 'pt_ckpt': ckpt, 'bucket':bucket, 'delete_download':True}
+    m = HFExtractor(**params)
+    assert m is not None, 'Extractor not rundsdwning properly.'
+    assert not m.local_path.exists(), 'Local path to checkpoint not deleted.'
+    
+    #CHECKPOINT THAT DOESN'T EXIST
+    #invalid ckpt
+    params['pt_ckpt'] = f'{ckpt}other'
+    with pytest.raises(AssertionError):
+        m = HFExtractor(**params)
+

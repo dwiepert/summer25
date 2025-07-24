@@ -7,6 +7,8 @@ Last modified: 07/2025
 #IMPORTS
 ##built-in
 import json
+from pathlib import Path
+import os
 from typing import Union, List
 
 ##third party
@@ -19,7 +21,7 @@ from tqdm import tqdm
 
 ##local
 from summer25.models import HFModel
-from summer25.io import upload_to_gcs
+from summer25.io import upload_to_gcs, search_gcs
 from ._early_stop import EarlyStopping
 from ._ranked_clf_loss import RankedClassificationLoss
 
@@ -59,17 +61,16 @@ class Trainer():
     :param save_checkpoints: bool, specify whether to save checkpoints (default = True)
     :param patience: int, patience for early stopping (default = 5)
     :param delta: float, minimum change for early stopping (default = 0.0)
-    :param bucket: gcs bucket (default = None)
-    :param gcs_prefix: str, gcs prefix (default = '')
     :param kwargs: additional values for rank classification loss or schedulers (e.g., rating_threshold/margin/bce_weight for rank loss and end_lr/epochs for Exponential scheduler)
     """
     def __init__(self, model:Union[HFModel], target_features:List[str], optim_type:str="adamw", 
                  tf_learning_rate:float=None, learning_rate:float=1e-4, loss_type:str="bce", scheduler_type:str=None,
-                 early_stop:bool=False, save_checkpoints:bool=True, patience:int=5, delta:float=0.0, bucket=None, gcs_prefix:str='', **kwargs):
+                 early_stop:bool=False, save_checkpoints:bool=True, patience:int=5, delta:float=0.0, **kwargs):
         self.model = model
         self.name_prefix = f'{optim_type}_{loss_type}'
         self.target_features = target_features
         self.learning_rate= learning_rate
+        
         if tf_learning_rate:
             self.tf_learning_rate = tf_learning_rate
         else:
@@ -187,8 +188,6 @@ class Trainer():
         self.log = {"train_loss":[], "avg_train_loss":[], "val_loss":[], "avg_val_loss":[]}
         self.log.update(self.config)
 
-        self.bucket = bucket
-        self.gcs_prefix = gcs_prefix
 
     def train_step(self, train_loader:DataLoader):
         """
@@ -258,12 +257,20 @@ class Trainer():
                 self.val_step(val_loader, e)
 
             #FLUSH LOG 
-            path = self.model.out_dir / name_prefix
-            path.mkdir(parents = True, exist_ok = True)
-            with open(str(path / 'train_log.json'), 'w') as f:
+            if self.model.bucket:
+                path = Path('.')
+                upload_path = f'{self.model.out_dir}{name_prefix}'
+            else:
+                path = self.model.out_dir / name_prefix
+                path.mkdir(parents = True, exist_ok = True)
+            
+            log_path = path / 'train_log.json'
+            with open(str(log_path), 'w') as f:
                 json.dump(self.log, f)
-            if self.bucket:
-                upload_to_gcs(self.gcs_prefix, path / 'train_log.json', self.bucket, overwrite=True)
+
+            if self.model.bucket:
+                upload_to_gcs(upload_path, log_path, self.model.bucket, overwrite=True)
+                os.remove(log_path)
             
             if self.early_stop:
                 if self.early_stop.early_stop:
@@ -332,12 +339,21 @@ class Trainer():
             per_feature[t] = temp
 
         metrics = {'loss':running_loss, 'avg_loss': (running_loss / len(test_loader)), 'feature_metrics': per_feature}
-        path = self.model.out_dir / name_prefix 
-        path.mkdir(exist_ok = True)
+        
+        if self.model.bucket:
+            path = Path('.')
+            upload_path = f'{self.model.out_dir}{name_prefix}'
+        else:
+            path = self.model.out_dir / name_prefix
+            path.mkdir(parents = True, exist_ok = True)
+        
+        log_path = path / 'evaluation.json'
+        
         with open(str(path / 'evaluation.json'), 'w') as f:
             json.dump(metrics, f)
         
-        if self.bucket:
-            upload_to_gcs(self.gcs_prefix, path / 'evaluation.json', self.bucket)
+        if self.model.bucket:
+            upload_to_gcs(upload_path, log_path, self.model.bucket, overwrite=True)
+            os.remove(log_path)
         
 
