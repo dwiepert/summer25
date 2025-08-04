@@ -6,3 +6,4 @@ practice.py
 private_loading/download_files.py
 .DS_Store
 /out_dir
+/private_loading
