@@ -8,7 +8,7 @@ Last modified: 06/2025
 ##built-in
 from pathlib import Path
 ##local
-from summer25.io import load_waveform_from_gcs, load_waveform_from_local
+from summer25.io import load_waveform
 
 class UidToWaveform(object):
     '''
@@ -43,18 +43,10 @@ class UidToWaveform(object):
         uid, = wavsample['uid'],
         cache = {}
         if uid not in self.cache:
-            if self.bucket is not None:
-                #load from google cloud storage
-                wav, sr = load_waveform_from_gcs(self.bucket, self.prefix, uid, self.extension, self.lib, self.structured)
-                cache['waveform'] = wav 
-                cache['sample_rate'] = sr
-                self.cache[uid] = cache
-            else:
-                 #load local
-                wav, sr = load_waveform_from_local(self.prefix, uid, self.extension, self.lib, self.structured)
-                cache['waveform'] = wav
-                cache['sample_rate'] = sr
-                self.cache[uid] = cache
+            wav, sr = load_waveform(self.prefix, uid, self.extenstion, self.lib, self.structured, self.bucket)
+            cache['waveform'] = wav 
+            cache['sample_rate'] = sr
+            self.cache[uid] = cache
             
         cache = self.cache[uid]
         

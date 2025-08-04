@@ -9,7 +9,7 @@ Last modified: 06/2025
 import json
 import os
 from pathlib import Path
-from typing import Union,List,Tuple
+from typing import Union, List, Tuple
 
 #third-party
 import numpy as np
@@ -19,6 +19,140 @@ from sklearn.model_selection import train_test_split
 #local
 from summer25.constants import _TASKS, _FEATURES
 from summer25.io import search_gcs, upload_to_gcs
+
+##### HELPER FUNCTIONS #####
+def _check_proportions(proportions:List[float]):
+    """
+    Check proportions are valid and get indices where there is a valid proportion
+
+    :param proportions: list of float, list with proportions for each split (default = [.7, .15, .15])
+    :return prop_inds: list of float, list with valid proportions
+    """
+    #CHECk PROPORTIONS
+    assert len(proportions) == 3, 'Must give a proportion for train/val/test even if validation or test set is 0.'
+    assert sum(proportions) == 1, 'Proportions must add up to 1'
+
+    prop_inds = np.argwhere(np.array(proportions) != 0)
+    prop_inds = [i[0] for i in prop_inds.tolist()]
+
+    return prop_inds
+
+def _check_directories(audio_dir:Union[Path, str], split_dir:Union[Path, str], load_existing:bool, bucket):
+    """
+    Check and adjust directories as necessary
+
+    :param audio_dir: pathlike, path to directory containing audio files. A json or csv with audio metadata should exist in this directory 
+    :param split_dir: pathlike, path to directory to save splits to. May have existing splits.
+    :param load_existing: bool, specify whether to load existing split 
+    :param bucket: GCS bucket
+    """
+    if audio_dir is not None: 
+        if bucket is None:
+            if not isinstance(audio_dir, Path): audio_dir = Path(audio_dir)
+            assert audio_dir.exists(), 'Given audio_dir is not an existing directory.'
+        else:
+            if not isinstance(audio_dir, str): audio_dir = str(audio_dir)
+            existing = search_gcs('*', audio_dir, bucket)
+            assert existing != [], 'Given audio_dir is not an existing directory.'
+
+    if split_dir is not None:
+        if bucket is None:
+            if not isinstance(split_dir, Path): split_dir = Path(split_dir)
+        else:
+            if not isinstance(split_dir, str): split_dir = str(split_dir)
+
+    if (audio_dir is None) and (split_dir is not None):
+        load_existing = True
+    elif (audio_dir is not None) and (split_dir is None): #only set audio dir to split dir if creating a new split
+        load_existing = False 
+        print('load_existing set to False as split dir was not given.')
+        split_dir = audio_dir
+
+    return audio_dir, split_dir, load_existing
+
+def _check_existing(split_dir:Union[Path,str], load_existing:bool, audio_dir:Union[Path,str], bucket):
+    """
+    Check if parent directories exist
+
+    :param audio_dir: pathlike, path to directory containing audio files. A json or csv with audio metadata should exist in this directory 
+    :param split_dir: pathlike, path to directory to save splits to. May have existing splits.
+    :param load_existing: bool, specify whether to load existing split 
+    :param bucket: GCS bucket
+
+    :return load_existing: bool, updated load existing
+    """
+    if load_existing and (split_dir is not None):
+        if bucket is None:
+            if not split_dir.exists():
+                assert audio_dir is not None, 'Cannot load from split_dir as it does not exist. Audio_dir not given, so split cannot be created either.'
+                load_existing = False
+                print('load_existing set to False as split dir not yet created.')
+        else:
+            existing = search_gcs('*', split_dir, bucket)
+            if existing == []:
+                assert audio_dir is not None, 'Cannot load from split_dir as it does not exist. Audio_dir not given, so split cannot be created either.'
+                load_existing = False
+                print('load_existing set to False as split dir not yet created.')
+    
+    return load_existing
+
+def _save_split(split_dir:Union[Path,str], name:str, temp_dict:dict, as_json:bool, bucket):
+    """
+    Save splits
+
+    :param split_dir: pathlike, path to directory to save splits to. May have existing splits. (default = None)
+    :param name: str, split name
+    :param temp_dict: dict, temporary dict of split dataframes
+    :param as_json: bool, true if loading from json file 
+    :param bucket: GCS bucket (default = None)
+    """
+    if bucket is None:
+        if split_dir.name != name:
+            split_dir = split_dir / name
+        if split_dir.exists():
+            print('Potentially overwriting existing splits.')
+        else:
+            split_dir.mkdir(parents=True, exist_ok=True)
+
+        if as_json:
+            store = {}
+            for t in temp_dict:
+                if temp_dict[t] is not None:
+                    store[t] = temp_dict[t].to_dict()
+        
+            for k in store.keys():
+                p = str(split_dir / (k+'.json'))
+                with open(p, 'w') as file:
+                    json.dump(store[k], file, indent=4)
+        else:
+            for t in temp_dict:
+                if temp_dict[t] is not None:
+                    temp_dict[t].to_csv(str(split_dir / (t + '.csv')), index=False)
+    else:
+        if Path(split_dir).name != name:
+            split_dir = Path(split_dir) / name
+        existing = search_gcs('*', str(split_dir), bucket)
+        if existing != []:
+            print('Potentially overwriting existing splits.')
+        if as_json:
+            store = {}
+            for t in temp_dict:
+                if temp_dict[t] is not None:
+                    store[t] = temp_dict[t].to_dict()
+        
+            for k in store.keys():
+                p = f'./{k}.json'
+                with open(p, 'w') as file:
+                    json.dump(store[k], file, indent=4)
+                upload_to_gcs(str(split_dir), path = p, bucket=bucket)
+                os.remove(p)
+        else:
+            for t in temp_dict:
+                if temp_dict[t] is not None:
+                    p = f'./{t}.csv'
+                    temp_dict[t].to_csv(p, index=False)
+                    upload_to_gcs(str(split_dir), path = p, bucket=bucket)
+                    os.remove(p)
 
 def _load(p:Union[str, Path], bucket=None, as_json:bool=False) -> pd.DataFrame:
     """
@@ -99,66 +233,21 @@ def _sklearn_split(split_table:pd.DataFrame, subject_key:str, size:float, seed:i
     test_subjects = X_test[subject_key].values
     return train_subjects, test_subjects
 
-def seeded_split(subject_key:str, date_key:str, audio_key:str, task_key:str, audio_dir:Union[Path, str]=None, split_dir:Union[Path,str]=None, proportions:List[float]=[.7, .15, .15], seed:int=42,
-          save:bool=False, load_existing:bool=False, as_json:bool=False,
-          target_tasks:List[str]=None, target_features:List[str] = None, stratify_threshold:int=10,
-          bucket=None ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def _split_name(audio_dir:Union[Path, str] = None, split_dir:Union[Path, str] = None, proportions:List[float] = [0.7,0.15,0.15], 
+                target_tasks:List[str]=None, target_featuresList[str]=None, bucket=None):
     """
-    Create train/test/val splits
+    Get name of split and updated split_dir
 
-    :param subject_key: str, name of column/key containing subject identifiers
-    :param date_key: str, name of column/key containing date
-    :param audio_key: str, name of column/key containing audio file names 
-    :param task_key: str, name of column/key containing tasks
     :param audio_dir: pathlike, path to directory containing audio files. A json or csv with audio metadata should exist in this directory (default = None)
     :param split_dir: pathlike, path to directory to save splits to. May have existing splits. (default = None)
     :param proportions: list of float, list with proportions for each split (default = [.7, .15, .15])
-    :param seed: int, random seed for splitting consistently (default = 42)
-    :param save: bool, specify whether to save created split (default = False)
-    :param load_existing: bool, specify whether to load existing split (default = False)
-    :param as_json: bool, specify whether loading/saving should use .json (default = False)
     :param target_tasks: List of target tasks to keep in split (default = None)
     :param target_features: List of target features to stratify on/keep (default = None)
-    :param stratify_threshold: int, specify threshold for stratification of features (default = 10)
     :param bucket: GCS bucket (default = None)
-    :return train_df: pd.DataFrame, train split
-    :return val_df: pd.DataFrame, validation split
-    :return test_df: pd.DataFrame, test split
+
+    :return name: str, split name
+    :return split_dir: pathlike, path to directory to save splits to.
     """
-        
-    pd.set_option("future.no_silent_downcasting", True)
-    #CHECk PROPORTIONS
-    assert len(proportions) == 3, 'Must give a proportion for train/val/test even if validation or test set is 0.'
-    assert sum(proportions) == 1, 'Proportions must add up to 1'
-
-    prop_inds = np.argwhere(np.array(proportions) != 0)
-    prop_inds = [i[0] for i in prop_inds.tolist()]
-
-    #CHECK DIRECTORIES
-    assert (audio_dir is not None) or (split_dir is not None), 'At least one of audio_dir or split_dir must be given.'
-
-    if audio_dir is not None: 
-        if bucket is None:
-            if not isinstance(audio_dir, Path): audio_dir = Path(audio_dir)
-            assert audio_dir.exists(), 'Given audio_dir is not an existing directory.'
-        else:
-            if not isinstance(audio_dir, str): audio_dir = str(audio_dir)
-            existing = search_gcs('*', audio_dir, bucket)
-            assert existing != [], 'Given audio_dir is not an existing directory.'
-
-    if split_dir is not None:
-        if bucket is None:
-            if not isinstance(split_dir, Path): split_dir = Path(split_dir)
-        else:
-            if not isinstance(split_dir, str): split_dir = str(split_dir)
-
-    if (audio_dir is None) and (split_dir is not None):
-        load_existing = True
-    elif (audio_dir is not None) and (split_dir is None): #only set audio dir to split dir if creating a new split
-        load_existing = False 
-        print('load_existing set to False as split dir was not given.')
-        split_dir = audio_dir
-
     # SPLIT NAME
     if audio_dir is None:
         name = Path(split_dir).name #assumes you have given full file path
@@ -173,30 +262,37 @@ def seeded_split(subject_key:str, date_key:str, audio_key:str, task_key:str, aud
             split_dir = f'{split_dir}/{name}'
         else:
             split_dir = split_dir / name 
-
     
-    if load_existing and (split_dir is not None):
-        if bucket is None:
-            if not split_dir.exists():
-                assert audio_dir is not None, 'Cannot load from split_dir as it does not exist. Audio_dir not given, so split cannot be created either.'
-                load_existing = False
-                print('load_existing set to False as split dir not yet created.')
-        else:
-            existing = search_gcs('*', split_dir, bucket)
-            if existing == []:
-                assert audio_dir is not None, 'Cannot load from split_dir as it does not exist. Audio_dir not given, so split cannot be created either.'
-                load_existing = False
-                print('load_existing set to False as split dir not yet created.')                         
-    
-    # Load existing
-    if load_existing:
-        train_df, val_df, test_df = _load_existing(split_dir, as_json, date_key, bucket)
-        if (train_df is not None) or (test_df is not None) or (val_df is not None):
-            return train_df, val_df, test_df
-        else:
-            assert audio_dir is not None, 'Split dir has no existing split files. Audio_dir must be given to create them.'
+    return name, split_dir
 
-    # create new split
+def _create_split(audio_dir:Union[Path,str], split_dir:Union[Path,str],
+                  date_key:str, subject_key:str, audio_key:str, task_key:str, 
+                  target_task:List[str], target_features:List[str], prop_inds:List[int], proportions:List[float],
+                  stratify_threshold:int, as_json:bool, save:bool, seed:int, bucket) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """
+    Create split
+
+    :param audio_dir: pathlike, path to directory containing audio files. A json or csv with audio metadata should exist in this directory
+    :param split_dir: pathlike, path to directory to save splits to. May have existing splits.
+    :param date_key: str, name of column/key containing date
+    :param subject_key: str, name of column/key containing subject identifiers
+    :param audio_key: str, name of column/key containing audio file names 
+    :param task_key: str, name of column/key containing tasks
+    :param target_tasks: List of target tasks to keep in split
+    :param target_features: List of target features to stratify on/keep 
+    :param prop_inds: List of proportion indices to use
+    :param proportions: list of float, list with proportions for each split
+    :param stratify_threshold: int, specify threshold for stratification of features
+    :param as_json: bool, specify whether loading/saving should use .json
+    :param save: bool, specify whether to save created split (default = False)
+    :param seed: int, random seed for splitting consistently (default = 42)
+    :param bucket: GCS bucket
+
+    :return train_df: pd.DataFrame, train split
+    :return val_df: pd.DataFrame, validation split
+    :return test_df: pd.DataFrame, test split
+
+    """
     if as_json: 
         pattern = '.json'
     else:
@@ -246,7 +342,6 @@ def seeded_split(subject_key:str, date_key:str, audio_key:str, task_key:str, aud
     groups_to_merge = group_counts[group_counts[subject_key]<stratify_threshold].stratify.values
     table['stratify']=np.where(table['stratify'].isin(groups_to_merge), 'merged', table['stratify'])
 
-    #OPTION 1, only train/only val/only test
     if len(prop_inds) == 1:
         if prop_inds[0] == 0:
             train_df = table.copy()
@@ -290,7 +385,7 @@ def seeded_split(subject_key:str, date_key:str, audio_key:str, task_key:str, aud
         
     else:
         raise ValueError('Invalid combination of proportions.')
-
+    
     print(f'split results:\n train size = {len(train_subjects)} speakers\n val size = {len(val_subjects)} speakers\n test size = {len(test_subjects)} speakers')
 
     table = metadata_df[[subject_key, date_key, task_key, audio_key]+target_features].join(metadata_df[target_features].add_prefix('rank_')).copy()
@@ -324,52 +419,63 @@ def seeded_split(subject_key:str, date_key:str, audio_key:str, task_key:str, aud
     temp_dict = {'train': train_df, 'val': val_df, 'test': test_df}
     
     if save:
-        if bucket is None:
-            if split_dir.name != name:
-                split_dir = split_dir / name
-            if split_dir.exists():
-                print('Potentially overwriting existing splits.')
-            else:
-                split_dir.mkdir(parents=True, exist_ok=True)
-
-            if as_json:
-                store = {}
-                for t in temp_dict:
-                    if temp_dict[t] is not None:
-                        store[t] = temp_dict[t].to_dict()
-            
-                for k in store.keys():
-                    p = str(split_dir / (k+'.json'))
-                    with open(p, 'w') as file:
-                        json.dump(store[k], file, indent=4)
-            else:
-                for t in temp_dict:
-                    if temp_dict[t] is not None:
-                        temp_dict[t].to_csv(str(split_dir / (t + '.csv')), index=False)
-        else:
-            if Path(split_dir).name != name:
-                split_dir = Path(split_dir) / name
-            existing = search_gcs('*', str(split_dir), bucket)
-            if existing != []:
-                print('Potentially overwriting existing splits.')
-            if as_json:
-                store = {}
-                for t in temp_dict:
-                    if temp_dict[t] is not None:
-                        store[t] = temp_dict[t].to_dict()
-            
-                for k in store.keys():
-                    p = f'./{k}.json'
-                    with open(p, 'w') as file:
-                        json.dump(store[k], file, indent=4)
-                    upload_to_gcs(str(split_dir), path = p, bucket=bucket)
-                    os.remove(p)
-            else:
-                for t in temp_dict:
-                    if temp_dict[t] is not None:
-                        p = f'./{t}.csv'
-                        temp_dict[t].to_csv(p, index=False)
-                        upload_to_gcs(str(split_dir), path = p, bucket=bucket)
-                        os.remove(p)
+        _save_split(split_dir, name, temp_dict, as_json, bucket)
 
     return train_df, val_df, test_df
+
+
+##### SPLIT FUNCTION ##### 
+
+def seeded_split(subject_key:str, date_key:str, audio_key:str, task_key:str, audio_dir:Union[Path, str]=None, split_dir:Union[Path,str]=None, proportions:List[float]=[.7, .15, .15], seed:int=42,
+          save:bool=False, load_existing:bool=False, as_json:bool=False,
+          target_tasks:List[str]=None, target_features:List[str] = None, stratify_threshold:int=10,
+          bucket=None) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """
+    Create train/test/val splits
+
+    :param subject_key: str, name of column/key containing subject identifiers
+    :param date_key: str, name of column/key containing date
+    :param audio_key: str, name of column/key containing audio file names 
+    :param task_key: str, name of column/key containing tasks
+    :param audio_dir: pathlike, path to directory containing audio files. A json or csv with audio metadata should exist in this directory (default = None)
+    :param split_dir: pathlike, path to directory to save splits to. May have existing splits. (default = None)
+    :param proportions: list of float, list with proportions for each split (default = [.7, .15, .15])
+    :param seed: int, random seed for splitting consistently (default = 42)
+    :param save: bool, specify whether to save created split (default = False)
+    :param load_existing: bool, specify whether to load existing split (default = False)
+    :param as_json: bool, specify whether loading/saving should use .json (default = False)
+    :param target_tasks: List of target tasks to keep in split (default = None)
+    :param target_features: List of target features to stratify on/keep (default = None)
+    :param stratify_threshold: int, specify threshold for stratification of features (default = 10)
+    :param bucket: GCS bucket (default = None)
+    :return train_df: pd.DataFrame, train split
+    :return val_df: pd.DataFrame, validation split
+    :return test_df: pd.DataFrame, test split
+    """
+        
+    pd.set_option("future.no_silent_downcasting", True)
+    #CHECk PROPORTIONS
+    prop_inds = _check_proportions(proportions)
+
+    #CHECK DIRECTORIES
+    audio_dir, split_dir, load_existing = _check_directories(audio_dir, split_dir, load_existing, bucket)
+
+    # SPLIT NAME
+    name, split_dir = _split_name(audio_dir, split_dir, proportions, target_tasks, target_features, bucket)
+    
+    #CHECK EXISTING
+    load_existing = _check_existing(split_dir, load_existing, audio_dir, bucket)                       
+    
+    # Load existing
+    if load_existing:
+        train_df, val_df, test_df = _load_existing(split_dir, as_json, date_key, bucket)
+        if (train_df is not None) or (test_df is not None) or (val_df is not None):
+            return train_df, val_df, test_df
+        else:
+            assert audio_dir is not None, 'Split dir has no existing split files. Audio_dir must be given to create them.'
+
+    # create new split
+
+    _create_split(audio_dir, split_dir, date_key, subject_key, audio_key, task_key, target_task, target_features, 
+                  prop_inds, proportions, stratify_threshold, as_json, save, seed, bucket)
+

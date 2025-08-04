@@ -24,3 +24,4 @@ __version__ = '0.4.5'
 # 0.4.3: tests added (excluding gcs tests)
 # 0.4.4: untested gcs upload/download
 # 0.4.5: tested gcs upload/download
+# 0.5.0: reworked model - need to test run.py

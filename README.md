@@ -50,13 +50,13 @@ CONFIG FILES:
         print(freq.sort_values()[-5:])
         ```
 
-
-
 ## ACTIVE DEBUGGING/TASKS
 * #TODO: check what milestone should be based on warmup epoch? - make sure it's aligned properly (possible test to check?)* not important
 * max pooling done right?
 * fix run.py for proper inputs
-* LATER LATER LATER: make code more concise?
+* get better SAVING protocol? i think it's useful for clf and finetuned ckpt to be separate just in case you want to switch out clf head.
+* separate clf head for each feature - test it
+* test top 3
 
 ## All TODO
 * ~~Make seeded_split compatible with gcs~~ 

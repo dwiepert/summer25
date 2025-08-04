@@ -14,7 +14,7 @@ import torch
 
 ##local
 from summer25.models import Classifier
-from summer25.io import search_gcs
+from summer25.io import search_gcs, upload_to_gcs, download_to_local
 
 ##### HELPERS #####
 def load_json():
@@ -28,6 +28,14 @@ def load_json():
     bucket = storage_client.get_bucket(bucket_name)
     return gcs_prefix, bucket
 
+def remove_gcs_directories(gcs_prefix,bucket, directory='test_split', pattern="*"):
+    dir = gcs_prefix + f'{directory}'
+    existing = search_gcs(pattern, dir, bucket)
+    for e in existing:
+        blob = bucket.blob(e)
+        blob.delete()
+    existing = search_gcs(pattern, dir, bucket)
+    assert existing == []
 ##### TESTS #####
 def test_classifier_params():
     params = {'in_features':1, 'out_features':1}
@@ -128,7 +136,6 @@ def test_classifier_checkpoints_gcs():
     with pytest.raises(AssertionError):
         m = Classifier(**params)
 
-    
 
 def test_weight_initialization():
     m1 = Classifier(in_features=768, out_features=2, nlayers=2, seed=100)
@@ -143,3 +150,49 @@ def test_weight_initialization():
     m3 = Classifier(in_features=768, out_features=2, nlayers=2, seed=42)
     l3 = m3.classifier.linear0.weight
     assert not torch.equal(l1, l3)
+
+def test_transformer_classifier():
+    params = {'in_features':768, 'out_features':2, 'nlayers':2, 'num_heads':4, 'layer_type':'transformer'}
+
+    #LOCAL SAVE
+    clf = Classifier(**params)
+    path = Path('test_clf')
+    out_path = path / 'weights'
+    out_path.mkdir(parents=True, exist_ok=True)
+    name = clf.get_clf_name()
+    clf_path = out_path / (name+'.pt')
+    if clf_path.exists(): print(f'Overwriting existing classifier head at {str(clf_path)}')
+    torch.save(clf.state_dict(), clf_path)
+    
+    clf2 = Classifier(**params)
+    clf2.load_state_dict(torch.load(clf_path, weights_only=True))
+
+    os.remove(clf_ckpt)
+    shutil.rmtree(path)
+
+@pytest.mark.gcs
+def transformer_classifier_gcs():
+    gcs_prefix, bucket = load_json()
+    #LOCAL SAVE
+    clf = Classifier(**params)
+    path = Path('test_clf')
+    out_path = path / 'weights'
+    out_path.mkdir(parents=True, exist_ok=True)
+    name = clf.get_clf_name()
+    torch.save(clf.state_dict(), clf_path)
+    
+    # BUCKET SAVE
+    out_path = f'{gcs_prefix}{str(out_path)}'
+    existing = search_gcs(f'{name}.pt', str(out_dir), bucket)
+    if existing != []: print(f'Overwriting existing classifier head at {str(out_dir)}')
+    upload_to_gcs(str(out_path), clf_path, bucket)
+    os.remove(clf_path)
+
+    save_path = Path('.')
+    files = download_to_local(f'{out_path}/{name}.pt', save_path, bucket)
+    clf_ckpt = files[0]
+    clf3 = Classifier(**params)
+    clf3.load_state_dict(torch.load(clf_ckpt, weights_only=True))
+    os.remove(clf_ckpt)
+    shutil.rmtree(path)
+    remove_gcs_directories(gcs_prefix, bucket, 'test_clf')

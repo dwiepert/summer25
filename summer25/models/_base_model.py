@@ -2,7 +2,7 @@
 Base model class for setting up audio models from various sources
 
 Author(s): Daniela Wiepert
-Last modified: 06/2025
+Last modified: 07/2025
 """
 
 #IMPORT
@@ -34,9 +34,6 @@ class BaseModel(nn.Module):
     :param freeze_method: str, freeze method for base pretrained model (default=required-only)
     :param unfreeze_layers: List[str], optionally give list of layers to unfreeze (default = None)
     :param pool_method: str, pooling method for base model output (default=mean)
-    :param pt_ckpt: pathlike, path to base pretrained model checkpoint (default=None)
-    :param ft_ckpt: pathlike, path to finetuned base model checkpoint (default=None)
-    :param clf_ckpt: pathlike, path to finetuned classifier checkpoint (default = None)
     :param in_features: int, number of input features to classifier (based on output layers of the base model) (default = 768)
     :param out_features: int, number of output features (number of classes) (default = 1)
     :param nlayers: int, number of layers in classification head (default = 2)
@@ -44,6 +41,8 @@ class BaseModel(nn.Module):
     :param layernorm: bool, true for adding layer norm (default=False)
     :param dropout: float, dropout level (default = 0.0)
     :param binary:bool, specify whether output is making binary decisions (default=True)
+    :param layer_type:str, specify layer type ['linear','transformer'] (default='linear')
+    :param num_heads:int, number of encoder heads in using transformer build (default = 4)
     :param activation: str, activation function to use for classification head (default=relu)
     :param seed: int, random seed (default = 42)
     :param device: torch device (default = cuda)
@@ -53,8 +52,7 @@ class BaseModel(nn.Module):
     def __init__(self, model_type:str, out_dir:Union[Path, str], finetune_method:str='none', 
                  freeze_method:str = 'required-only', unfreeze_layers:Optional[List[str]]=None, 
                  pool_method:str = 'mean', pool_dim:Optional[Union[int, tuple]] = None,
-                 pt_ckpt:Optional[Union[Path, str]]=None, ft_ckpt:Optional[Union[Path,str]]=None, clf_ckpt:Optional[Union[Path,str]]=None,  
-                 in_features:int=768, out_features:int=1, nlayers:int=2, bottleneck:int=None, layernorm:bool=False, dropout:float=0.0, binary:bool=True,
+                 in_features:int=768, out_features:int=1, nlayers:int=2, bottleneck:int=None, layernorm:bool=False, dropout:float=0.0, binary:bool=True, layer_type:str='linear', num_heads:int=4,
                  activation:str='relu', seed:int=42, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"), bucket=None, delete_download:bool=False):
         
         super(BaseModel, self).__init__()
@@ -68,9 +66,6 @@ class BaseModel(nn.Module):
         else:
             self.out_dir = str(out_dir)
             if self.out_dir[-1] != '/': self.out_dir = self.out_dir + '/'
-        self.pt_ckpt=pt_ckpt
-        self.ft_ckpt=ft_ckpt
-        self.clf_ckpt = clf_ckpt
         self.finetune_method = finetune_method
         self.freeze_method = freeze_method
         self.pool_method = pool_method
@@ -85,29 +80,30 @@ class BaseModel(nn.Module):
         torch.manual_seed(self.seed)
 
         self.clf_args = {'in_features':in_features, 'out_features':out_features, 'nlayers':nlayers,
-                        'activation':activation, 'bottleneck':bottleneck, 'layernorm':layernorm, 'binary':binary,
+                        'activation':activation, 'bottleneck':bottleneck, 'layernorm':layernorm, 'binary':binary, 'layer_type':layer_type, 'num_heads':num_heads,
                         'dropout':dropout, 'seed': self.seed, 'ckpt': self.clf_ckpt, 'bucket': self.bucket, 'delete_download':self.delete_download}
         
         # ASSERTIONS
         assert self.model_type in list(_MODELS.keys()), f'{self.model_type} is an invalid model type. Choose one of {list(_MODELS.keys())}.'
-        if self.pt_ckpt is not None:
-            if self.bucket:
-                existing = search_gcs(self.pt_ckpt, self.pt_ckpt, self.bucket)
-                assert existing != [], f'Pretrained model path {self.pt_ckpt} does not exist.'
-            else:
-                if not isinstance(self.pt_ckpt, Path): self.pt_ckpt = Path(self.pt_ckpt)
-                assert self.pt_ckpt.exists(), f'Pretrained model path {self.pt_ckpt} does not exist.'
-        if self.ft_ckpt is not None:
-            if self.bucket:
-                existing = search_gcs(self.ft_ckpt, self.ft_ckpt, self.bucket)
-                assert existing != [], f'Finetuned model path {self.ft_ckpt} does not exist.'
-            else:
-                if not isinstance(self.ft_ckpt, Path): self.ft_ckpt = Path(self.ft_ckpt)
-                assert self.ft_ckpt.exists(), f'Finetuned model path {self.ft_ckpt} does not exist.'
-                if self.ft_ckpt.is_dir(): 
-                    assert os.listdir(self.ft_ckpt) != [], 'Finetuned checkpoint must be a non-empty directory'
-                else: 
-                    assert '.pt' in str(self.ft_ckpt) or '.pth' in str(self.ft_ckpt), 'Must give .pt or .pth if not giving a directory'
+        # if self.pt_ckpt is not None:
+        #     if self.bucket:
+        #         existing = search_gcs(self.pt_ckpt, self.pt_ckpt, self.bucket)
+        #         assert existing != [], f'Pretrained model path {self.pt_ckpt} does not exist.'
+        #     else:
+        #         if not isinstance(self.pt_ckpt, Path): self.pt_ckpt = Path(self.pt_ckpt)
+        #         assert self.pt_ckpt.exists(), f'Pretrained model path {self.pt_ckpt} does not exist.'
+        # if self.ft_ckpt is not None:
+        #     if self.bucket:
+        #         existing = search_gcs(self.ft_ckpt, self.ft_ckpt, self.bucket)
+        #         assert existing != [], f'Finetuned model path {self.ft_ckpt} does not exist.'
+        #     else:
+        #         if not isinstance(self.ft_ckpt, Path): self.ft_ckpt = Path(self.ft_ckpt)
+        #         assert self.ft_ckpt.exists(), f'Finetuned model path {self.ft_ckpt} does not exist.'
+        #         if self.ft_ckpt.is_dir(): 
+        #             assert os.listdir(self.ft_ckpt) != [], 'Finetuned checkpoint must be a non-empty directory'
+        #         else: 
+        #             assert '.pt' in str(self.ft_ckpt) or '.pth' in str(self.ft_ckpt), 'Must give .pt or .pth if not giving a directory'
+
         ### finetune method 
         assert self.finetune_method in _FINETUNE, f'self.finetune_method is not a valid finetuning method. Choose one of {_FINETUNE}.'
         ### freeze method
@@ -134,7 +130,7 @@ class BaseModel(nn.Module):
             assert isinstance(self.pool_dim, int) and self.pool_dim == 1, 'Self attention pooling only works with a pooling dimension of 1.'
             self.attention_pooling = SelfAttentionPooling(input_dim=in_features)
         
-        self.base_config = self._base_config()
+        self.base_config = self._get_base_config()
 
     ### LOGGING ###
     @abstractmethod
@@ -142,64 +138,32 @@ class BaseModel(nn.Module):
         """
         Get name for model type, including how it was freezed and whether it has been pretrained and finetuned
         Update for new model classes
-        :return model_name: str with model name
         """
-        model_name = f'BaseModel_f{self.freeze_method}_{self.pool_method}'
-        if self.pt_ckpt is not None:
-            model_name += '_pt'
-        if self.ft_ckpt is not None:
-            model_name += '_ft'
-        return model_name
+        pass
     
-    def _base_config(self) -> Dict[str, Union[str, List[str]]]:
+    def _get_base_config(self) -> Dict[str, Union[str, List[str]]]:
         """
         Get a base configuration file to append to
         :return base_config: Dict[str -> str or List of str]
         """
-        base_config={'freeze_method': self.freeze_method, 'pool_method':self.pool_method}
-        if self.pt_ckpt is not None:
-            base_config['pt_ckpt'] = str(self.pt_ckpt)
-        if self.ft_ckpt is not None:
-            base_config['ft_ckpt'] = str(self.ft_ckpt)
+        base_config={'freeze_method': self.freeze_method, 'pool_method':self.pool_method, 
+                     'finetune_method':self.finetune_method, 'out_dir': self.out_dir, 'seed':self.seed}
         if self.freeze_method == 'layer':
             base_config['unfreeze_layers'] = self.unfreeze_layers
-        
+        if self.bucket:
+            base_config['bucket'] = self.bucket.name
         return base_config
 
-    ### BASE MODEL INITIALIZATION ###
-    def _initialize_base_model(self):
-        """
-        Initialize model variable 
-        Required method for model class
-        """
-        #SET UP BASE MODEL
-        model_dict = OrderedDict()
-        model_dict['linear'] =nn.Linear(1,1)
-        self.base_model = nn.Sequential(model_dict) #for testing model initialization
-        
-        #LOAD CHECKPOINTS
-        self._load_checkpoint(self.pt_ckpt)
-        self._load_checkpoint(self.ft_ckpt)
-
-        #FREEZE MODEL LAYERS
-        if self.freeze_method != 'none':
-            self._freeze_all()
-            if self.freeze_method == 'layer':
-                self._unfreeze_by_layer(self)
-        
-    def _load_checkpoint(self, ckpt):
+    @abstractmethod 
+    def load_model_checkpoint(self, checkpoint):
         """
         Load a checkpoint for the base model from a state_dict
         Required method for model class
         Needs to be overwritten depending on how a checkpoint needs to be loaded and whether there is a difference for pretrained and finetuned loading
         
-        :param ckpt: pathlike object, model checkpoint - path to state dict
+        :param checkpoint: pathlike object, model checkpoint - path to state dict
         """
-        if ckpt is not None:
-            try:
-                self.base_model.load_state_dict(torch.load(ckpt, weights_only=True))
-            except:
-                raise ValueError('Finetuned checkpoint could not be loaded. Weights may not be compatible with the initialized models.')
+        pass
     
     def _freeze_all(self):
         """

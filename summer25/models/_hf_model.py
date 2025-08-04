@@ -23,7 +23,8 @@ from transformers import AutoModel, WhisperModel
 ##local
 from ._base_model import BaseModel
 from ._hf_extractor import HFExtractor
-from ._peft_model import SpeechPeft, peft_from_pretrained
+from ._auto_model import CustomAutoModel
+from ._peft_model import CustomPeft, peft_from_pretrained
 from ._classifier import Classifier
 from summer25.constants import _MODELS
 from summer25.io import upload_to_gcs, download_to_local, search_gcs
@@ -49,6 +50,8 @@ class HFModel(BaseModel):
     :param layernorm: bool, true for adding layer norm (default=False)
     :param dropout: float, dropout level (default = 0.0)
     :param binary:bool, specify whether output is making binary decisions (default=True)
+    :param layer_type:str, specify layer type ['linear','transformer'] (default='linear')
+    :param num_heads:int, number of encoder heads in using transformer build (default = 4)
     :param lora_rank: int, optional value when using LoRA - set rank (default = 8)
     :param lora_alpha: int, optional value when using LoRA - set alpha (default = 16)
     :param lora_dropout: float, optional value when using LoRA - set dropout (default = 0.0)
@@ -62,50 +65,17 @@ class HFModel(BaseModel):
     :param bucket: gcs bucket (default = None)
     """
     def __init__(self, 
-                 out_dir:Union[Path, str], model_type:str, finetune_method:str='none', freeze_method:str = 'required-only', unfreeze_layers:Optional[List[str]]=None,
-                 pool_method:str = 'mean',pt_ckpt:Optional[Union[Path,str]]=None, ft_ckpt:Optional[Union[Path,str]]=None, clf_ckpt:Optional[Union[Path,str]]=None, normalize:bool=False,
-                 out_features:int=1, nlayers:int=2, activation:str='relu', bottleneck:int=None, layernorm:bool=False, dropout:float=0.0, binary:bool=True,
+                 out_dir:Union[Path, str], model_type:str, finetune_method:str='none', freeze_method:str = 'required-only', unfreeze_layers:Optional[List[str]]=None, pool_method:str = 'mean',
+                 out_features:int=1, nlayers:int=2, activation:str='relu', bottleneck:int=None, layernorm:bool=False, dropout:float=0.0, binary:bool=True, layer_type:str='linear', num_heads:int=4,
                  lora_rank:Optional[int]=8, lora_alpha:Optional[int]=16, lora_dropout:Optional[float]=0.0, virtual_tokens:Optional[int]=4,
                  seed:int=42, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
                  from_hub:bool=True, delete_download:bool=False, test_hub_fail:bool=False, test_local_fail:bool=False,
                  bucket=None, gcs_prefix:str=''):
 
-        #optionally split ft_ckpt into base_model ckpt and clf_ckpt
-        if ft_ckpt:
-            if not bucket:
-                if not isinstance(ft_ckpt, Path): ft_ckpt = ft_ckpt(Path)
-                assert ft_ckpt.is_dir(), 'Hugging face finetuned model checkpoints should be directories.'
-                #check first if there is a given clf_ckpt already
-                if clf_ckpt is None:
-                    poss_ckpts = [r for r in ft_ckpt.glob('Classifier*')]
-                    if poss_ckpts != []:
-                        clf_ckpt = poss_ckpts[0]
-                
-                base_ckpt = None
-                for entry in ft_ckpt.iterdir():
-                    if entry.is_dir():
-                        base_ckpt = entry
-                if base_ckpt is not None:
-                    ft_ckpt = base_ckpt
-
-            else:
-                existing = search_gcs(ft_ckpt, ft_ckpt, bucket)
-                assert existing != [] and all([e != ft_ckpt for e in existing]), 'Hugging face finetuned model checkpoints should be directories.'
-                if clf_ckpt is None:
-                    poss_ckpts = [r for r in existing if 'Classifier' in r]
-                    if poss_ckpts != []:
-                        clf_ckpt = poss_ckpts[0]
-
-                poss_ckpts = list(set(["/".join(r.split("/")[:-1]) for r in existing if 'Classifier' not in r]))
-                poss_ckpts = [r for r in poss_ckpts if r != ft_ckpt]
-                if poss_ckpts != []:
-                    ft_ckpt = poss_ckpts[0]
-                    
         super().__init__(model_type=model_type, out_dir=out_dir, finetune_method=finetune_method,
-                         freeze_method=freeze_method, unfreeze_layers=unfreeze_layers, pool_method=pool_method, 
-                         pt_ckpt=pt_ckpt,ft_ckpt=ft_ckpt, clf_ckpt=clf_ckpt,
+                         freeze_method=freeze_method, unfreeze_layers=unfreeze_layers, pool_method=pool_method,
                          in_features=_MODELS[model_type]['in_features'], out_features=out_features, nlayers=nlayers, activation=activation, 
-                         bottleneck=bottleneck, layernorm=layernorm, dropout=dropout, binary=binary,
+                         bottleneck=bottleneck, layernorm=layernorm, dropout=dropout, binary=binary, layer_type=layer_type, num_heads=num_heads,
                          device=device, seed=seed, pool_dim=_MODELS[model_type]['pool_dim'], bucket=bucket, delete_download=delete_download)
 
         #HF ARGS
@@ -116,6 +86,9 @@ class HFModel(BaseModel):
         self.virtual_tokens = virtual_tokens
         if self.finetune_method == 'lora' or self.finetune_method == 'soft-prompt':
             self.freeze_method = 'all'
+            self.peft = True
+        else:
+            self.peft = False
         #handle some hugging face model specific parameters
         self.required_freeze = _MODELS[self.model_type]['required_freeze']
         self.optional_freeze = _MODELS[self.model_type]['optional_freeze']
@@ -127,17 +100,235 @@ class HFModel(BaseModel):
         if self.bucket:
             self.from_hub = False
         else:
-            self.from_hub = from_hub
+            self.from_hub = from_hub      
+        
+        ## INITIALIZE CLASSIFIER ARCHITECTURE
+        self.classifier_head = Classifier(**self.clf_args)
+
+        ## INITIALIZE MODEL
+        self.base_model = None
+
+        ## INITIALIZE FEATURE EXTRACTOR
+        self.feature_extractor = None
+
+        ## SET UP CONFIG
+        self.model_name = self.get_model_name()
+        self.config = {'model_name':self.model_name,'model_type':self.model_type}
+        self.config.update(self.base_config)
+        self.config.update(self.classifier_head.get_config())
+        
+
+    def load_clf_checkpoint(self, checkpoint:Union[str,Path], delete_download:bool = False):
+        """
+        Load a checkpoint to a classifier head
+
+        :param checkpoint: pathlike, path to checkpoint (.pth or .pt) 
+        :param delete_download: bool, specify whether to delete any local downloads from hugging face (default = False)
+        """
+        if not self.bucket:
+            assert checkpoint.exists(), 'Given checkpoint does not exist.'
+        else:
+            existing = search_gcs(checkpoint, checkpoint, self.bucket)
+            assert existing != [], 'Given checkpoint does not exist.'
+
+        if checkpoint is not None:
+            assert ('.pth' in checkpoint) or ('.pt' in checkpoint), 'Must give path to .pth or .pt file for loading checkpoint.'
+            try:
+                if self.bucket:
+                    save_path = Path('.')
+                    files = download_to_local(checkpoint, save_path, self.bucket)
+                    checkpoint = files[0]
+               
+                self.classifier_head.load_state_dict(torch.load(checkpoint, weights_only=True, map_location = self.device))
+  
+                if delete_download and self.bucket:
+                    os.remove(checkpoint)
+
+            except:
+                if delete_download and self.bucket:
+                    os.remove(checkpoint)
+
+                raise ValueError('Classifier checkpoint could not be loaded. Weights may not be compatible with the initialized models.')
+
+            self.config['clf_checkpoint'] = checkpoint
+
+    def load_model_checkpoint(self, checkpoint:Union[str,Path], delete_download:bool=False, from_hub:bool=True,
+                              test_hub_fail:bool=False, test_local_fail:bool=False):
+        """
+        Load a model checkpoint
+
+        :param checkpoint: pathlike, path to checkpoint (must be a directory)
+        :param delete_download: bool, specify whether to delete any local downloads from hugging face (default = False)
+        :param from_hub: bool, specify whether to load from hub or from existing pt_ckpt (default = True)
+        :param test_hub_fail: bool, TESTING ONLY (default = False)
+        :param test_local_fail: bool, TESTING ONLY (default = False)
+        """
+        if not from_hub:
+            if not self.bucket:
+                assert checkpoint.exists(), 'Given checkpoint does not exist.'
+                assert checkpoint.is_dir(), 'Expects a directory for hugging face model checkpoints'
+            else:
+                existing = search_gcs(checkpoint, checkpoint, self.bucket)
+                assert existing != [] and all([e != checkpoint for e in existing]), 'Hugging face model checkpoints should be directories.'
+
+        if from_hub:
+            try: 
+                print(f'Loading model {self.model_type} from Hugging Face Hub...')
+                if test_hub_fail or test_local_fail: 
+                    raise Exception()  
+                ckpt = hf   
+                self._configure_model(checkpoint)
+                self.local_path = None
+                return
+            except:
+                try:
+                    if test_local_fail:
+                        raise Exception()
+                    
+                    print('Loading directly from hugging face hub failed. Trying to download model locally...')
+                    self.local_path = Path(f'./checkpoints/{checkpoint}').absolute()
+                    self.local_path.mkdir(parents=True, exist_ok=True)
+                    snapshot_download(repo_id=checkpoint, local_dir=str(self.local_path))
+                    self._configure_model(checkpoint)
+                    self.remove_download(self.local_path, delete_download, from_hub)
+                    return
+                except: 
+                    print('Downloading from hub failed. Trying as local checkpoint.')
+
+        try:
+            print(f'Loading model {self.model_type} from local checkpoint...')
+            if self.bucket:
+                local_path = Path('.')
+                files = download_to_local(checkpoint, local_path, self.bucket)
+                checkpoint = files[0].parents[0].absolute()
+
+            self._configure_model(checkpoint)
+            self.local_path = checkpoint
+            self.remove_download(self.local_path, delete_download, from_hub)
+
+        except:
+            self.remove_download(self.local_path, delete_download, from_hub)
+            raise ValueError('Checkpoint is incompatible with HuggingFace models. Confirm this is a path to a local hugging face checkpoint.')
+
+        self.config['model_checkpoint'] = checkpoint
+
+    def _configure_model(self, checkpoint:Union[Path, str]):
+        """
+        Configure model using cutom AutoModel
+
+        :param checkpoint: pathlike, path to checkpoint (must be a directory)
+        """
+        self.base_model = AutoModel.from_pretrained(checkpoint, output_hidden_states=True, trust_remote_code=True)       
+        self._freeze()
+        if not isinstance(self.base_model, _MODELS[self.model_type]['model_instance']):
+            raise ValueError('Loaded model is not the expected model type. Please check that your checkpoint points to the correct model type.')
+        self.is_whisper_model = isinstance(self.base_model, WhisperModel)
+
+    def _remove_download(self, path:Union[str, Path], delete_download:bool=False, from_hub:bool=True):
+        """
+        Remove download
+
+        :param path: pathlike, path to remove
+        :param delete_download: bool, specify whether to delete any local downloads from hugging face (default = False)
+        :param from_hub: bool, specify whether to load from hub or from existing pt_ckpt (default = True)
+        """
+        if (self.bucket or from_hub) and delete_download:
+            shutil.rmtree(str(path))
+
+            bp = Path('.').absolute()
+            curr_parent = Path(path).parent
+            while bp.name != curr_parent.name: 
+                os.rmdir(curr_parent)
+                temp = curr_parent.parent 
+                curr_parent = temp
+
+    def load_feature_extractor(self, checkpoint:Union[str,Path], from_hub:bool=True, delete_download:bool=False):
+        """
+        Load feature extractor from a checkpoint
+        :param checkpoint: pathlike, path to checkpoint (must be a directory)
+        :param delete_download: bool, specify whether to delete any local downloads from hugging face (default = False)
+        :param from_hub: bool, specify whether to load from hub or from existing pt_ckpt (default = True)
+        """
+        if not from_hub:
+            if not self.bucket:
+                assert checkpoint.exists(), 'Given checkpoint does not exist.'
+                assert checkpoint.is_dir(), 'Expects a directory for hugging face model checkpoints'
+            else:
+                existing = search_gcs(checkpoint, checkpoint, self.bucket)
+                assert existing != [] and all([e != checkpoint for e in existing]), 'Hugging face model checkpoints should be directories.'
+            bucket = None
+        else:
+            bucket = self.bucket
+
+        self.feature_extractor = HFExtractor(model_type=self.model_type, pt_ckpt=checkpoint, from_hub=from_hub, normalize=self.normalize, bucket=bucket)
+        self.remove_download(self.local_path, delete_download, from_hub)
+
+    def configure_peft(self, checkpoint:Union[str,Path], checkpoint_type:str='pt',delete_download:bool=False):
+        """
+        Configure a Peft model 
+        :param checkpoint: pathlike, path to checkpoint (must be a directory)
+        :param checkpoint_type: str, specify whether finetuning (ft) or loading pretrained model (pt), (default = 'ft')
+        :param delete_download: bool, specify whether to delete any local downloads from hugging face (default = False)
+        :param from_hub: bool, specify whether to load from hub or from existing pt_ckpt (default = True)
+        """
+        print(f'Configuring {self.finetune_method} ...')
+        if checkpoint_type == 'ft':
+            self._load_peft(checkpoint, delete_download)
+        else:
+            if self.finetune_method == 'soft-prompt'
+                peft_config = PromptTuningConfig(
+                    task_type="FEATURE_EXTRACTION", #This type indicates the model will generate text.
+                    prompt_tuning_init=PromptTuningInit.RANDOM,  #The added virtual tokens are initializad with random numbers
+                    num_virtual_tokens=self.virtual_tokens, #Number of virtual tokens to be added and trained.
+                    tokenizer_name_or_path=checkpoint #The pre-trained model.
+                )
+            elif self.finetune_method == 'lora':
+                assert 'lora_layers' in _MODELS[self.model_type], 'Model type incompatible with LoRA (no lora_layers specified).'
+                if self.is_whisper_model:
+                    exclude_modules = []
+                    for id, (name, param) in enumerate(self.base_model.named_modules()):
+                        if 'decoder' in name:
+                            exclude_modules.append(name)
+                else:
+                    exclude_modules = None
+
+                peft_config = LoraConfig(
+                    r = self.lora_rank,
+                    lora_alpha = self.lora_alpha,
+                    target_modules=_MODELS[self.model_type]['lora_layers'],
+                    exclude_modules = exclude_modules,
+                    lora_dropout=self.lora_dropout,
+                    bias="none", 
+                    task_type="FEATURE_EXTRACTION"
+                )
+            else:
+                raise NotImplementedError(f'{self.finetune_method} not implemented.')
+
+            self.base_model = CustomPeft(self.base_model, peft_config)
+        
+        print(f'Using {self.finetune_method}: ')
+        self.base_model.print_trainable_parameters()
+       
+    def get_model_name(self) -> str:
+        """
+        Get name for model type, including how it was freezed and whether it has been finetuned
+        Update for new model classes
+        :return model_name: str with model name
+        """
+        model_name = f'{self.model_type}_seed{self.seed}_{self.freeze_method}_{self.pool_method}'
+        if self.ft_ckpt is not None:
+            model_name += '_ft'
+        if self.finetune_method != 'none':
+            model_name += f'_{self.finetune_method}'
+        return model_name
+
+    def _check_checkpoints(self):
+        """
+        Check model checkpoint
+        """
         ckpt = None
         #CHECK IF FINETUNED CKPT
         if self.ft_ckpt:
-            if not self.bucket:
-                assert self.ft_ckpt.exists(), 'Given ft_ckpt does not exist.'
-                assert self.ft_ckpt.is_dir(), 'Expects a directory for hugging face model checkpoints'
-            else:
-                existing = search_gcs(self.ft_ckpt, self.ft_ckpt, self.bucket)
-                assert existing != [] and all([e != self.ft_ckpt for e in existing]), 'Hugging face finetuned model checkpoints should be directories.'
-            #CHECK IF LORA FT CHECKPOINT
             if self.finetune_method == 'lora' or self.finetune_method == 'soft-prompt':
                 #IF NOT FROM HUB, CHECK THAT PT CKPT EXISTS
                 if not self.from_hub:
@@ -164,124 +355,7 @@ class HFModel(BaseModel):
             else:
                 existing = search_gcs(self.pt_ckpt, self.pt_ckpt, self.bucket)
                 assert existing != [] and all([e != self.pt_ckpt for e in existing]), 'Hugging face finetuned model checkpoints should be directories.'
-            ckpt = self.pt_ckpt         
-
-        #INITIALIZE MODEL COMPONENTS
-        print(f'Loading model {self.model_type} from Hugging Face Hub...')
-
-        self._load_model(ckpt=ckpt, test_hub_fail=test_hub_fail, test_local_fail=test_local_fail) 
-        #print('Model parameters pre-freezing:')
-        #trainable, allp = self._trainable_parameters(print_output=True)
-        if not isinstance(self.base_model, _MODELS[self.model_type]['model_instance']):
-            raise ValueError('Loaded model is not the expected model type. Please check that your checkpoint points to the correct model type.')
-        self.is_whisper_model = isinstance(self.base_model, WhisperModel)
-        self._freeze()
-        if self.finetune_method == 'lora':
-            self._configure_lora()
-        elif self.finetune_method == 'soft-prompt':
-            self._configure_softprompt()
-        self.base_model = self.base_model.to(self.device)
-
-        # INITIALIZE CLASSIFIER (doesn't need to be overwritten)
-        self.clf_args['delete_download'] = self.delete_download
-        self.clf = Classifier(**self.clf_args)
-        self.clf = self.clf.to(self.device)
-
-        if self.local_path and not self.delete_download:
-            self.base_config['pt_ckpt'] = str(self.local_path)
-
-        self.model_name = self.get_model_name()
-        self.config = {'model_name':self.model_name,'model_type':self.model_type,'seed':self.seed, "finetune_method":self.finetune_method}
-        
-        self.config.update(self.base_config)
-        self.config.update(self.clf.get_config())
-        self.save_config()
-
-        # INITIALIZE FEATURE EXTRACTOR
-        bucket = None
-        if self.bucket and not self.ft_ckpt: 
-            self.pt_ckpt = self.local_path
-        elif self.bucket:
-            bucket = self.bucket
-
-        self.feature_extractor = HFExtractor(model_type=self.model_type, pt_ckpt=self.pt_ckpt, from_hub=from_hub, normalize=self.normalize, bucket=bucket)
-
-        if (self.bucket or self.from_hub) and self.delete_download:
-            shutil.rmtree(str(self.local_path))
-
-            bp = Path('.').absolute()
-            curr_parent = Path(self.local_path).parent
-            while bp.name != curr_parent.name: 
-                os.rmdir(curr_parent)
-                temp = curr_parent.parent 
-                curr_parent = temp
-        
-    def get_model_name(self) -> str:
-        """
-        Get name for model type, including how it was freezed and whether it has been finetuned
-        Update for new model classes
-        :return model_name: str with model name
-        """
-        model_name = f'{self.model_type}_seed{self.seed}_{self.freeze_method}_{self.pool_method}'
-        if self.ft_ckpt is not None:
-            model_name += '_ft'
-        if self.finetune_method != 'none':
-            model_name += f'_{self.finetune_method}'
-        return model_name
-
-    def _load_model(self, ckpt:Union[str,Path], test_hub_fail:bool=False, test_local_fail:bool=False):
-        """
-        Load pretrained model from hugging face
-
-        :param ckpt: pathlike, path to model checkpoint
-        :param test_hub_fail: bool, for testing purposes to confirm that non-hugging face functionality works (default=False)
-        :param test_local_fail: bool, for testing purposes to confirm that failing a local load raises errors (default=False)
-        """
-        if self.from_hub:
-            try: 
-                if test_hub_fail or test_local_fail: 
-                    raise Exception()
-                self.base_model = AutoModel.from_pretrained(self.hf_hub, output_hidden_states=True, trust_remote_code=True)
-                self.local_path = None
-                return
-            except:
-                try:
-                    if test_local_fail:
-                        raise Exception()
-                    
-                    print('Loading directly from hugging face hub failed. Downloading model locally...')
-                    self.local_path = Path(f'./checkpoints/{self.hf_hub}').absolute()
-                    self.local_path.mkdir(parents=True, exist_ok=True)
-                    snapshot_download(repo_id=self.hf_hub, local_dir=str(self.local_path))
-                    self.base_model = AutoModel.from_pretrained(str(self.local_path), output_hidden_states=True)
-        
-                    return
-                except: 
-                    assert ckpt is not None, 'Downloading from hub failed, but backup pt_ckpt not available.'
-                    print('Downloading from hub failed. Trying pt_ckpt.')
-
-        try:
-            if self.bucket:
-                local_path = Path('.')
-                files = download_to_local(ckpt, local_path, self.bucket)
-                ckpt = files[0].parents[0].absolute()
-
-            self.base_model = AutoModel.from_pretrained(str(ckpt), output_hidden_states=True)
-            self.local_path = ckpt
-
-        except:
-            if (self.bucket or self.from_hub) and self.delete_download:
-                shutil.rmtree(str(self.local_path))
-
-                bp = Path('.').absolute()
-                curr_parent = Path(self.local_path).parent
-                while bp.name != curr_parent.name: 
-                    os.rmdir(curr_parent)
-                    temp = curr_parent.parent 
-                    curr_parent = temp
-            raise ValueError('Checkpoint is incompatible with HuggingFace models. Confirm this is a path to a local hugging face checkpoint.')
-        
-        return
+            ckpt = self.pt_ckpt 
                    
     def _freeze(self):
         """
@@ -349,7 +423,7 @@ class HFModel(BaseModel):
 
         return layer_names
     
-    def _load_peft(self, ckpt:Union[str,Path]):
+    def _load_peft(self, ckpt:Union[str,Path], delete_download):
         """
         Load a peft model from a finetuned checkpoint
         :param ckpt:pathlike, path to finetuned checkpoint directory
@@ -366,10 +440,12 @@ class HFModel(BaseModel):
             ckpt = files[0].parents[0].absolute()
             
         if ckpt:
-            self.base_model = peft_from_pretrained(SpeechPeft, model = self.base_model, 
+            self.base_model = CustomAutoModel.peft_from_pretrained(model = self.base_model, 
                                                         model_id = ckpt,
                                                         is_trainable=is_trainable) #THERE IS GONNA BE AN ISSUE W THIS!! NEED TO MAKE MY OWN VERSION BOO
-    
+
+            self._remove_download(ckpt, delete_download)
+
     def _trainable_parameters(self, print_output:bool=False):
         """
         Calculate number of parameters, trainable or frozen
@@ -384,64 +460,6 @@ class HFModel(BaseModel):
             print(f'trainable params: {trainable} || all params: {allp} || trainable%: {trainable/allp}')
         return trainable, allp
     
-    def _configure_softprompt(self):
-        """
-        Configure soft prompting finetuning
-        Creates soft prompting config and wraps the model using peft
-        """
-        print('Configuring soft prompting ...')
-        if self.ft_ckpt:
-            self._load_peft(self.ft_ckpt)
-        else:
-            if self.from_hub:
-                ckpt = self.hf_hub
-            else:
-                ckpt = self.pt_ckpt
-            peft_config = PromptTuningConfig(
-                task_type="FEATURE_EXTRACTION", #This type indicates the model will generate text.
-                prompt_tuning_init=PromptTuningInit.RANDOM,  #The added virtual tokens are initializad with random numbers
-                num_virtual_tokens=self.virtual_tokens, #Number of virtual tokens to be added and trained.
-                tokenizer_name_or_path=ckpt #The pre-trained model.
-            )
-
-            self.base_model = SpeechPeft(self.base_model, peft_config)
-        print('Using soft prompting: ')
-        self.base_model.print_trainable_parameters()
-
-    def _configure_lora(self):
-        """
-        Configure low rank adaptation finetuning
-        Creates lora config and wraps the model using peft
-        """
-        print('Configuring LoRA ...')
-        ## load previous
-        if self.ft_ckpt:
-            self._load_peft(self.ft_ckpt)
-        else:
-            #init_lora_weights="guassian"?
-            assert 'lora_layers' in _MODELS[self.model_type], 'Model type incompatible with LoRA (no lora_layers specified).'
-            if self.is_whisper_model:
-                exclude_modules = []
-                for id, (name, param) in enumerate(self.base_model.named_modules()):
-                    if 'decoder' in name:
-                        exclude_modules.append(name)
-            else:
-                exclude_modules = None
-
-            peft_config = LoraConfig(
-                r = self.lora_rank,
-                lora_alpha = self.lora_alpha,
-                target_modules=_MODELS[self.model_type]['lora_layers'],
-                exclude_modules = exclude_modules,
-                lora_dropout=self.lora_dropout,
-                bias="none", 
-                task_type="FEATURE_EXTRACTION"
-            )
-
-            self.base_model = SpeechPeft(self.base_model, peft_config)
-        print('Using LoRA: ')
-        self.base_model.print_trainable_parameters()
-
     def forward(self, waveform:List[torch.Tensor]) -> torch.Tensor:
         """
         Overwritten forward loop. 
@@ -449,6 +467,9 @@ class HFModel(BaseModel):
         :param sample: batched sample feature input
         :return: classifier output
         """
+        assert self.feature_extractor, 'Extractor checkpoints not loaded in.'
+        assert self.base_model, 'Model checkpoints not loaded in.'
+
         inputs, attention_mask = self.feature_extractor(waveform)
         inputs = inputs.to(self.device)
         attention_mask = attention_mask.bool().to(self.device)
@@ -525,11 +546,23 @@ class HFModel(BaseModel):
 
         if self.bucket:
             out_path = f'{path}/weights'
+            clf_path = Path('.') / (name_clf+'.pt')
+            existing = search_gcs(f'{name_clf}.pt', str(out_dir), self.bucket)
+            if existing != []: print(f'Overwriting existing classifier head at {str(out_dir)}')
         else:
             out_path = path / 'weights'
             out_path.mkdir(parents=True, exist_ok=True)
+            clf_path = out_path / (name_clf+'.pt')
+            if clf_path.exists(): print(f'Overwriting existing classifier head at {str(clf_path)}')
+
         self.save_base_model(name_model, out_path)
-        self.clf.save_classifier(name_clf, out_path)
+        if self.clf_args['layer_type'] == 'linear':
+            self.clf.save_classifier(name_clf, out_path)
+        else:
+            torch.save(self.clf.state_dict(), clf_path)
+            if self.bucket:
+                upload_to_gcs(str(out_path), clf_path, self.bucket)
+                os.remove(clf_path)
 
 
     
