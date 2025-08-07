@@ -234,7 +234,7 @@ def _sklearn_split(split_table:pd.DataFrame, subject_key:str, size:float, seed:i
     return train_subjects, test_subjects
 
 def _split_name(audio_dir:Union[Path, str] = None, split_dir:Union[Path, str] = None, proportions:List[float] = [0.7,0.15,0.15], 
-                target_tasks:List[str]=None, target_featuresList[str]=None, bucket=None):
+                target_tasks:List[str]=None, target_features:List[str]=None, bucket=None, seed:int=42):
     """
     Get name of split and updated split_dir
 
@@ -267,7 +267,7 @@ def _split_name(audio_dir:Union[Path, str] = None, split_dir:Union[Path, str] = 
 
 def _create_split(audio_dir:Union[Path,str], split_dir:Union[Path,str],
                   date_key:str, subject_key:str, audio_key:str, task_key:str, 
-                  target_task:List[str], target_features:List[str], prop_inds:List[int], proportions:List[float],
+                  target_tasks:List[str], target_features:List[str], prop_inds:List[int], proportions:List[float],
                   stratify_threshold:int, as_json:bool, save:bool, seed:int, bucket) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
     Create split
@@ -461,7 +461,7 @@ def seeded_split(subject_key:str, date_key:str, audio_key:str, task_key:str, aud
     audio_dir, split_dir, load_existing = _check_directories(audio_dir, split_dir, load_existing, bucket)
 
     # SPLIT NAME
-    name, split_dir = _split_name(audio_dir, split_dir, proportions, target_tasks, target_features, bucket)
+    name, split_dir = _split_name(audio_dir, split_dir, proportions, target_tasks, target_features, bucket, seed)
     
     #CHECK EXISTING
     load_existing = _check_existing(split_dir, load_existing, audio_dir, bucket)                       

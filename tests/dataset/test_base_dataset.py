@@ -18,6 +18,7 @@ import torchvision
 from summer25.dataset import BaseDataset
 from summer25.constants import _FEATURES
 
+##### HELPER FUNCTIONS #####
 class Practice():
     def __call__(self, sample):
         sample_out = sample.copy()
@@ -54,6 +55,7 @@ def data_dictionary():
     data_df = data_df.set_index('subject')
     return data_df
 
+##### TESTS #####
 def test_base_initialization():
     # create metadata in pd dataframe
     df = data_dictionary()

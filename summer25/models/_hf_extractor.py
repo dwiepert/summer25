@@ -52,9 +52,11 @@ class HFExtractor(BaseExtractor):
                 if self.bucket:
                     existing = search_gcs(self.pt_ckpt, self.pt_ckpt, self.bucket)
                     assert existing != [], 'Given pt_ckpt does not exist.'
+                    all([e != self.pt_ckpt for e in existing]), 'Expects a directory for hugging face model checkpoints'
                 else:
                     if not isinstance(self.pt_ckpt, Path): self.pt_ckpt = Path(self.pt_ckpt)
                     assert self.pt_ckpt.exists(), 'Given pt_ckpt does not exist.'
+                    assert self.pt_ckpt.is_dir(), 'Expects a directory for hugging face model checkpoints'
             
             #if self.pt_ckpt is not None: #hugging face models don't require pt ckpt but could be used as a backup
             #    if not isinstance(self.pt_ckpt,str): self.pt_ckpt = str(self.pt_ckpt)
@@ -74,7 +76,8 @@ class HFExtractor(BaseExtractor):
         else:
             self.feature_extractor=None
             self.local_path = None
-        
+    
+    ### private helpers ###
     def _load_extractor(self, test_hub_fail:bool=False, test_local_fail:bool=False):
         """
         Load hugging face extractor
@@ -141,6 +144,7 @@ class HFExtractor(BaseExtractor):
             self.feature_extractor_kwargs['do_normalize'] = self.normalize
             self.feature_extractor_kwargs['padding'] = True
     
+    ### main function(s) ###
     def __call__(self, wav:torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Run feature extraction on a sample

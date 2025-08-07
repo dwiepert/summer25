@@ -20,7 +20,7 @@ import torchaudio
 ##local
 from summer25.io import load_waveform_from_local, download_to_local, search_gcs, upload_to_gcs
 
-##### HELPERS #####
+##### HELPER FUNCTIONS#####
 def load_json():
     with open('./private_loading/gcs.json', 'r') as file:
         data = json.load(file)

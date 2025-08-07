@@ -43,7 +43,7 @@ class UidToWaveform(object):
         uid, = wavsample['uid'],
         cache = {}
         if uid not in self.cache:
-            wav, sr = load_waveform(self.prefix, uid, self.extenstion, self.lib, self.structured, self.bucket)
+            wav, sr = load_waveform(self.prefix, uid, self.extension, self.lib, self.structured, self.bucket)
             cache['waveform'] = wav 
             cache['sample_rate'] = sr
             self.cache[uid] = cache

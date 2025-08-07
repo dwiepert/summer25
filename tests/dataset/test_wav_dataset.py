@@ -23,6 +23,7 @@ from summer25.constants import _FEATURES
 from summer25.models import HFExtractor
 from summer25.io import search_gcs
 
+##### HELPER FUNCTIONS #####
 def data_dictionary(aud_name='wav'):
     sub_list = ['1919-142785-0008']
     aud_list = ['1919-142785-0008']
@@ -99,6 +100,18 @@ def create_config(use_librosa=False, augment=False, truncate=False):
          config['gauss'] = {'min_amplitude':0.001, 'max_amplitude':0.015}
     return config
 
+def load_json():
+    with open('./private_loading/gcs.json', 'r') as file:
+        data = json.load(file)
+
+    gcs_prefix = data['gcs_prefix']
+    bucket_name = data['bucket_name']
+    project_name = data['project_name']
+    storage_client = storage.Client(project=project_name)
+    bucket = storage_client.get_bucket(bucket_name)
+    return gcs_prefix, bucket
+
+##### TESTS #####
 def test_dataset_initialization():
     #create metadata in pd dataframe
     df = data_dictionary()
@@ -161,17 +174,6 @@ def test_get_item():
     assert isinstance(out['targets'],torch.Tensor)
     assert isinstance(out['waveform'],torch.Tensor)
     assert isinstance(out['sample_rate'],int)
-
-def load_json():
-    with open('./private_loading/gcs.json', 'r') as file:
-        data = json.load(file)
-
-    gcs_prefix = data['gcs_prefix']
-    bucket_name = data['bucket_name']
-    project_name = data['project_name']
-    storage_client = storage.Client(project=project_name)
-    bucket = storage_client.get_bucket(bucket_name)
-    return gcs_prefix, bucket
 
 @pytest.mark.gcs
 def test_get_item_gcs():

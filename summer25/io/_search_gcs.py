@@ -4,8 +4,12 @@ Search gcs bucket for existing files
 Author(s): Daniela Wiepert
 Last modified: 07/2025
 """
+#IMPORTS
+##built-in
+from pathlib import Path
+from typing import Union
 
-def search_gcs(pattern:str, directory:str, bucket) -> list:
+def search_gcs(pattern:Union[str,Path], directory:Union[str,Path], bucket) -> list:
     """
     Search gcs bucket based on prefix. 
     :param pattern: str, pattern to search for
@@ -13,6 +17,8 @@ def search_gcs(pattern:str, directory:str, bucket) -> list:
     :param bucket: gcs bucket
     :return: list of files
     """
+    if not isinstance(pattern, str): pattern = str(pattern)
+    if not isinstance(directory, str): directory = str(directory)
     files = []
     blobs = bucket.list_blobs(prefix=directory)
     for blob in blobs:

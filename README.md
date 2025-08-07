@@ -37,6 +37,7 @@ CONFIG FILES:
 
 
 ## QUESTIONS/RESEARCH
+* CURRENT RUNNING TIME: LoRA - ~30min PER EPOCH
 *  5 MOST COMMON FEATURES IN SENTENCE REPETITION - REDO WITH NEW DC EVENTUALLY TODO:
         * hoarse_harsh: 452
         * slow_rate: 402
@@ -50,12 +51,11 @@ CONFIG FILES:
         print(freq.sort_values()[-5:])
         ```
 
+
 ## ACTIVE DEBUGGING/TASKS
+* How to get rid of this error: /Users/wiepert.daniela/miniconda3/envs/summer25/lib/python3.10/site-packages/torch/nn/functional.py:5962: UserWarning: Support for mismatched key_padding_mask and attn_mask is deprecated. Use same type for both instead.
 * #TODO: check what milestone should be based on warmup epoch? - make sure it's aligned properly (possible test to check?)* not important
 * max pooling done right?
-* fix run.py for proper inputs
-* get better SAVING protocol? i think it's useful for clf and finetuned ckpt to be separate just in case you want to switch out clf head.
-* separate clf head for each feature - test it
 * test top 3
 
 ## All TODO

@@ -10,12 +10,13 @@ from pathlib import Path
 import shutil
 import json
 ##third-party
+from google.cloud import storage
 import pandas as pd
 import pytest
 from torch.utils.data import DataLoader
 
 ##local
-from summer25.models import HFModel, HFExtractor
+from summer25.models import CustomAutoModel
 from summer25.dataset import WavDataset, collate_features
 from summer25.training import Trainer
 from summer25.constants import _FEATURES
@@ -126,7 +127,7 @@ def test_trainer_params():
 
     #base test
     params['model_type'] = 'wavlm-base'
-    m = HFModel(**params)
+    m = CustomAutoModel.from_pretrained(params)
 
     trainer_params = {'model': m, 'target_features':[_FEATURES[0]], 'early_stop':False}
     #initialize with valid params 
@@ -192,7 +193,7 @@ def test_fit():
 
     #base test
     params['model_type'] = 'wavlm-base'
-    m = HFModel(**params)
+    m = CustomAutoModel.from_pretrained(params)
 
     trainer_params = {'model': m, 'target_features':[_FEATURES[0]], 'early_stop':False, 'loss_type':'bce', 'scheduler_type':None, 'optim_type':'adamw', 'learning_rate':0.001, 'tf_learning_rate':0.0001}
     #initialize with valid params 
@@ -225,7 +226,7 @@ def test_earlystop():
 
     #base test
     params['model_type'] = 'wavlm-base'
-    m = HFModel(**params)
+    m = CustomAutoModel.from_pretrained(params)
 
     trainer_params = {'model': m, 'target_features':[_FEATURES[0]], 'early_stop':True, 'loss_type': 'bce', 'optim_type':'adamw','learning_rate':0.0001, 'tf_learning_rate': 0.00001, 'scheduler_type':None}
     #fit with early stopping
@@ -251,7 +252,7 @@ def test_schedulers():
     params = {'out_dir':Path('./out_dir')}
     #base test
     params['model_type'] = 'wavlm-base'
-    m = HFModel(**params)
+    m = CustomAutoModel.from_pretrained(params)
 
     trainer_params = {'model': m, 'target_features':[_FEATURES[0]], 'early_stop':False, 'loss_type': 'bce', 'optim_type':'adamw','learning_rate':0.0001, 'tf_learning_rate': 0.00001, 'scheduler_type':None}
     #initialize with valid params 
@@ -341,7 +342,7 @@ def test_loss():
     params = {'out_dir':Path('./out_dir')}
     #base test
     params['model_type'] = 'wavlm-base'
-    m = HFModel(**params)
+    m = CustomAutoModel.from_pretrained(params)
 
     trainer_params = {'model': m, 'target_features':[_FEATURES[0]], 'early_stop':False, 'loss_type': 'bce', 'optim_type':'adamw','learning_rate':0.0001, 'tf_learning_rate': 0.00001, 'scheduler_type':None}
     #initialize with valid params 
@@ -390,7 +391,7 @@ def test_eval():
 
     #base test
     params['model_type'] = 'wavlm-base'
-    m = HFModel(**params)
+    m = CustomAutoModel.from_pretrained(params)
 
     trainer_params = {'model': m, 'target_features':[_FEATURES[0]], 'early_stop':False, 'loss_type': 'bce', 'optim_type':'adamw','learning_rate':0.0001, 'tf_learning_rate': 0.00001, 'scheduler_type':None}
     #initialize with valid params 
@@ -431,7 +432,7 @@ def test_fit_gcs():
     params = {'model_type': 'wavlm-base', 'out_dir':f'{gcs_prefix}test_model', 'pt_ckpt': ckpt_prefix, 'from_hub': False, 'bucket':bucket, 'delete_download': False, 'finetune_method':'lora'}
 
     #base test
-    m = HFModel(**params)
+    m = CustomAutoModel.from_pretrained(params)
 
     trainer_params = {'model': m, 'target_features':[_FEATURES[0]], 'early_stop':False, 'loss_type':'bce', 'scheduler_type':None, 'optim_type':'adamw', 'learning_rate':0.001, 'tf_learning_rate':0.0001}
     #initialize with valid params 

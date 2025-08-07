@@ -82,7 +82,7 @@ class Trainer():
         self.save_checkpoints = save_checkpoints
         if optim_type == 'adamw':
             self.tf_optim = torch.optim.AdamW(params=self.model.base_model.parameters(),lr=self.tf_learning_rate)
-            self.clf_optim = torch.optim.AdamW(params=self.model.clf.parameters(), lr=self.learning_rate)
+            self.clf_optim = torch.optim.AdamW(params=self.model.classifier_head.parameters(), lr=self.learning_rate)
         else:
             raise NotImplementedError(f'{optim_type} not implemented.')
         

@@ -20,7 +20,7 @@ from summer25.constants import _FEATURES
 from summer25.dataset import seeded_split
 from summer25.io import search_gcs
 
-#### SUPPORT CODE ### 
+#### HELPER FUNCTIONS ### 
 def data_dictionary():
     sub_list = []
     aud_list = []

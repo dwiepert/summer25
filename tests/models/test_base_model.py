@@ -2,7 +2,7 @@
 Test base model class 
 
 Author(s): Daniela Wiepert
-Last modified: 06/2025
+Last modified: 08/2025
 """
 #IMPORTS
 from pathlib import Path
@@ -14,7 +14,7 @@ import pytest
 ##local
 from summer25.models import BaseModel
 
-
+##### TESTS #####
 def test_basemodel_params():
     params = {'out_dir':Path('./out_dir'), 'pool_dim': 1}
     
@@ -96,31 +96,8 @@ def test_basemodel_params():
     params['pool_dim'] = 1
     del params['pool_method']
 
-    # check pretrained ckpt exists
-    pt_ckpt = Path('./pt_ckpt')
-    if pt_ckpt.exists():
-        shutil.rmtree(pt_ckpt)
-    params['pt_ckpt'] = pt_ckpt 
+    #check finetune method
+    params['finetune_method'] = 'random'
     with pytest.raises(AssertionError):
         m = BaseModel(**params)
-    pt_ckpt.mkdir(exist_ok=True)
-    m = BaseModel(**params)
-    assert 'pt_ckpt' in m.base_config and m.base_config['pt_ckpt'] == str(pt_ckpt), 'pt ckpt not added to config correctly.'
-    del params['pt_ckpt']
-    shutil.rmtree(pt_ckpt)
-
-    # check finetuned ckpt exists
-    ft_ckpt = Path('./ft_ckpt')
-    if ft_ckpt.exists():
-        shutil.rmtree(ft_ckpt)
-    params['ft_ckpt'] = ft_ckpt 
-    with pytest.raises(AssertionError):
-        m = BaseModel(**params)
-    
-    ft_ckpt.mkdir(exist_ok=True)
-    with pytest.raises(AssertionError):
-        m = BaseModel(**params)
-
-    del params['ft_ckpt']
-    shutil.rmtree(ft_ckpt)
     shutil.rmtree(params['out_dir'])

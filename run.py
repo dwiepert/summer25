@@ -16,10 +16,11 @@ from google.cloud import storage
 from torch.utils.data import DataLoader
 
 ##local
-from summer25.models import HFModel, HFExtractor
+from summer25.models import CustomAutoModel
 from summer25.dataset import seeded_split, WavDataset, collate_features
 from summer25.constants import _MODELS,_FREEZE, _FEATURES, _FINETUNE, _LOSS, _SCHEDULER, _OPTIMIZER
 from summer25.training import Trainer
+from summer25.io import search_gcs
 
 _REQUIRED_MODEL_ARGS =['model_type']
 _REQUIRED_LOAD = ['output_dir', 'audio_dir', 'split_dir']
@@ -51,10 +52,6 @@ def check_load(args:dict) -> dict:
     if not isinstance(args['audio_dir'], Path): args['audio_dir'] = Path(args['audio_dir'])
     if not isinstance(args['split_dir'],Path): args['split_dir'] = Path(args['split_dir'])
     if not isinstance(args['output_dir'], Path): args['output_dir'] = Path(args['output_dir'])
-    
-    assert args['audio_dir'].exists(), 'Given audio directory does not exist.'
-    args['split_dir'].mkdir(parents=True, exist_ok=True)
-    args['output_dir'].mkdir(parents=True, exist_ok=True)
 
     assert args['loss_type'] in _LOSS, 'Invalid loss type'
     if args['loss_type'] == 'rank':
@@ -73,7 +70,12 @@ def check_load(args:dict) -> dict:
         storage_client = storage.Client()
         bucket = storage_client.bucket(args['bucket_name'])
         assert args['gcs_prefix']
+        existing = search_gcs(args['audio_dir'], args['audio_dir'], bucket)
+        assert existing != [], 'Given audio directory does not exist.'
     else:
+        assert args['audio_dir'].exists(), 'Given audio directory does not exist.'
+        args['split_dir'].mkdir(parents=True, exist_ok=True)
+        args['output_dir'].mkdir(parents=True, exist_ok=True)
         bucket = None
 
     args['bucket'] = bucket
@@ -102,8 +104,6 @@ def check_model(args:dict ) -> dict:
     if 'model_cfg' in args:
         model_cfg = args.pop('model_cfg')
 
-        if 'clf_ckpt' in model_cfg:
-            model_cfg['clf_ckpt'] = model_cfg.pop('clf_ckpt')
         args.update(model_cfg)
 
     if existing_cfg is not None:
@@ -142,8 +142,13 @@ def zip_clf(args:argparse.Namespace) -> dict:
     Zip arguments for classifier into a dictionary
     :param args: argparse Namespace object
     :return clf_args: dict of classifier arguments
+    :return clf_ckpt: str, clf checkpoint
     """
-    clf_args = {}
+    clf_args = {'separate':args.separate, 'clf_type':args.clf_type}
+    if args.loss_type == 'rank':
+        clf_args['binary'] = False
+    else:
+        clf_args['binary'] = True
     if args.target_features:
         clf_args['out_features'] = len(args.target_features)
     else:
@@ -153,14 +158,19 @@ def zip_clf(args:argparse.Namespace) -> dict:
     if args.activation:
         clf_args['activation'] = args.activation
     if args.clf_ckpt:
-        clf_args['ckpt'] = args.clf_ckpt
+        clf_ckpt = args.clf_ckpt
+    else:
+        clf_ckpt = None
     if args.bottleneck:
         clf_args['bottleneck'] = args.bottleneck
     if args.layernorm:
         clf_args['layernorm'] = args.layernorm
     if args.dropout:
         clf_args['dropout'] = args.dropout
-    return clf_args
+    if args.num_heads:
+        clf_args['num_heads'] = args.num_heads
+    
+    return clf_args, clf_ckpt
 
 
 def zip_model(args:argparse.Namespace) -> dict:
@@ -175,21 +185,20 @@ def zip_model(args:argparse.Namespace) -> dict:
     if args.hf_model:
         model_args = {'model_type':args.model_type,'out_dir':args.output_dir,
                     'freeze_method':args.freeze_method, 'pool_method':args.pool_method,
-                    'seed':args.seed,'finetune_method': args.finetune_method, 
-                    'delete_download': args.delete_download, 'normalize':args.normalize}
+                    'seed':args.seed,'finetune_method': args.finetune_method,  'normalize':args.normalize}
     else:
         raise NotImplementedError('Only compatible with huggingface models currently.')
     
-    if args.loss_type == 'rank':
-        model_args['binary'] = False
-    else:
-        model_args['binary'] = True
+    from_hub = args.from_hub
     if args.pt_ckpt:
-        model_args['pt_ckpt'] = args.pt_ckpt
-        model_args['from_hub'] = False
+        pt_ckpt = args.pt_ckpt
+        from_hub = False
+    else:
+        pt_ckpt = None
     if args.ft_ckpt:
-        model_args['ft_ckpt'] = args.ft_ckpt
-        model_args['from_hub'] = False
+        ft_ckpt = args.ft_ckpt
+    else:
+        ft_ckpt = None
     if args.unfreeze_layers:
         model_args['unfreeze_layers'] = args.unfreeze_layers
 
@@ -205,10 +214,11 @@ def zip_model(args:argparse.Namespace) -> dict:
 
     if args.bucket:
         model_args['bucket'] = args.bucket
-        model_args['gcs_prefix'] = args.gcs_prefix
-        model_args['from_hub'] = False
+        from_hub = False
 
-    return model_args
+    model_args['from_hub'] = from_hub
+    out_args = {'config': model_args, 'ft_checkpoint':ft_ckpt, 'pt_checkpoint':pt_ckpt, 'delete_download':args.delete_download}
+    return out_args
 
 def zip_splits(args:argparse.Namespace) -> dict:
     """
@@ -345,7 +355,8 @@ if __name__ == "__main__":
     model_args.add_argument('--model_type', type=str,
                             choices=list(_MODELS.keys()), help='Specify model type')
     model_args.add_argument('--pt_ckpt', type=Path, help='Specify local pretrained model path. Only required for hugging face models if issues loading from hub.')
-    model_args.add_argument('--delete_download', action='store_true', help='Specify local pretrained model path. Only required for hugging face models if issues loading from hub.')
+    model_args.add_argument('--delete_download', action='store_true', help='Specify whether to delete local downloads.')
+    model_args.add_argument('--from_hub', action='store_true', help='Specify whether to load from hub.')
     model_args.add_argument('--seed', type=int, help='Specify random seed for model initialization.')
     model_args.add_argument('--finetune_method', type=str, choices=_FINETUNE, help='Specify what finetuning method to use')
     model_args.add_argument('--lora_rank', type=int, help='If finetuning with lora, optionally give rank (default = 8)')
@@ -358,12 +369,15 @@ if __name__ == "__main__":
     model_args.add_argument('--pool_method', type=str, choices=['mean', 'max', 'attn'], help='Specify pooling method prior to classification head.')
     #CLASSIFIER
     clf_args = parser.add_argument_group('classifier', 'classifier related arguments')
+    clf_args.add_argument('--clf_type', type=str, default='linear', help='Specify whether to use linear classifier or transformer classifier.')
     clf_args.add_argument('--nlayers', type=int, help='Specify classification head size.')
     clf_args.add_argument('--activation', type=str, help='Specify type of activation function to use in the classifier.')
     clf_args.add_argument('--bottleneck', type=int, help='Specify optional bottleneck if nlayers >= 2.')
     clf_args.add_argument('--dropout', type=float, help='Specify optional dropout rate.')
     clf_args.add_argument('--layernorm', action='store_true', help='Specify whether to add layernorm to classifier.')
     clf_args.add_argument('--clf_ckpt', type=Path, help="Specify classification checkpoint.")
+    clf_args.add_argument('--separate', action='store_true', help='Specify whether to use separate classifiers.' )
+    clf_args.add_argument('--num_heads', type=int, help='Specify number of heads in transformer classifier.')
     #TRAINING ARGS
     train_args = parser.add_argument_group('train', 'training/testing related arguments')
     train_args.add_argument('--batch_sz', default=1, type=int, help='Set batch size.')
@@ -397,17 +411,18 @@ if __name__ == "__main__":
 
     ## INITIALIZE EXTRACTOR AND MODEL
     ma = zip_model(updated_args)
-    ca = zip_clf(updated_args)
-    ma.update(ca)
+    ca, cckpt = zip_clf(updated_args)
+    temp_config = ma['config']
+    temp_config.update(ca)
+    ma['config'] = temp_config
+    ma['clf_checkpoint'] = cckpt
+
     sa = zip_splits(updated_args)
     da = zip_dataset(updated_args)
     fa = zip_finetune(updated_args) #don't forget extra scheduler args
 
- 
-    if args.hf_model:
-        model = HFModel(**ma)
-    else:
-        raise NotImplementedError('Currently only compatible with hugging face models.')
+    
+    model = CustomAutoModel.from_pretrained(**ma)
     
     #DATA SPLIT
     train_df, val_df, test_df = seeded_split(**sa)

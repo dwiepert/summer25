@@ -21,6 +21,7 @@ import torch
 from summer25.dataset import collate_features
 from summer25.models import HFExtractor
 
+##### HELPER FUNCTIONS #####
 def load_audio():
     path = Path('./tests/audio_examples/')
     audio_files = path.rglob('*.flac')
@@ -34,6 +35,7 @@ def load_audio():
 
     return sample1, sample2 
 
+##### TESTS #####
 def test_collate_features():
     sample1, sample2 = load_audio()
     batch = [sample1, sample2]

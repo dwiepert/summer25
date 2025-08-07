@@ -21,7 +21,7 @@ import torch.nn as nn
 ##local
 from summer25.constants import _MODELS, _FREEZE, _POOL, _FINETUNE
 from ._attention_pooling import SelfAttentionPooling
-from summer25.io import upload_to_gcs, search_gcs
+from summer25.io import upload_to_gcs
 
 class BaseModel(nn.Module):
     """
@@ -41,69 +41,46 @@ class BaseModel(nn.Module):
     :param layernorm: bool, true for adding layer norm (default=False)
     :param dropout: float, dropout level (default = 0.0)
     :param binary:bool, specify whether output is making binary decisions (default=True)
-    :param layer_type:str, specify layer type ['linear','transformer'] (default='linear')
+    :param clf_type:str, specify layer type ['linear','transformer'] (default='linear')
     :param num_heads:int, number of encoder heads in using transformer build (default = 4)
     :param activation: str, activation function to use for classification head (default=relu)
+    :param separate:bool, true if each feature gets a separate classifier head
     :param seed: int, random seed (default = 42)
     :param device: torch device (default = cuda)
     :param bucket: gcs bucket (default = None)
-    :param delete_download: bool, specify whether to delete any local downloads from hugging face (default = False)
     """
     def __init__(self, model_type:str, out_dir:Union[Path, str], finetune_method:str='none', 
                  freeze_method:str = 'required-only', unfreeze_layers:Optional[List[str]]=None, 
                  pool_method:str = 'mean', pool_dim:Optional[Union[int, tuple]] = None,
-                 in_features:int=768, out_features:int=1, nlayers:int=2, bottleneck:int=None, layernorm:bool=False, dropout:float=0.0, binary:bool=True, layer_type:str='linear', num_heads:int=4,
-                 activation:str='relu', seed:int=42, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"), bucket=None, delete_download:bool=False):
+                 in_features:int=768, out_features:int=1, nlayers:int=2, bottleneck:int=None, layernorm:bool=False, dropout:float=0.0, binary:bool=True, clf_type:str='linear', num_heads:int=4,
+                 activation:str='relu', separate:bool=True, seed:int=42, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"), bucket=None):
         
         super(BaseModel, self).__init__()
 
         # INITIALIZE VARIABLES
         self.model_type = model_type
         self.out_dir = out_dir
+        if not isinstance(self.out_dir, Path): self.out_dir = Path(self.out_dir)
         if not bucket:
-            if not isinstance(self.out_dir, Path): self.out_dir = Path(self.out_dir)
             self.out_dir.mkdir(parents=True, exist_ok=True)
-        else:
-            self.out_dir = str(out_dir)
-            if self.out_dir[-1] != '/': self.out_dir = self.out_dir + '/'
         self.finetune_method = finetune_method
         self.freeze_method = freeze_method
         self.pool_method = pool_method
         self.seed = seed
         self.device = device
         self.bucket = bucket
-        self.delete_download = delete_download
+        self.separate = separate 
 
-        if self.bucket:
-            assert self.pt_ckpt, 'Must give pretrained checkpoint path if loading from bucket'
         #SET SEED
         torch.manual_seed(self.seed)
 
         self.clf_args = {'in_features':in_features, 'out_features':out_features, 'nlayers':nlayers,
-                        'activation':activation, 'bottleneck':bottleneck, 'layernorm':layernorm, 'binary':binary, 'layer_type':layer_type, 'num_heads':num_heads,
-                        'dropout':dropout, 'seed': self.seed, 'ckpt': self.clf_ckpt, 'bucket': self.bucket, 'delete_download':self.delete_download}
+                        'activation':activation, 'bottleneck':bottleneck, 'layernorm':layernorm, 'binary':binary, 'clf_type':clf_type, 'num_heads':num_heads,
+                        'dropout':dropout, 'seed': self.seed, 'separate': self.separate}
         
         # ASSERTIONS
         assert self.model_type in list(_MODELS.keys()), f'{self.model_type} is an invalid model type. Choose one of {list(_MODELS.keys())}.'
-        # if self.pt_ckpt is not None:
-        #     if self.bucket:
-        #         existing = search_gcs(self.pt_ckpt, self.pt_ckpt, self.bucket)
-        #         assert existing != [], f'Pretrained model path {self.pt_ckpt} does not exist.'
-        #     else:
-        #         if not isinstance(self.pt_ckpt, Path): self.pt_ckpt = Path(self.pt_ckpt)
-        #         assert self.pt_ckpt.exists(), f'Pretrained model path {self.pt_ckpt} does not exist.'
-        # if self.ft_ckpt is not None:
-        #     if self.bucket:
-        #         existing = search_gcs(self.ft_ckpt, self.ft_ckpt, self.bucket)
-        #         assert existing != [], f'Finetuned model path {self.ft_ckpt} does not exist.'
-        #     else:
-        #         if not isinstance(self.ft_ckpt, Path): self.ft_ckpt = Path(self.ft_ckpt)
-        #         assert self.ft_ckpt.exists(), f'Finetuned model path {self.ft_ckpt} does not exist.'
-        #         if self.ft_ckpt.is_dir(): 
-        #             assert os.listdir(self.ft_ckpt) != [], 'Finetuned checkpoint must be a non-empty directory'
-        #         else: 
-        #             assert '.pt' in str(self.ft_ckpt) or '.pth' in str(self.ft_ckpt), 'Must give .pt or .pth if not giving a directory'
-
+        
         ### finetune method 
         assert self.finetune_method in _FINETUNE, f'self.finetune_method is not a valid finetuning method. Choose one of {_FINETUNE}.'
         ### freeze method
@@ -132,27 +109,14 @@ class BaseModel(nn.Module):
         
         self.base_config = self._get_base_config()
 
-    ### LOGGING ###
+    ### abstract methods ###
     @abstractmethod
-    def get_model_name(self) -> str:
+    def _get_model_name(self) -> str:
         """
         Get name for model type, including how it was freezed and whether it has been pretrained and finetuned
         Update for new model classes
         """
         pass
-    
-    def _get_base_config(self) -> Dict[str, Union[str, List[str]]]:
-        """
-        Get a base configuration file to append to
-        :return base_config: Dict[str -> str or List of str]
-        """
-        base_config={'freeze_method': self.freeze_method, 'pool_method':self.pool_method, 
-                     'finetune_method':self.finetune_method, 'out_dir': self.out_dir, 'seed':self.seed}
-        if self.freeze_method == 'layer':
-            base_config['unfreeze_layers'] = self.unfreeze_layers
-        if self.bucket:
-            base_config['bucket'] = self.bucket.name
-        return base_config
 
     @abstractmethod 
     def load_model_checkpoint(self, checkpoint):
@@ -164,6 +128,31 @@ class BaseModel(nn.Module):
         :param checkpoint: pathlike object, model checkpoint - path to state dict
         """
         pass
+
+    @abstractmethod
+    def forward(self, x:torch.Tensor) -> torch.Tensor:
+        """
+        Run model
+        May need to be overwritten depending on model
+
+        :param x: torch tensor, model input
+        :return: torch tensor, model output
+        """
+        pass
+
+    ### private helpers ###
+    def _get_base_config(self) -> Dict[str, Union[str, List[str]]]:
+        """
+        Get a base configuration file to append to
+        :return base_config: Dict[str -> str or List of str]
+        """
+        base_config={'freeze_method': self.freeze_method, 'pool_method':self.pool_method, 
+                     'finetune_method':self.finetune_method, 'out_dir': str(self.out_dir), 'seed':self.seed}
+        if self.freeze_method == 'layer':
+            base_config['unfreeze_layers'] = self.unfreeze_layers
+        if self.bucket:
+            base_config['bucket'] = self.bucket.name
+        return base_config
     
     def _freeze_all(self):
         """
@@ -182,11 +171,10 @@ class BaseModel(nn.Module):
         for name, param in self.base_model.named_parameters():
             if any([u in name for u in unfreeze_layers]):
                 param.requires_grad=True
-
-    ### POOLING ###
-    def pooling(self, x:torch.Tensor, attn_mask:torch.Tensor=None) -> torch.Tensor:
+    
+    def _pool(self, x:torch.Tensor, attn_mask:torch.Tensor=None) -> torch.Tensor:
         """
-        Mean/max pooling
+        Pooling function
         May need to change dimensions depending on model
         :param x: torch tensor, input
         """
@@ -204,20 +192,6 @@ class BaseModel(nn.Module):
                 lengths = torch.count_nonzero(x[:,:,0], dim=1)
             return self.attention_pooling(x, lengths)
     
-    ### FORWARD METHOD ###
-    def forward(self, x:torch.Tensor) -> torch.Tensor:
-        """
-        Run model
-        May need to be overwritten depending on model
-
-        :param x: torch tensor, model input
-        :return: torch tensor, model output
-        """
-        base_x = self.base_model(x)
-        pool_x = self.pooling(base_x)
-        return self.clf(pool_x)
-
-    ### SAVING ###
     def save_config(self):
         """
         Save a config dictionary
@@ -227,7 +201,7 @@ class BaseModel(nn.Module):
             save_path = Path('.') 
             save_path.mkdir(exist_ok=True)
             save_path = save_path / 'model_config.json'
-            out_path = f'{self.out_dir}configs'
+            out_path = self.out_dir / 'configs'
         else:
             save_path = self.out_dir / 'configs'
             save_path.mkdir(exist_ok=True)

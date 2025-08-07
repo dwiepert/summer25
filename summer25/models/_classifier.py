@@ -20,6 +20,7 @@ import torch.nn as nn
 #local
 from summer25.io import upload_to_gcs, download_to_local, search_gcs
 
+##### CLASSIFIERS #####
 class PositionalEncoding(nn.Module):
     """
     Injects positional information into the input sequence.
@@ -37,6 +38,7 @@ class PositionalEncoding(nn.Module):
         pe = pe.unsqueeze(0) # shape (1, max_len, d_model)
         self.register_buffer('pe', pe)
 
+    ### main functions ###
     def forward(self, x):
         """
         Args:
@@ -61,17 +63,22 @@ class TransformerClassifier(nn.Module):
     """
     def __init__(self, in_features:int, out_features:int, nlayers:int=2,
                  dropout:float=0.0, num_heads:int=4, seed:int=42):
+        
+        super(TransformerClassifier, self).__init__()
+
         self.in_feats = in_features
         self.out_feats = out_features
         self.nlayers = nlayers
         self.dropout = dropout
-        self.num_heads
+        self.num_heads = num_heads
         self.seed = seed
         torch.manual_seed(self.seed)
 
         self._build_classifier()
-      
+
+        #self.classifier.apply(self._init_weights)
     
+    ### private helpers ###
     def _build_classifier(self):
         """
         Build transformer classifier
@@ -93,6 +100,7 @@ class TransformerClassifier(nn.Module):
         
         self.fc = nn.Linear(self.in_feats, self.out_feats)
 
+    ### main functions ###
     def forward(self, x:torch.Tensor) -> torch.Tensor:
         """
         Classifier forward function
@@ -101,7 +109,7 @@ class TransformerClassifier(nn.Module):
         """
         x = x * math.sqrt(self.in_feats)
         x = self.pos_encoder(x)
-        output = self.transformer_encoder(src)
+        output = self.transformer_encoder(x)
         pooled_output = output.mean(dim=1)
         logits = self.fc(pooled_output)
         return logits
@@ -123,10 +131,14 @@ class LinearClassifier(nn.Module):
     """
     def __init__(self, in_features:int, out_features:int, nlayers:int=2, bottleneck:int=None, layernorm:bool=False, 
                  dropout:float=0.0, activation:str='relu', binary:bool=True, seed:int=42):
+        
+        super(LinearClassifier, self).__init__()
         self.in_feats = in_features
         self.out_feats = out_features
         self.bottleneck = bottleneck
         self.nlayers = nlayers
+        self.layernorm = layernorm
+        self.dropout=dropout
 
         if self.nlayers == 2 and not self.bottleneck:
             self.bottleneck = self.in_feats 
@@ -139,6 +151,9 @@ class LinearClassifier(nn.Module):
 
         self._build_classifier()
 
+        #self.classifier.apply(self._init_weights)
+
+    ### private helpers ###
     def _params(self):
         """
         Get linear classifier parameters based on input parameters
@@ -153,7 +168,7 @@ class LinearClassifier(nn.Module):
         else:
             raise NotImplementedError(f'Classifier parameters not yet implemented for given inputs.')
 
-        def _get_activation_layer(self, activation) -> nn.Module:
+    def _get_activation_layer(self, activation) -> nn.Module:
         """
         Create an activation layer based on specified activation function
 
@@ -187,7 +202,8 @@ class LinearClassifier(nn.Module):
             model_dict['sigmoid'] = self._get_activation_layer('sigmoid')
         
         self.classifier = nn.Sequential(model_dict)
-    
+
+    ### main functions ###
     def forward(self, x:torch.Tensor) -> torch.Tensor:
         """
         Classifier forward function
@@ -195,7 +211,9 @@ class LinearClassifier(nn.Module):
         :return: torch tensor, classifier output
         """
         return self.classifier(x)
-        
+
+
+##### WRAPPER CLASS #####
 class Classifier(nn.Module):
     """
     Classifier class with flexible variables for initializing a variety of classifier configurations
@@ -214,9 +232,9 @@ class Classifier(nn.Module):
     :param num_heads:int, number of encoder heads in using transformer build (default = 4)
     :param seed: int, random seed (default = 42)
     """
-    def __init__(self, in_features:int, out_features:int, nlayers:int=2, bottleneck:int=None, layernorm:bool=False, 
+    def __init__(self, in_features:int, out_features:int, clf_type:str='linear', nlayers:int=2, bottleneck:int=None, layernorm:bool=False, 
                  dropout:float=0.0, activation:str='relu', binary:bool=True, separate:bool=True,
-                 clf_type:str='linear', num_heads:int=4, seed:int=42):
+                 num_heads:int=4, seed:int=42):
         
         super(Classifier, self).__init__()
         #INITIALIZE VARIABLES
@@ -242,36 +260,38 @@ class Classifier(nn.Module):
 
         #ASSERTIONS
         #SET UP CLASSIFIER
-        self._params()
-        if self.clf_type == 'linear':
-            model_dict = self._build_linear_classifier()
-        elif self.clf_type == 'transformer':
-            model_dict = self._build_transformer_classifier()
-        else:
-            raise NotImplementedError
-        self.classifier = nn.Sequential(model_dict)
-        self.classifier.apply(self._init_weights)
+        self._get_classifiers()
 
         #SET UP CLF CONFIG
-        clf_name = self.get_clf_name()
+        clf_name = self._get_clf_name()
         self.config = {'clf_name':clf_name, 'in_features':self.in_feats, 'out_features':self.out_feats, 
                        'nlayers':self.nlayers, 'activation':self.activation, 'binary': self.binary, 'clf_type':self.clf_type, 
                        'num_heads': self.num_heads, 'seed': self.seed, 'bottleneck': self.bottleneck, 'layernorm':self.layernorm,
                        'dropout':self.dropout}
-        
+    
+    ### private helpers ###
+    def _get_clf_name(self) -> str:
+        """
+        Get name for model type, including how it was freezed and whether it has been pretrained and finetuned
+        Update for new model classes
+        :return model_name: str with classifier model name
+        """
+        model_name = f'Classifier_{self.clf_type}_in{self.in_feats}_out{self.out_feats}_{self.activation}_n{self.nlayers}'
+        return model_name
+    
     def _get_classifiers(self): 
         """
         Build classifier based on arguments
         """
         if self.separate: 
-            n_classifers = self.out_feats
+            n_classifiers = self.out_feats
             out_feats = 1
         else:
             n_classifiers = 1
             out_feats = self.out_feats
         
         self.classifiers = []
-        for n in n_classifiers:
+        for n in range(n_classifiers):
             if self.clf_type == 'linear':
                 self.classifiers.append(LinearClassifier(in_features=self.in_feats, out_features=out_feats, nlayers=self.nlayers, 
                                                          bottleneck=self.bottleneck, layernorm=self.layernorm, dropout = self.dropout, activation=self.activation,
@@ -292,7 +312,8 @@ class Classifier(nn.Module):
         """
         if isinstance(layer, nn.Linear):
             nn.init.kaiming_uniform_(layer.weight) #EXPLAIN WHY KAIMING
- 
+    
+    ### main function(s) ###
     def forward(self, x:torch.Tensor) -> torch.Tensor:
         """
         Classifier forward function
@@ -307,21 +328,11 @@ class Classifier(nn.Module):
         logits = torch.column_stack(preds)
         return logits
 
+    ### retrieve function(s) ###
     def get_config(self) -> Dict[str, Union[str, int]]:
         """
         Return classifier config
         :return: configuration dictionary for classifier
         """
         return self.config
-    
-    def get_clf_name(self) -> str:
-        """
-        Get name for model type, including how it was freezed and whether it has been pretrained and finetuned
-        Update for new model classes
-        :return model_name: str with classifier model name
-        """
-        model_name = f'Classifier_{self.clf_type}_in{self.in_feats}_out{self.out_feats}_{self.activation}_n{self.nlayers}'
-        if self.ckpt is not None:
-            model_name += '_ct'
-        return model_name
     

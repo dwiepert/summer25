@@ -51,7 +51,7 @@ def load_waveform(input_dir:Union[Path, str], uid:str, extension:str='wav', lib:
         waveform, sr = librosa.load(wave_input, mono=False, sr=None)
         waveform = torch.from_numpy(waveform)
         if len(waveform.shape) == 1:
-        waveform = waveform.unsqueeze(0)
+            waveform = waveform.unsqueeze(0)
         elif waveform.shape[1] == 1 or waveform.shape[1] == 2:
             waveform = torch.transpose(waveform)
 

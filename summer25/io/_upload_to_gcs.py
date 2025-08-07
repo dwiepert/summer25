@@ -29,7 +29,7 @@ def upload_to_gcs(gcs_prefix:str, path:Union[str,Path], bucket, overwrite:bool=F
         gcs_pattern = '*'
     else:
         gcs_pattern = str(Path(path).name)
-        
+    
     gcs_prefix = str(gcs_prefix)
     if gcs_prefix[-1] != '/': gcs_prefix = gcs_prefix + '/'
 
