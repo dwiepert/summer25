@@ -111,7 +111,7 @@ class HFExtractor(BaseExtractor):
         try:
             if self.bucket:
                 local_path = Path('.')
-                files = download_to_local(self.pt_ckpt, local_path, self.bucket)
+                files = download_to_local(self.pt_ckpt, local_path, self.bucket, directory=True)
                 self.pt_ckpt = files[0].parents[0].absolute()
                 
             self.feature_extractor = AutoFeatureExtractor.from_pretrained(str(self.pt_ckpt))

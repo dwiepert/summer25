@@ -32,6 +32,7 @@ def load_json():
     bucket = storage_client.get_bucket(bucket_name)
     return gcs_prefix, checkpoint_prefix, bucket
 
+### TESTS ###
 def remove_gcs_directories(gcs_prefix,bucket, directory='test_split', pattern="*"):
     dir = gcs_prefix + f'{directory}'
     existing = search_gcs(pattern, dir, bucket)
@@ -41,7 +42,7 @@ def remove_gcs_directories(gcs_prefix,bucket, directory='test_split', pattern="*
     existing = search_gcs(pattern, dir, bucket)
     assert existing == []
 
-### TESTS ###
+
 @pytest.mark.hf
 def download_checkpoint(checkpoint):
     local_path = Path(f'./test_checkpoints/{checkpoint}').absolute()
@@ -159,24 +160,23 @@ def test_auto_model():
     
 
 #GCS VERSION - test delete download situations
-#TODO
 @pytest.mark.gcs
 def test_auto_model_gcs():
     gcs_prefix, ckpt_prefix, bucket = load_json()
-    config = {'out_dir':Path(f'{gcs_prefix}test_model'), 'model_type':'wavlm-base', 'bucket':bucket, 'from_hub':False}
+    config = {'out_dir':Path(f'{gcs_prefix}test_model_out'), 'model_type':'wavlm-base', 'bucket':bucket, 'from_hub':False}
     
     m = CustomAutoModel.from_pretrained(config, pt_checkpoint=ckpt_prefix, delete_download=True)
     assert m.base_model is not None
     assert not m.local_path.exists()
 
-    m._save_model_checkpoint(f'{gcs_prefix}test_model/mdl_ckpt')
+    m._save_model_checkpoint(f'{gcs_prefix}test_model/wavlm-base_mdl_ckpt')
     m._save_clf_checkpoint(f'{gcs_prefix}test_model/clf_ckpt.pt')
 
-    m1 = CustomAutoModel.from_pretrained(config, pt_checkpoint=ckpt_prefix, ft_checkpoint=f'{gcs_prefix}test_model/mdl_ckpt', delete_download=True)
+    m1 = CustomAutoModel.from_pretrained(config, pt_checkpoint=ckpt_prefix, ft_checkpoint=f'{gcs_prefix}test_model/wavlm-base_mdl_ckpt', delete_download=True)
     assert m1.base_model is not None
     assert not m1.local_path.exists()
 
-    m2 = CustomAutoModel.from_pretrained(config, pt_checkpoint=ckpt_prefix, ft_checkpoint=f'{gcs_prefix}test_model/mdl_ckpt',  clf_checkpoint=f'{gcs_prefix}test_model/clf_ckpt.pt', delete_download=True)
+    m2 = CustomAutoModel.from_pretrained(config, pt_checkpoint=ckpt_prefix, ft_checkpoint=f'{gcs_prefix}test_model/wavlm-base_mdl_ckpt',  clf_checkpoint=f'{gcs_prefix}test_model/clf_ckpt.pt', delete_download=True)
     assert m2.base_model is not None
     assert not m2.local_path.exists()
 
@@ -188,16 +188,59 @@ def test_auto_model_gcs():
         m = CustomAutoModel.from_pretrained(config, ft_checkpoint=f'{gcs_prefix}test_model',  delete_download=True)
 
     config['finetune_method'] = 'soft-prompt'
-    m4 = CustomAutoModel.from_pretrained(config, pt_checkpoint=ckpt_prefix, ft_checkpoint=f'{gcs_prefix}test_model',  delete_download=True)
+    m4 = CustomAutoModel.from_pretrained(config, pt_checkpoint=ckpt_prefix,  delete_download=True)
     assert m4.base_model is not None
     assert not m4.local_path.exists()
+    m4._save_model_checkpoint(f'{gcs_prefix}test_model/softprompt_wavlm-base_mdl_ckpt')
+
+    #ft checkpoint soft prompt
+    m5 = CustomAutoModel.from_pretrained(config, pt_checkpoint=ckpt_prefix, ft_checkpoint=f'{gcs_prefix}test_model/softprompt_wavlm-base_mdl_ckpt', delete_download=True)
+    assert m5.base_model is not None
+    assert not m5.local_path.exists()
 
     with pytest.raises(AssertionError):
         m = CustomAutoModel.from_pretrained(config, ft_checkpoint=f'{gcs_prefix}test_model',  delete_download=True)
 
     config['finetune_method'] = 'lora'
-    m5 = CustomAutoModel.from_pretrained(config, pt_checkpoint=ckpt_prefix, ft_checkpoint=f'{gcs_prefix}test_model',  delete_download=True)
-    assert m5.base_model is not None
-    assert not m5.local_path.exists()
+    #TODO: save a version of LORA
+    m6 = CustomAutoModel.from_pretrained(config, pt_checkpoint=ckpt_prefix, delete_download=True)
+    assert m6.base_model is not None
+    assert not m6.local_path.exists()
+    m6._save_model_checkpoint(f'{gcs_prefix}test_model/lora_wavlm-base_mdl_ckpt')
+
+    m7 = CustomAutoModel.from_pretrained(config, pt_checkpoint=ckpt_prefix, ft_checkpoint=f'{gcs_prefix}test_model/lora_wavlm-base_mdl_ckpt', delete_download=True)
+    assert m7.base_model is not None
+    assert not m7.local_path.exists()
+    del config['finetune_method']
+    #remove_gcs_directories(gcs_prefix, bucket, 'test_model')
+
+    ### TRY GIVING DIFFERENT CONFIGURATIONS OF FT CHECKPOINT AND CLF CHECKPOINT
+     # give ft_checkpoint and clf_checkpoint separately
+    ft_checkpoint = Path(f'{gcs_prefix}') / 'test_model/wavlm-base_mdl_ckpt'
+    clf_checkpoint =  Path(f'{gcs_prefix}') / 'test_model/clf_ckpt.pt'
+    m8 = CustomAutoModel.from_pretrained(config, pt_checkpoint=ckpt_prefix, ft_checkpoint=ft_checkpoint, clf_checkpoint=clf_checkpoint, delete_download=True)
+    assert m8.base_model is not None
+    assert not m8.local_path.exists() 
+
+    # give ft_checkpoint as directory with clf_checkpoint
+    m.save_model_components()
+    m9 = CustomAutoModel.from_pretrained(config, pt_checkpoint=ckpt_prefix, ft_checkpoint=f'{gcs_prefix}test_model_out', delete_download=True)
+    assert m9.base_model is not None 
+    assert not m9.local_path.exists() 
+
+    #give ft_checkpoint as parent dir and clf checkpoint separately
+    m10 = CustomAutoModel.from_pretrained(config, pt_checkpoint=ckpt_prefix, ft_checkpoint=f'{gcs_prefix}test_model_out', clf_checkpoint=clf_checkpoint, delete_download=True)
+    assert m10.base_model is not None 
+    assert not m10.local_path.exists() 
+
+    #give ft_checkpoint as parent dir and no clf_checkpoint exists 
+    model_checkpoint2 = f'{gcs_prefix}test_model/r2/wavlm-base_mdl_ckpt'
+    m._save_model_checkpoint(model_checkpoint2)
+    m11 = CustomAutoModel.from_pretrained(config, pt_checkpoint=ckpt_prefix, ft_checkpoint=f'{gcs_prefix}test_model/r2', delete_download=True)
+    assert m11.base_model is not None 
+
+    existing = search_gcs('model_config.json',f'{gcs_prefix}test_model', bucket, exact_match=True)
+    assert existing != [], 'Config file does not exist'
 
     remove_gcs_directories(gcs_prefix, bucket, 'test_model')
+    remove_gcs_directories(gcs_prefix, bucket, 'test_model_out')

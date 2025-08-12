@@ -30,8 +30,7 @@ def upload_to_gcs(gcs_prefix:str, path:Union[str,Path], bucket, overwrite:bool=F
     else:
         gcs_pattern = str(Path(path).name)
     
-    gcs_prefix = str(gcs_prefix)
-    if gcs_prefix[-1] != '/': gcs_prefix = gcs_prefix + '/'
+    gcs_prefix = Path(gcs_prefix)
 
     existing = search_gcs(gcs_pattern, gcs_prefix, bucket=bucket)
     
@@ -49,7 +48,19 @@ def upload_to_gcs(gcs_prefix:str, path:Union[str,Path], bucket, overwrite:bool=F
         to_upload = keep
 
     for u in to_upload:  
-        blob = bucket.blob(str(gcs_prefix + str(u.name)))
+        name = str(u).split("/")
+        i = len(name) - 1
+        to_add = []
+        if any([n == gcs_prefix.name for n in name]):
+            while (name[i] != gcs_prefix.name and i >= 0):
+                to_add.append(name[i])
+                i -= 1
+            to_add.reverse()
+            name = "/".join(to_add)
+        else:
+            name = u.name
+
+        blob = bucket.blob(str(gcs_prefix / name))
         blob.upload_from_filename(str(u))
 
     return to_upload 

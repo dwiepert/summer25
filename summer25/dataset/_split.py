@@ -46,28 +46,24 @@ def _check_directories(audio_dir:Union[Path, str], split_dir:Union[Path, str], l
     :param load_existing: bool, specify whether to load existing split 
     :param bucket: GCS bucket
     """
+    assert audio_dir or split_dir, 'Must give either audio_dir or split_dir.'
+    
     if audio_dir is not None: 
+        if not isinstance(audio_dir, Path): audio_dir = Path(audio_dir)
         if bucket is None:
-            if not isinstance(audio_dir, Path): audio_dir = Path(audio_dir)
             assert audio_dir.exists(), 'Given audio_dir is not an existing directory.'
         else:
-            if not isinstance(audio_dir, str): audio_dir = str(audio_dir)
             existing = search_gcs('*', audio_dir, bucket)
             assert existing != [], 'Given audio_dir is not an existing directory.'
 
     if split_dir is not None:
-        if bucket is None:
-            if not isinstance(split_dir, Path): split_dir = Path(split_dir)
-        else:
-            if not isinstance(split_dir, str): split_dir = str(split_dir)
-
-    if (audio_dir is None) and (split_dir is not None):
-        load_existing = True
-    elif (audio_dir is not None) and (split_dir is None): #only set audio dir to split dir if creating a new split
+        if not isinstance(split_dir, Path): split_dir = Path(split_dir)
+    
+    if split_dir is None: #only set audio dir to split dir if creating a new split
         load_existing = False 
         print('load_existing set to False as split dir was not given.')
         split_dir = audio_dir
-
+    
     return audio_dir, split_dir, load_existing
 
 def _check_existing(split_dir:Union[Path,str], load_existing:bool, audio_dir:Union[Path,str], bucket):
@@ -93,7 +89,13 @@ def _check_existing(split_dir:Union[Path,str], load_existing:bool, audio_dir:Uni
                 assert audio_dir is not None, 'Cannot load from split_dir as it does not exist. Audio_dir not given, so split cannot be created either.'
                 load_existing = False
                 print('load_existing set to False as split dir not yet created.')
-    
+    if not load_existing:
+        assert audio_dir is not None, 'Must give an audio_dir if not loading from existing'
+        if bucket is None:
+            assert audio_dir.exists(), 'Must give an audio_dir if not loading from existing'
+        else:
+            existing = existing = search_gcs('*', audio_dir, bucket)
+            assert existing != [], 'Must give an audio_dir if not loading from existing'
     return load_existing
 
 def _save_split(split_dir:Union[Path,str], name:str, temp_dict:dict, as_json:bool, bucket):
@@ -106,9 +108,10 @@ def _save_split(split_dir:Union[Path,str], name:str, temp_dict:dict, as_json:boo
     :param as_json: bool, true if loading from json file 
     :param bucket: GCS bucket (default = None)
     """
+    if not isinstance(split_dir, Path): split_dir=Path(split_dir)
+    if split_dir.name != name:
+        split_dir = split_dir / name
     if bucket is None:
-        if split_dir.name != name:
-            split_dir = split_dir / name
         if split_dir.exists():
             print('Potentially overwriting existing splits.')
         else:
@@ -129,8 +132,6 @@ def _save_split(split_dir:Union[Path,str], name:str, temp_dict:dict, as_json:boo
                 if temp_dict[t] is not None:
                     temp_dict[t].to_csv(str(split_dir / (t + '.csv')), index=False)
     else:
-        if Path(split_dir).name != name:
-            split_dir = Path(split_dir) / name
         existing = search_gcs('*', str(split_dir), bucket)
         if existing != []:
             print('Potentially overwriting existing splits.')
@@ -246,7 +247,6 @@ def _split_name(audio_dir:Union[Path, str] = None, split_dir:Union[Path, str] = 
     :param bucket: GCS bucket (default = None)
 
     :return name: str, split name
-    :return split_dir: pathlike, path to directory to save splits to.
     """
     # SPLIT NAME
     if audio_dir is None:
@@ -258,12 +258,7 @@ def _split_name(audio_dir:Union[Path, str] = None, split_dir:Union[Path, str] = 
         if target_features is not None: 
             name += f'_nfeats{len(target_features)}'
 
-        if bucket:
-            split_dir = f'{split_dir}/{name}'
-        else:
-            split_dir = split_dir / name 
-    
-    return name, split_dir
+    return name
 
 def _create_split(audio_dir:Union[Path,str], split_dir:Union[Path,str],
                   date_key:str, subject_key:str, audio_key:str, task_key:str, 
@@ -301,7 +296,7 @@ def _create_split(audio_dir:Union[Path,str], split_dir:Union[Path,str],
     if bucket:
         paths = search_gcs(pattern, audio_dir, bucket)
     else:
-        paths = [p for p in audio_dir.rglob(f'*.{pattern}')]
+        paths = [p for p in audio_dir.rglob(f'*{pattern}')]
     
     if paths == []:
         raise ValueError('There must be a metadata file in the audio directory. Please confirm that the metadata file exists, is either a csv or json, and does not have a name of `train`, `val`, or `test`.')
@@ -419,6 +414,8 @@ def _create_split(audio_dir:Union[Path,str], split_dir:Union[Path,str],
     temp_dict = {'train': train_df, 'val': val_df, 'test': test_df}
     
     if save:
+         # SPLIT NAME
+        name = _split_name(audio_dir=audio_dir, split_dir=split_dir, proportions=proportions, target_tasks=target_tasks, target_features=target_features, bucket=bucket, seed= seed)
         _save_split(split_dir, name, temp_dict, as_json, bucket)
 
     return train_df, val_df, test_df
@@ -458,10 +455,8 @@ def seeded_split(subject_key:str, date_key:str, audio_key:str, task_key:str, aud
     prop_inds = _check_proportions(proportions)
 
     #CHECK DIRECTORIES
-    audio_dir, split_dir, load_existing = _check_directories(audio_dir, split_dir, load_existing, bucket)
+    audio_dir, split_dir, load_existing = _check_directories(audio_dir=audio_dir, split_dir = split_dir, load_existing=load_existing, bucket=bucket)
 
-    # SPLIT NAME
-    name, split_dir = _split_name(audio_dir, split_dir, proportions, target_tasks, target_features, bucket, seed)
     
     #CHECK EXISTING
     load_existing = _check_existing(split_dir, load_existing, audio_dir, bucket)                       
@@ -475,7 +470,8 @@ def seeded_split(subject_key:str, date_key:str, audio_key:str, task_key:str, aud
             assert audio_dir is not None, 'Split dir has no existing split files. Audio_dir must be given to create them.'
 
     # create new split
+    return _create_split(audio_dir=audio_dir, split_dir=split_dir, date_key=date_key, subject_key=subject_key,
+                  audio_key=audio_key, task_key=task_key, target_tasks=target_tasks, target_features=target_features, prop_inds=prop_inds, proportions=proportions, stratify_threshold=stratify_threshold, 
+                  as_json=as_json, save=save, seed=seed, bucket=bucket)
 
-    _create_split(audio_dir, split_dir, date_key, subject_key, audio_key, task_key, target_task, target_features, 
-                  prop_inds, proportions, stratify_threshold, as_json, save, seed, bucket)
 

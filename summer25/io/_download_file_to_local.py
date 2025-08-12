@@ -24,24 +24,22 @@ def download_to_local(gcs_prefix: Union[str, Path], savepath: Union[str, Path], 
     #file_blob = bucket.blob(str(gcs_path))
     #check if directory 
     assert bucket is not None, 'no bucket given for uploading'
-    
-    if directory:
-        gcs_pattern = '*'
-        gcs_prefix = str(gcs_prefix)
-    else:
-        gcs_pattern = str(Path(gcs_prefix).name)
-        gcs_prefix = str(Path(gcs_prefix).parents[0]) + '/'
+    savepath = savepath.absolute()
+    gcs_pattern = str(Path(gcs_prefix).name)
+    gcs_prefix = Path(gcs_prefix).parents[0]
 
-    files = search_gcs(gcs_pattern, gcs_prefix, bucket)
-    
+    files = search_gcs(gcs_pattern, gcs_prefix, bucket, exact_match=True)
+    files = [f for f in files if Path(f).suffix != '']
     if not isinstance(savepath,Path): savepath = Path(savepath).absolute()
     
     paths = []
-    for f in files:
-        sub_path = savepath / Path(f.replace(str(gcs_prefix), ""))
-        if not sub_path.parents[0].exists():
-            sub_path.parents[0].mkdir(parents=True, exist_ok=True)
-        
+    str_prefix = str(gcs_prefix)
+    if str_prefix[-1] != "/": str_prefix += "/"
+
+    for f in files: 
+        sub_path = savepath / f.replace(str_prefix, "")
+        sub_path.parents[0].mkdir(parents=True, exist_ok=True)
+
         blob = bucket.blob(f)
         blob.download_to_filename(str(sub_path))
         paths.append(sub_path)

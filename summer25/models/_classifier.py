@@ -9,16 +9,12 @@ Last modified: 07/2025
 ##built-in
 from collections import OrderedDict
 import math
-import os
-from pathlib import Path
-from typing import Union, Dict, Optional
+from typing import Union, Dict
 
 ##third-party
 import torch
 import torch.nn as nn
 
-#local
-from summer25.io import upload_to_gcs, download_to_local, search_gcs
 
 ##### CLASSIFIERS #####
 class PositionalEncoding(nn.Module):

@@ -222,13 +222,13 @@ class HFModel(BaseModel):
         else:
             existing = search_gcs(checkpoint, checkpoint, self.bucket)
             assert existing != []
-            assert all([e != checkpoint for e in existing]), 'Hugging face model checkpoints should be directories.'
+            assert all([e != str(checkpoint) for e in existing]), 'Hugging face model checkpoints should be directories.'
 
         try:
             print(f'Loading model {self.model_type} from local checkpoint...')
             if self.bucket:
                 local_path = Path('.')
-                files = download_to_local(checkpoint, local_path, self.bucket)
+                files = download_to_local(checkpoint, local_path, self.bucket, directory=True)
                 checkpoint = files[0].parents[0].absolute()
 
             self.local_path = checkpoint
@@ -304,17 +304,21 @@ class HFModel(BaseModel):
         self.feature_extractor = HFExtractor(model_type=self.model_type, pt_ckpt=checkpoint, from_hub=from_hub, normalize=self.normalize, bucket=bucket, delete_download=delete_download)
         #self.remove_download(self.local_path, delete_download, from_hub)
 
-    def configure_peft(self, checkpoint:Union[str,Path], checkpoint_type:str='pt',delete_download:bool=False, from_hub:bool=True):
+    def configure_peft(self, checkpoint:Union[str,Path], checkpoint_type:str='pt',delete_download:bool=False, from_hub:bool=True, load_gcs:bool=True):
         """
         Configure a Peft model 
         :param checkpoint: pathlike, path to checkpoint (must be a directory)
         :param checkpoint_type: str, specify whether finetuning (ft) or loading pretrained model (pt), (default = 'ft')
         :param delete_download: bool, specify whether to delete any local downloads from hugging face (default = False)
         :param from_hub: bool, specify whether to load from hub or from existing pt_ckpt (default = True)
+        :param load_gcs: bool, true if loading from gcs bucket
         """
         print(f'Configuring {self.finetune_method} ...')
+        if self.bucket is None:
+            load_gcs = False 
+
         if checkpoint_type == 'ft':
-            self._load_peft(checkpoint)
+            self._load_peft_from_finetuned(checkpoint, delete_download, from_hub, load_gcs)
         else:
             if self.finetune_method == 'soft-prompt':
                 peft_config = PromptTuningConfig(
@@ -346,15 +350,18 @@ class HFModel(BaseModel):
                 raise NotImplementedError(f'{self.finetune_method} not implemented.')
 
             self.base_model = CustomPeftModel.peft_from_model(model=self.base_model, peft_config=peft_config)
-        
+            self._remove_download(checkpoint, delete_download, from_hub)
+
         print(f'Using {self.finetune_method}: ')
         self.base_model.print_trainable_parameters()
-        self._remove_download(checkpoint, delete_download, from_hub)
     
-    def _load_peft(self, ckpt:Union[str,Path]):
+    def _load_peft_from_finetuned(self, ckpt:Union[str,Path], delete_download:bool=False, from_hub:bool=True, load_gcs:bool=True):
         """
         Load a peft model from a finetuned checkpoint
         :param ckpt:pathlike, path to finetuned checkpoint directory
+        :param delete_download: bool, specify whether to delete any local downloads from hugging face (default = False)
+        :param from_hub: bool, specify whether to load from hub or from existing pt_ckpt (default = True)
+        :param load_gcs: bool, true if loading from gcs bucket
         """
         if self.finetune_method == 'soft-prompt':
             is_trainable = False
@@ -362,15 +369,18 @@ class HFModel(BaseModel):
         else:
             is_trainable = True
 
-        if self.bucket:
+        if load_gcs:
             local_path = Path('.')
-            files = download_to_local(ckpt, local_path, self.bucket)
+            files = download_to_local(ckpt, local_path, self.bucket, directory=True)
             ckpt = files[0].parents[0].absolute()
+            self.local_path = ckpt
+            
             
         self.base_model = CustomPeftModel.peft_from_pretrained(model = self.base_model, 
                                                     model_id = ckpt,
                                                     is_trainable=is_trainable) #THERE IS GONNA BE AN ISSUE W THIS!! NEED TO MAKE MY OWN VERSION BOO
 
+        self._remove_download(ckpt, delete_download, from_hub)
     ### private helper functions ###
     def _configure_model(self, checkpoint:Union[Path, str]):
         """

@@ -42,8 +42,8 @@ class CustomAutoModel:
             :return clf_checkpoint: pathlike, split classifier checkpoint path as a file (default = None)
             """
             if ft_checkpoint:
+                if not isinstance(ft_checkpoint, Path): ft_checkpoint = Path(ft_checkpoint)
                 if not bucket:
-                    if not isinstance(ft_checkpoint, Path): ft_checkpoint = ft_checkpoint(Path)
                     assert ft_checkpoint.is_dir(), 'Hugging face finetuned model checkpoints should be directories.'
                     #check first if there is a given clf_ckpt already
                     if clf_checkpoint is None:
@@ -53,24 +53,26 @@ class CustomAutoModel:
                     
                     base_ckpt = None
                     for entry in ft_checkpoint.iterdir():
-                        if entry.is_dir() and model_type in str(entry):
+                        if entry.is_dir() and model_type in str(entry.name):
                             base_ckpt = entry
                     if base_ckpt is not None:
                         ft_checkpoint= base_ckpt
                 else:
                     existing = search_gcs(ft_checkpoint, ft_checkpoint, bucket)
-                    assert existing != [] and all([e != ft_checkpoint for e in existing]), 'Hugging face finetuned model checkpoints should be directories.'
+                    assert existing != [], 'Hugging face finetuned model checkpoints should be directories.'
                     if clf_checkpoint is None:
-                        poss_ckpts = [r for r in existing if 'Classifier' in r]
+                        poss_ckpts = [r for r in existing if ('Classifier' in Path(r).name and Path(r).suffix in ['.pt', '.pth'])]
                         if poss_ckpts != []:
                             clf_checkpoint = poss_ckpts[0]
 
-                    poss_ckpts = list(set(["/".join(r.split("/")[:-1]) for r in existing if 'Classifier' not in r]))
-                    poss_ckpts = [r for r in poss_ckpts if r != ft_checkpoint]
-                    if poss_ckpts != []:
-                        for r in poss_ckpts:
-                            if model_type in r:
-                                ft_checkpoint = r
+                    parent_dirs = list(set([Path(r).parents[0] for r in existing]))
+                    parent_dirs = [p for p in parent_dirs if p != ft_checkpoint]
+                    #poss_ckpts = [r for r in poss_ckpts if r != ft_checkpoint]
+                    if parent_dirs != []:
+                        for r in parent_dirs:
+                            existing = search_gcs(r, r, bucket)
+                            if existing != [] and model_type in r.name:
+                               ft_checkpoint = r
             return ft_checkpoint, clf_checkpoint
     
 
@@ -87,21 +89,21 @@ class CustomAutoModel:
         if model.peft:
             peft_delete_download = delete_download
             peft_from_hub = model.from_hub
-            if model.finetune_method == 'soft-prompt':
-                assert pt_checkpoint or peft_from_hub, 'Must give a pretrained checkpoint for model loading if using soft-prompt. Finetuned checkpoint only accounts for peft adapter.'
+            assert pt_checkpoint or peft_from_hub, 'Must give a pretrained checkpoint for model loading if using soft-prompt. Finetuned checkpoint only accounts for peft adapter.'
+            
         else:
             peft_delete_download = False
             peft_from_hub = False
 
         #PRETRAINED
         pt_from_hub = model.from_hub
-        pt_delete_download = delete_download if (not peft_delete_download or (ft_checkpoint and model.finetune_method == 'soft-prompt')) else False
+        pt_delete_download = delete_download if (not peft_delete_download or (ft_checkpoint and model.peft)) else False
         if pt_from_hub: #if from_hub, pt_checkpoint is always overridden with the hf_hub for the given model
             pt_checkpoint = model.hf_hub
 
         #EXTRACTOR
         ext_from_hub = model.from_hub
-        ext_delete_download = delete_download if (ft_checkpoint and model.finetune_method != 'soft-prompt') else False 
+        ext_delete_download = delete_download if (ft_checkpoint and not model.peft) else False 
         assert pt_checkpoint, 'Must have a pretrained option for loading extractor'
 
         #FINETUNED CASES
@@ -115,11 +117,14 @@ class CustomAutoModel:
         model.load_feature_extractor(pt_checkpoint, ext_from_hub, ext_delete_download) 
 
         ### check if there is a ft_checkpoint AND it's not soft prompt
-        if ft_checkpoint and model.finetune_method != 'soft-prompt':
+        if ft_checkpoint and not model.peft:
             model.load_model_checkpoint(ft_checkpoint, ft_delete_download, False)
+            if model.bucket:
+                ft_checkpoint = model.local_path
         else:
             model.load_model_checkpoint(pt_checkpoint, pt_delete_download, pt_from_hub)
-        
+            if model.bucket:
+                pt_checkpoint = model.local_path
         if clf_checkpoint:
             model.load_clf_checkpoint(clf_checkpoint, delete_download)
 

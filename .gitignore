@@ -7,3 +7,7 @@ private_loading/download_files.py
 .DS_Store
 /out_dir
 /private_loading
+/build
+cloudbuild.yaml
+/summer25.py.egg-info
+upload_to_gcs.py

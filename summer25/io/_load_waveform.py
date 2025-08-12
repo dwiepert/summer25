@@ -14,7 +14,6 @@ from pathlib import Path
 import librosa
 import torch
 import torchaudio
-import torch.nn.functional
 
 
 def load_waveform(input_dir:Union[Path, str], uid:str, extension:str='wav', lib:bool=False, structured:bool=False, bucket=None) -> Tuple[torch.Tensor, int]:
@@ -39,8 +38,8 @@ def load_waveform(input_dir:Union[Path, str], uid:str, extension:str='wav', lib:
 
     if bucket: 
         blob = bucket.blob(str(waveform_path))
-        wave_string = blob.download_as_string()
-        wave_input = io.BytesIO(wave_string)
+        wave_input = blob.download_as_bytes()
+        #wave_input = io.BytesIO(wave_string)
     else:
         wave_input = waveform_path 
     

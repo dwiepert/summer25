@@ -17,7 +17,7 @@ import torch
 
 ##local
 from summer25.models import HFModel
-from summer25.models import search_gcs
+from summer25.io import search_gcs
 from summer25.constants import _MODELS
 
 ##### HELPER FUNCTIONS#####
@@ -681,7 +681,7 @@ def test_forward():
 @pytest.mark.gcs
 def test_forward_gcs():
     gcs_prefix, ckpt_prefix, bucket = load_json()
-    params = {'model_type': 'wavlm-base', 'out_dir':f'{gcs_prefix}test_model', 'bucket':bucket, 'delete_download': False}
+    params = {'model_type': 'wavlm-base', 'out_dir':f'{gcs_prefix}test_model', 'bucket':bucket}
     sample1, sample2 = load_audio()
     waveforms = [sample1['waveform'], sample2['waveform']]
 
@@ -714,12 +714,12 @@ def test_peft_forward():
     output1 = m(waveforms)
     assert output1.shape[0] == 2 and output1.shape[1] == 1, 'outputs correct output features'
     #wavlm - lora, reloaded
-    m._save_model_checkpoint(path = params['out_dir'])
+    m._save_model_checkpoint(path = params['out_dir']/'lora')
 
     m2 = HFModel(**params)
-    m2.load_model_checkpoint(checkpoint=params['out_dir'], from_hub=False)
+    m2.load_model_checkpoint(checkpoint=m2.hf_hub, from_hub=False)
     m2.load_feature_extractor(checkpoint=m2.hf_hub, from_hub=True)
-    m2.configure_peft(checkpoint=params['out_dir'], checkpoint_type='ft')
+    m2.configure_peft(checkpoint=params['out_dir'] /'lora', checkpoint_type='ft')
     n_params2 = sum(p.numel() for p in m2.base_model.parameters() if p.requires_grad)
     assert n_params == n_params2, 'Different models during lora'
     output2 = m2(waveforms)
@@ -737,12 +737,12 @@ def test_peft_forward():
     output1 = m(waveforms)
     assert output1.shape[0] == 2 and output1.shape[1] == 1, 'outputs correct output features'
     #wavlm - lora, reloaded
-    m._save_model_checkpoint(path = params['out_dir'])
+    m._save_model_checkpoint(path = params['out_dir'] / 'softprompt')
 
     m2 = HFModel(**params)
-    m2.load_model_checkpoint(checkpoint=params['out_dir'], from_hub=False)
+    m2.load_model_checkpoint(checkpoint=m2.hf_hub, from_hub=False)
     m2.load_feature_extractor(checkpoint=m2.hf_hub, from_hub=True)
-    m2.configure_peft(checkpoint=params['out_dir'], checkpoint_type='ft')
+    m2.configure_peft(checkpoint=params['out_dir'] /'softprompt', checkpoint_type='ft')
     n_params2 = sum(p.numel() for p in m2.base_model.parameters() if p.requires_grad)
     assert n_params == n_params2, 'Different models during soft-prompt'
     output2 = m2(waveforms)
@@ -753,28 +753,53 @@ def test_peft_forward():
 @pytest.mark.gcs
 def test_peft_forward_gcs():
     gcs_prefix, ckpt_prefix, bucket = load_json()
-    params = {'model_type': 'wavlm-base', 'out_dir':f'{gcs_prefix}test_model', 'pt_ckpt': ckpt_prefix, 'from_hub': False, 'bucket':bucket, 'delete_download': False, 'finetune_method':'lora'}
-    ft_ckpt = f'{gcs_prefix}test_model/weights'
+    params = {'model_type': 'wavlm-base', 'out_dir':Path(f'{gcs_prefix}test_model'), 'bucket':bucket}
     sample1, sample2 = load_audio()
     waveforms = [sample1['waveform'], sample2['waveform']]
 
+    #base test
+    params['model_type'] = 'wavlm-base'
+    params['finetune_method'] = 'lora'
     m = HFModel(**params)
-    assert m is not None, 'Model not running properly.'
-    m.save_model_components()
-    model_folder = f'{ft_ckpt}/{m.model_name}'
-    clf = m.clf.config['clf_name']
-    clf_folder = f'{ft_ckpt}/{clf}.pt'
-    output = m(waveforms)
-    assert output.shape[0] == 2 and output.shape[1] == 1, 'outputs correct output features'
+    m.load_model_checkpoint(checkpoint=ckpt_prefix, from_hub=False)
+    m.load_feature_extractor(checkpoint=ckpt_prefix, from_hub=False)
+    m.configure_peft(checkpoint=ckpt_prefix, from_hub=False)
+    n_params = sum(p.numel() for p in m.base_model.parameters() if p.requires_grad)
+    output1 = m(waveforms)
+    assert output1.shape[0] == 2 and output1.shape[1] == 1, 'outputs correct output features'
+    #wavlm - lora, reloaded
+    m._save_model_checkpoint(path = params['out_dir']/'lora')
 
-    #FT POSSIBILITIES:
-    # give path to only base_model directory (no classifier ckpt in dir, no subdirs)
-    params['ft_ckpt'] = model_folder
-    params['delete_download'] = True
-    m = HFModel(**params)
-    output = m(waveforms)
-    assert output.shape[0] == 2 and output.shape[1] == 1, 'outputs correct output features'
+    m2 = HFModel(**params)
+    m2.load_model_checkpoint(checkpoint=ckpt_prefix, from_hub=False)
+    m2.load_feature_extractor(checkpoint=ckpt_prefix, from_hub=False)
+    m2.configure_peft(checkpoint=params['out_dir'] /'lora', checkpoint_type='ft')
+    n_params2 = sum(p.numel() for p in m2.base_model.parameters() if p.requires_grad)
+    assert n_params == n_params2, 'Different models during lora'
+    output2 = m2(waveforms)
+    assert torch.equal(output1, output2)
 
     remove_gcs_directories(gcs_prefix, bucket, 'test_model')
-    existing = search_gcs(params['out_dir'], params['out_dir'], bucket)
-    assert existing == [], 'Not all checkpoints deleted'
+
+    #wavlm - soft prompt
+    params['finetune_method'] = 'soft-prompt'
+    m = HFModel(**params)
+    m.load_model_checkpoint(checkpoint=ckpt_prefix, from_hub=False)
+    m.load_feature_extractor(checkpoint=ckpt_prefix, from_hub=False)
+    m.configure_peft(checkpoint=ckpt_prefix, from_hub=False)
+    n_params = sum(p.numel() for p in m.base_model.parameters() if p.requires_grad)
+    output1 = m(waveforms)
+    assert output1.shape[0] == 2 and output1.shape[1] == 1, 'outputs correct output features'
+    #wavlm - lora, reloaded
+    m._save_model_checkpoint(path = params['out_dir'] / 'softprompt')
+
+    m2 = HFModel(**params)
+    m2.load_model_checkpoint(checkpoint=ckpt_prefix, from_hub=False)
+    m2.load_feature_extractor(checkpoint=ckpt_prefix, from_hub=False)
+    m2.configure_peft(checkpoint=params['out_dir'] /'softprompt', checkpoint_type='ft')
+    n_params2 = sum(p.numel() for p in m2.base_model.parameters() if p.requires_grad)
+    assert n_params == n_params2, 'Different models during soft-prompt'
+    output2 = m2(waveforms)
+    assert torch.equal(output1, output2)
+
+    remove_gcs_directories(gcs_prefix, bucket, 'test_model')

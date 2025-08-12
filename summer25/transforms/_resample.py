@@ -6,7 +6,6 @@ Last modified: 06/2025
 """
 #IMPORTS
 ##third-party
-import librosa 
 import torchaudio
 
 class ResampleAudio(object):

@@ -67,7 +67,8 @@ def check_load(args:dict) -> dict:
     assert args['optim_type'] in _OPTIMIZER, 'Invalid optimizer type'
 
     if args['bucket_name']:
-        storage_client = storage.Client()
+        assert 'project_name' in args, 'Must give project name'
+        storage_client = storage.Client(project=args['project_name'])
         bucket = storage_client.bucket(args['bucket_name'])
         assert args['gcs_prefix']
         existing = search_gcs(args['audio_dir'], args['audio_dir'], bucket)

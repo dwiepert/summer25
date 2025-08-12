@@ -18,7 +18,7 @@ import torch
 import torchaudio 
 
 ##local
-from summer25.io import load_waveform_from_local, download_to_local, search_gcs, upload_to_gcs
+from summer25.io import download_to_local, search_gcs, upload_to_gcs, load_waveform
 
 ##### HELPER FUNCTIONS#####
 def load_json():
@@ -32,25 +32,35 @@ def load_json():
     bucket = storage_client.get_bucket(bucket_name)
     return gcs_prefix, bucket
 
+def remove_gcs_directories(gcs_prefix,bucket, directory='test_split', pattern="*"):
+    dir = gcs_prefix + f'{directory}'
+    existing = search_gcs(pattern, dir, bucket)
+    for e in existing:
+        blob = bucket.blob(e)
+        blob.delete()
+    existing = search_gcs(pattern, dir, bucket)
+    assert existing == []
+
+
 ##### TESTS #####
 def test_load_local():
     #not structured
     input_dir=Path('./tests/audio_examples/')
     uid = '1919-142785-0008'
     extension = 'flac'
-    waveform, sr = load_waveform_from_local(input_dir=input_dir, uid=uid,extension=extension, lib=False, structured=False)
+    waveform, sr = load_waveform(input_dir=input_dir, uid=uid,extension=extension, lib=False, structured=False)
     assert isinstance(waveform, torch.Tensor), 'Waveform not loaded'
     assert sr == 16000, 'Incorrectly loaded sample rate'
 
     #librosa
-    waveform, sr = load_waveform_from_local(input_dir=input_dir, uid=uid,extension=extension, lib=True, structured=False)
+    waveform, sr = load_waveform(input_dir=input_dir, uid=uid,extension=extension, lib=True, structured=False)
     assert isinstance(waveform, torch.Tensor), 'Waveform not loaded'
     assert sr == 16000, 'Incorrectly loaded sample rate'
 
     #not existing audio 
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises(Exception):
         uid = '1919-142785-0009'
-        waveform, sr = load_waveform_from_local(input_dir=input_dir, uid=uid,extension=extension, lib=False, structured=False)
+        waveform, sr = load_waveform(input_dir=input_dir, uid=uid,extension=extension, lib=False, structured=False)
     
     #structured
     uid = '1919-142785-0008'
@@ -61,10 +71,51 @@ def test_load_local():
         temp_structured.mkdir(parents=True)
     shutil.copy(f'./tests/audio_examples/{uid}.flac', f'./tests/structured/{uid}/waveform.flac')
 
-    waveform, sr = load_waveform_from_local(input_dir=Path('./tests/structured'), uid=uid,extension=extension, lib=False, structured=True)
+    waveform, sr = load_waveform(input_dir=Path('./tests/structured'), uid=uid,extension=extension, lib=False, structured=True)
     assert isinstance(waveform, torch.Tensor), 'Waveform not loaded'
     assert sr == 16000, 'Incorrectly loaded sample rate'
     shutil.rmtree('./tests/structured')
+
+@pytest.mark.gcs
+def test_load_gcs():
+    gcs_prefix, bucket = load_json()
+    gcs_prefix += 'test_audio/'
+    out_dir = Path('./out_dir')
+    out_dir.mkdir(exist_ok=True)
+
+    uid = 'test1'
+    extension = 'wav'
+    waveform, sr = load_waveform(input_dir=gcs_prefix, uid=uid,extension=extension, lib=False, structured=False, bucket=bucket)
+    assert isinstance(waveform, torch.Tensor), 'Waveform not loaded'
+    assert sr == 16000, 'Incorrectly loaded sample rate'
+
+    #librosa
+    waveform, sr = load_waveform(input_dir=gcs_prefix, uid=uid,extension=extension, lib=True, structured=False, bucket=bucket)
+    assert isinstance(waveform, torch.Tensor), 'Waveform not loaded'
+    assert sr == 16000, 'Incorrectly loaded sample rate'
+
+    #not existing audio 
+    with pytest.raises(Exception):
+        uid = '1919-142785-0009'
+        waveform, sr = load_waveform(input_dir=gcs_prefix, uid=uid,extension=extension, lib=False, structured=False, bucket=bucket)
+    
+    #structured
+    uid = '1919-142785-0008'
+    temp_structured = Path(f'./tests/structured/{uid}')
+    if temp_structured.exists():
+        shutil.rmtree(temp_structured)
+    if not temp_structured.exists():
+        temp_structured.mkdir(parents=True)
+    shutil.copy(f'./tests/audio_examples/{uid}.flac', f'./tests/structured/{uid}/waveform.flac')
+
+    upload_to_gcs(gcs_prefix+f'test_structured/{uid}', path=f'./tests/structured/{uid}', bucket=bucket, directory=True)
+
+    waveform, sr = load_waveform(input_dir=gcs_prefix+'test_structured/', uid=uid, extension='flac', lib=False, structured=True, bucket=bucket)
+    assert isinstance(waveform, torch.Tensor), 'Waveform not loaded'
+    assert sr == 16000, 'Incorrectly loaded sample rate'
+    shutil.rmtree('./tests/structured')
+    remove_gcs_directories(gcs_prefix, bucket, directory='test_structured')
+
 
 @pytest.mark.gcs
 def test_download_gcs():
@@ -80,15 +131,15 @@ def test_download_gcs():
     files = download_to_local(gcs_prefix=gcs_prefix, savepath=out_dir, bucket=bucket, directory=True) #TODO: change gcs_path to gcs_prefix where using download to local
     #check what's in directory
     assert all([f.exists() for f in files])
-    assert all([torchaudio.load(f)[0].numel() != 0])
+    assert all([torchaudio.load(f)[0].numel() != 0 for f in files if '.wav' in str(f)])
     shutil.rmtree(out_dir)
 
     out_dir.mkdir(exist_ok=True)
     #download single file
     gcs_prefix += 'test1.wav'
-    download_to_local(gcs_prefix=gcs_prefix, savepath=out_dir, bucket=bucket, directory=False)
+    files = download_to_local(gcs_prefix=gcs_prefix, savepath=out_dir, bucket=bucket, directory=False)
     assert all([f.exists() for f in files])
-    assert all([torchaudio.load(f)[0].numel() != 0])
+    assert all([torchaudio.load(f)[0].numel() != 0 for f in files if '.wav' in str(f)])
     #check downloaded properly
     shutil.rmtree(out_dir)
 

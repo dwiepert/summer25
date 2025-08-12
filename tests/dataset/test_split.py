@@ -12,13 +12,14 @@ from pathlib import Path
 import shutil
 
 ##third-party
+from google.cloud import storage
 import pandas as pd
 import pytest
 
 ##local
 from summer25.constants import _FEATURES
 from summer25.dataset import seeded_split
-from summer25.io import search_gcs
+from summer25.io import search_gcs, upload_to_gcs
 
 #### HELPER FUNCTIONS ### 
 def data_dictionary():
@@ -192,7 +193,7 @@ def _load(p, bucket, as_json):
     """
     if bucket and as_json:
         blob = bucket.blob(p)
-        df = pd.DataFrame(json.loads(blob.download_as_string()))
+        df = pd.DataFrame(json.loads(blob.download_as_bytes()))
     elif bucket:
         df = pd.read_csv(f'gs://{bucket.name}/{str(p)}')
     elif as_json:
@@ -314,7 +315,7 @@ def test_load_existing_success_gcs():
     out = seeded_split(split_dir=split_dir1, load_existing=True, as_json=True,bucket=bucket,**keys)
     assert all([o is not None for o in out]), 'There should be no None outputs'
     
-    remove_gcs_directories(gcs_prefix, bucket=bucket)
+    remove_gcs_directories(gcs_prefix, bucket=bucket, directory='test_split')
 
 def test_load_existing_failure_gcs():
     gcs_prefix, bucket = load_json()
@@ -335,7 +336,7 @@ def test_load_existing_failure_gcs():
         seeded_split(split_dir=split_dir1, load_existing=True, as_json=True,bucket=bucket,**keys)
     
         
-    remove_gcs_directories(gcs_prefix, bucket=bucket)
+    remove_gcs_directories(gcs_prefix, bucket=bucket, directory='test_split')
 
 def test_metadata_load():
     audio_dir1, split_dir1 = create_directories(True, True, True)
@@ -424,7 +425,7 @@ def test_create_gcs():
     assert all([o is not None for o in out]), 'There should be no None outputs'
 
     #test 3 - load metadata from json
-    out = seeded_split(audio_dir=audio_dir1, split_dir=None, as_json=True, bucket=bucket,**keys)
+    out = seeded_split(audio_dir=audio_dir1, split_dir=None,as_json=True, bucket=bucket,**keys)
     assert all([o is not None for o in out]), 'There should be no None outputs'
     out = seeded_split(audio_dir=audio_dir1, split_dir=split_dir1, as_json=True, bucket=bucket,**keys)
     assert all([o is not None for o in out]), 'There should be no None outputs'
@@ -660,4 +661,3 @@ def test_seeding():
         assert (out100_1[i].equals(out42_1[i])) is False, 'Different seeds producing same results.'
     
     remove_directories()
-
