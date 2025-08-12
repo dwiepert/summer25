@@ -22,6 +22,7 @@ from summer25.training import Trainer
 from summer25.constants import _FEATURES
 from summer25.io import search_gcs
 
+### HELPERS ###
 def load_json():
     with open('./private_loading/gcs.json', 'r') as file:
         data = json.load(file)
@@ -45,7 +46,7 @@ def remove_gcs_directories(gcs_prefix,bucket, directory='test_split', pattern="*
 
 def check_checkpoints(m, name_prefix, checkpoints=[0], epochs=7, val=True, args=[], train_params={}, early_stop=False):
     if m.bucket:
-        path = f'{m.out_dir}{name_prefix}'
+        path = Path(m.out_dir) / name_prefix
         existing = search_gcs(path, path, m.bucket)
         assert any(['train_log.json' in e for e in existing]), 'Training log not dumped correctly'
         out_path = f'{path}/weights'
@@ -122,6 +123,7 @@ def create_config(use_librosa=False, augment=False, truncate=False):
          config['gauss'] = {'min_amplitude':0.001, 'max_amplitude':0.015}
     return config
 
+### TESTS ###
 def test_trainer_params():
     params = {'out_dir':Path('./out_dir')}
 
@@ -429,10 +431,10 @@ def test_eval():
 @pytest.mark.gcs
 def test_fit_gcs():
     gcs_prefix, ckpt_prefix, bucket = load_json()
-    params = {'model_type': 'wavlm-base', 'out_dir':f'{gcs_prefix}test_model', 'pt_ckpt': ckpt_prefix, 'from_hub': False, 'bucket':bucket, 'delete_download': False, 'finetune_method':'lora'}
+    params = {'model_type': 'wavlm-base', 'out_dir':f'{gcs_prefix}test_model', 'from_hub':False, 'bucket':bucket, 'finetune_method':'lora'}
 
     #base test
-    m = CustomAutoModel.from_pretrained(params)
+    m = CustomAutoModel.from_pretrained(params, pt_checkpoint=ckpt_prefix, delete_download=True)
 
     trainer_params = {'model': m, 'target_features':[_FEATURES[0]], 'early_stop':False, 'loss_type':'bce', 'scheduler_type':None, 'optim_type':'adamw', 'learning_rate':0.001, 'tf_learning_rate':0.0001}
     #initialize with valid params 
@@ -459,15 +461,15 @@ def test_fit_gcs():
 
     t.test(test_loader = test_loader)
     name_prefix = f'{t.name_prefix}_e{t.epochs}'
-    path = f'{m.out_dir}{name_prefix}'
+    path = Path(m.out_dir) / name_prefix
     existing = search_gcs(path, path, m.bucket)
     assert any(['evaluation.json' in e for e in existing]), 'Training log not dumped correctly'
     p = f'{path}/evaluation.json'
     blob = m.bucket.blob(p)
-    data = json.loads(blob.download_as_string())
+    data = json.loads(blob.download_as_bytes())
     assert 'loss' in data and 'feature_metrics' in data
     feats = data['feature_metrics']
     assert all([f in feats for f in t.target_features])
     feat1 = feats[_FEATURES[0]]
     assert 'bacc' in feat1 and 'acc' in feat1 and 'roc_auc' in feat1
-    remove_gcs_directories(gcs_prefix, bucket, 'test_model')  
+    remove_gcs_directories(gcs_prefix, bucket, 'test_model') 

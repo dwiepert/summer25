@@ -286,8 +286,8 @@ class HFModel(BaseModel):
 
         if not self.bucket: out_path.mkdir(parents=True, exist_ok=True)
             
-        self._save_model_checkpoint(path=path / name_model)
-        self._save_clf_checkpoint(path= path / (name_clf + '.pt'))
+        self._save_model_checkpoint(path=out_path / name_model)
+        self._save_clf_checkpoint(path= out_path / (name_clf + '.pt'))
     
     def load_feature_extractor(self, checkpoint:Union[str,Path], from_hub:bool=True, delete_download:bool=False):
         """

@@ -1,4 +1,4 @@
-__version__ = '0.5.2'
+__version__ = '0.5.3'
 
 #change log:
 # 0.0.0: initial commit
@@ -25,5 +25,6 @@ __version__ = '0.5.2'
 # 0.4.4: untested gcs upload/download
 # 0.4.5: tested gcs upload/download
 # 0.5.0: reworked model - need to test run.py
-# 0.5.1: mostly debugged & tested version 0.5.0
+# 0.5.1: mostly debugged & tested version 0.5
 # 0.5.2: more debugging/tests
+# 0.5.3: fully debugged & tested version 0.5

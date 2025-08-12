@@ -16,6 +16,7 @@ setup(
         "numpy==2.2.6",
         "pandas==2.3.0",
         "peft==0.15.2",
+        "pytest==8.4.0",
         "scikit-learn==1.7.0",
         "scipy==1.15.3",
         "torch==2.4.0",

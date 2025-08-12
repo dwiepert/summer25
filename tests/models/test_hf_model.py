@@ -751,7 +751,7 @@ def test_peft_forward():
     shutil.rmtree(params['out_dir'])
 
 @pytest.mark.gcs
-def test_peft_forward_gcs():
+def test_peft_forward_lora_gcs():
     gcs_prefix, ckpt_prefix, bucket = load_json()
     params = {'model_type': 'wavlm-base', 'out_dir':Path(f'{gcs_prefix}test_model'), 'bucket':bucket}
     sample1, sample2 = load_audio()
@@ -763,7 +763,7 @@ def test_peft_forward_gcs():
     m = HFModel(**params)
     m.load_model_checkpoint(checkpoint=ckpt_prefix, from_hub=False)
     m.load_feature_extractor(checkpoint=ckpt_prefix, from_hub=False)
-    m.configure_peft(checkpoint=ckpt_prefix, from_hub=False)
+    m.configure_peft(checkpoint=ckpt_prefix, from_hub=False, delete_download=True)
     n_params = sum(p.numel() for p in m.base_model.parameters() if p.requires_grad)
     output1 = m(waveforms)
     assert output1.shape[0] == 2 and output1.shape[1] == 1, 'outputs correct output features'
@@ -781,25 +781,32 @@ def test_peft_forward_gcs():
 
     remove_gcs_directories(gcs_prefix, bucket, 'test_model')
 
+@pytest.mark.gcs
+def test_peft_forward_softprompt_gcs():
+    gcs_prefix, ckpt_prefix, bucket = load_json()
+    params = {'model_type': 'wavlm-base', 'out_dir':Path(f'{gcs_prefix}test_model'), 'bucket':bucket}
+    sample1, sample2 = load_audio()
+    waveforms = [sample1['waveform'], sample2['waveform']]
+
     #wavlm - soft prompt
     params['finetune_method'] = 'soft-prompt'
-    m = HFModel(**params)
-    m.load_model_checkpoint(checkpoint=ckpt_prefix, from_hub=False)
-    m.load_feature_extractor(checkpoint=ckpt_prefix, from_hub=False)
-    m.configure_peft(checkpoint=ckpt_prefix, from_hub=False)
-    n_params = sum(p.numel() for p in m.base_model.parameters() if p.requires_grad)
-    output1 = m(waveforms)
+    m3 = HFModel(**params)
+    m3.load_model_checkpoint(checkpoint=ckpt_prefix, from_hub=False)
+    m3.load_feature_extractor(checkpoint=ckpt_prefix, from_hub=False)
+    m3.configure_peft(checkpoint=ckpt_prefix, from_hub=False)
+    n_params = sum(p.numel() for p in m3.base_model.parameters() if p.requires_grad)
+    output1 = m3(waveforms)
     assert output1.shape[0] == 2 and output1.shape[1] == 1, 'outputs correct output features'
     #wavlm - lora, reloaded
-    m._save_model_checkpoint(path = params['out_dir'] / 'softprompt')
+    m3._save_model_checkpoint(path = params['out_dir'] / 'softprompt')
 
-    m2 = HFModel(**params)
-    m2.load_model_checkpoint(checkpoint=ckpt_prefix, from_hub=False)
-    m2.load_feature_extractor(checkpoint=ckpt_prefix, from_hub=False)
-    m2.configure_peft(checkpoint=params['out_dir'] /'softprompt', checkpoint_type='ft')
-    n_params2 = sum(p.numel() for p in m2.base_model.parameters() if p.requires_grad)
+    m4 = HFModel(**params)
+    m4.load_model_checkpoint(checkpoint=ckpt_prefix, from_hub=False)
+    m4.load_feature_extractor(checkpoint=ckpt_prefix, from_hub=False, delete_download=False)
+    m4.configure_peft(checkpoint=params['out_dir'] /'softprompt', checkpoint_type='ft')
+    n_params2 = sum(p.numel() for p in m4.base_model.parameters() if p.requires_grad)
     assert n_params == n_params2, 'Different models during soft-prompt'
-    output2 = m2(waveforms)
+    output2 = m4(waveforms)
     assert torch.equal(output1, output2)
 
     remove_gcs_directories(gcs_prefix, bucket, 'test_model')

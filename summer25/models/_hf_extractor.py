@@ -114,7 +114,7 @@ class HFExtractor(BaseExtractor):
                 files = download_to_local(self.pt_ckpt, local_path, self.bucket, directory=True)
                 self.pt_ckpt = files[0].parents[0].absolute()
                 
-            self.feature_extractor = AutoFeatureExtractor.from_pretrained(str(self.pt_ckpt))
+            self.feature_extractor = AutoFeatureExtractor.from_pretrained(str(self.pt_ckpt), trust_remote_code=True)
             self.local_path = self.pt_ckpt
 
         except:

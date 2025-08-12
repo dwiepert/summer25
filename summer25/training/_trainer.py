@@ -259,7 +259,7 @@ class Trainer():
             #FLUSH LOG 
             if self.model.bucket:
                 path = Path('.')
-                upload_path = f'{self.model.out_dir}{name_prefix}'
+                upload_path = self.model.out_dir / name_prefix
             else:
                 path = self.model.out_dir / name_prefix
                 path.mkdir(parents = True, exist_ok = True)
@@ -340,9 +340,10 @@ class Trainer():
 
         metrics = {'loss':running_loss, 'avg_loss': (running_loss / len(test_loader)), 'feature_metrics': per_feature}
         
+
         if self.model.bucket:
             path = Path('.')
-            upload_path = f'{self.model.out_dir}{name_prefix}'
+            upload_path = self.model.out_dir / name_prefix
         else:
             path = self.model.out_dir / name_prefix
             path.mkdir(parents = True, exist_ok = True)
