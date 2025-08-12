@@ -3,8 +3,8 @@
 FROM gcr.io/deeplearning-platform-release/pytorch-cu124-conda.2-4.py310
 
 # pip requirements
-COPY requirements.txt requirements.txt
-RUN pip install -r requirements.txt
+#COPY requirements.txt requirements.txt
+#RUN pip install -r requirements.txt
 
 #Clone and build summer25
 RUN git clone https://github.com/dwiepert/summer25.git && \

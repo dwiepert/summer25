@@ -56,11 +56,11 @@ def upload_to_gcs(gcs_prefix:str, path:Union[str,Path], bucket, overwrite:bool=F
                 to_add.append(name[i])
                 i -= 1
             to_add.reverse()
-            name = "/".join(to_add)
+            new_name = "/".join(to_add)
         else:
-            name = u.name
+            new_name = u.name
 
-        blob = bucket.blob(str(gcs_prefix / name))
+        blob = bucket.blob(str(gcs_prefix / new_name))
         blob.upload_from_filename(str(u))
 
     return to_upload 
