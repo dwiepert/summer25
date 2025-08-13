@@ -238,6 +238,14 @@ def zip_splits(args:argparse.Namespace) -> dict:
     split_args['date_key'] = args.date_key
     split_args['task_key'] = args.task_key
     split_args['audio_key'] = args.audio_key
+    if 'target_tasks' in args:
+        split_args['target_tasks'] = args.target_tasks
+    if 'target_features' in args:
+        split_args['target_features'] = args.target_features
+    if 'proportions' in args:
+        split_args['proportions'] = args.proportions
+    if 'stratify_threshold' in args:
+        split_args['stratify_threshold'] = args.stratify_threshold
 
     return split_args
 
@@ -340,14 +348,14 @@ if __name__ == "__main__":
     io_args.add_argument('--as_json', action='store_true', help='True if loading/saving splits as json files.')
     io_args.add_argument('--save_split', action='store_true', help='Save generated data splits.')
     io_args.add_argument('--output_dir', type=Path, help='Output directory for saving all files.')
-    io_args.add_argument('--target_tasks', nargs="+", type=List[str], help="Specify target tasks for dataset.")
-    io_args.add_argument('--target_features', nargs="+", type=List[str], help="Specify target features for dataset.")
+    io_args.add_argument('--target_tasks', nargs="+", type=List[str], default=['sentence_repetition'], help="Specify target tasks for dataset.")
+    io_args.add_argument('--target_features', nargs="+", type=List[str], default=['hoarse_harsh', 'slow_rate', 'sound_distortions', 'monopitch_monoloudness', 'inappropriate_silences_or_prolonged_intervals'], help="Specify target features for dataset.")
     io_args.add_argument('--stratify_threshold', type=int, help="Specify minimum number of positive examples for a feature group.")
     io_args.add_argument('--subject_key', type=str, help='Specify column/key name for subjects in dataset metadata table')
     io_args.add_argument('--date_key', type=str, help='Specify column/key name for date in dataset metadata table')
     io_args.add_argument('--task_key', type=str, help='Specify column/key name for tasks in dataset metadata table')
     io_args.add_argument('--audio_key', type=str, help='Specify column/key name for audio file names in dataset metadata table')
-    io_args.add_argument('--proportions', nargs="+", type=List[float], help='Specify split proportions.')
+    io_args.add_argument('--proportions', nargs="+", type=List[float], default=[0.8,0.1,0.1], help='Specify split proportions.')
     io_args.add_argument('--clip_length', type=float, help="Specify audio clip length in s.")
     io_args.add_argument('--trim_level', type=float, help="Specify silence trim level (dB for use_librosa, trigger level for torchaudio)")
     io_args.add_argument('--normalize', action='store_true', help='Specify whether to normalize audio.')

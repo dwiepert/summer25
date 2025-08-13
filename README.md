@@ -14,9 +14,6 @@ CONFIG FILES:
 
 - once we have models, determine clinical twist, try in just ALS?
 
-## VERTEX AI PROCESS
-* Deploy Vertex AI VM :https://console.cloud.google.com/catalog/browse?referrer=search&hl=en&inv=1&invt=Ab5M_Q&project=<PROJECT_NAME>
-* 
 
 ## TRAINING PARAMS
 * FEATURES: hoarse_harsh, slow_rate, sound_distortions, monopitch_monoloudness, 'inappropriate_silences_or_prolonged_intervals'
