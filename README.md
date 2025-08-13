@@ -3,6 +3,11 @@ REQUIREMENTS:
     audio directory format
     metadata expectations
 
+    ## torchaudio issue
+    "torch==2.4.0",
+        "torchaudio==2.4.0",
+        "torchvision==0.19.0",
+
 CONFIG FILES:
     - run.py only contains some parameters for audio
     - can specify more exact specifics for WavDataset transforms by adding to a config file. TODO

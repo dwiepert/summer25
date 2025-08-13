@@ -11,3 +11,4 @@ private_loading/download_files.py
 cloudbuild.yaml
 /summer25.py.egg-info
 upload_to_gcs.py
+cloudbuild2.yaml
