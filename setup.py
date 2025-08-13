@@ -19,9 +19,6 @@ setup(
         "pytest==8.4.0",
         "scikit-learn==1.7.0",
         "scipy==1.15.3",
-        "torch==2.4.0",
-        "torchaudio==2.4.0",
-        "torchvision==0.19.0",
         "tqdm==4.67.1",
         "transformers==4.52.4"
     ],

@@ -32,7 +32,7 @@ _MODELS = {  "wavlm-base": {
                   "monochannel": True,
                   "required_freeze": ['masked_spec_embed', 'feature_extractor', 'feature_projector'],
                   "optional_freeze": ['encoder.pos_conv_embed', 'encoder.layer_norm'],
-                  "unfreeze_prefix": ['encoder.layers'],
+                  "unfreeze_prefixes": ['encoder.layers'],
                   "lora_layers": ['k_proj','v_proj','q_proj'],
                   "attention_mask": False
             },
