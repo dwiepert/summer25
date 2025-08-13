@@ -70,7 +70,6 @@ def check_load(args:dict) -> dict:
         assert 'project_name' in args, 'Must give project name'
         storage_client = storage.Client(project=args['project_name'])
         bucket = storage_client.bucket(args['bucket_name'])
-        assert args['gcs_prefix']
         existing = search_gcs(args['audio_dir'], args['audio_dir'], bucket)
         assert existing != [], 'Given audio directory does not exist.'
     else:
@@ -324,7 +323,6 @@ def zip_finetune(args):
 
     if args.bucket:
         finetune_args['bucket'] = args.bucket
-        finetune_args['gcs_prefix'] = args.gcs_prefix
 
     return finetune_args
 
@@ -337,14 +335,14 @@ if __name__ == "__main__":
     cfg_args.add_argument('--use_existing_cfg', action='store_true', help='Specify whether to use an existing config file if it exists in the given output_dir')
     #I/O
     io_args = parser.add_argument_group('io', 'file related arguments')
-    io_args.add_argument('--bucket_name', type=str, default=None, help='Bucket name for GCS.')
-    io_args.add_argument('--gcs_prefix', type=str, help='GCS prefix.')
+    io_args.add_argument('--bucket_name', type=str, help='Bucket name for GCS.')
+    io_args.add_argument('--project_name', type=str, help='GCS project name.')
     io_args.add_argument('--audio_dir', type=Path, help='Directory with audio files & a csv with information on speakers/task.')
     io_args.add_argument('--audio_ext', type=str,default='wav', help='Audio extension.')
     io_args.add_argument('--structured', action='store_true', help='Specify whether the audio directory stores audio in structured manner (uid/waveform.wav) or not (uid.wav)')
     io_args.add_argument('--use_librosa', action='store_true', help='Specify whether to load audio with librosa')
     io_args.add_argument('--split_dir', type=Path, help='Directory with csv or jsons of file splits.')
-    io_args.add_argument('--load_exisiting_split', action='store_true', help='Default to loading exisiting split.')
+    io_args.add_argument('--load_existing_split', action='store_true', help='Default to loading exisiting split.')
     io_args.add_argument('--as_json', action='store_true', help='True if loading/saving splits as json files.')
     io_args.add_argument('--save_split', action='store_true', help='Save generated data splits.')
     io_args.add_argument('--output_dir', type=Path, help='Output directory for saving all files.')
