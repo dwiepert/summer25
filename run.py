@@ -265,7 +265,7 @@ def zip_dataset(args:argparse.Namespace) -> dict:
     if args.loss_type == 'rank':
         dataset_args['rank_prefix'] = args.rank_prefix
 
-    if args.transforms:
+    if 'transforms' in args:
         transforms = args.transforms
     else:
         transforms = {}
