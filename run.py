@@ -263,6 +263,8 @@ def zip_dataset(args:argparse.Namespace) -> dict:
     dataset_args = {'prefix': args.audio_dir, 'model_type': args.model_type, 'uid_col':args.audio_key, 'target_labels': args.target_features,
                     'bucket': None, 'extension': args.audio_ext, 'structured': args.structured}
     
+    if args.bucket:
+        dataset_args['bucket'] = args.bucket
     if args.loss_type == 'rank':
         dataset_args['rank_prefix'] = args.rank_prefix
 
