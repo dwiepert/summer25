@@ -14,6 +14,8 @@ CONFIG FILES:
 
 - once we have models, determine clinical twist, try in just ALS?
 
+a2-highgpu-2g
+ 
 
 ## TRAINING PARAMS
 * FEATURES: hoarse_harsh, slow_rate, sound_distortions, monopitch_monoloudness, 'inappropriate_silences_or_prolonged_intervals'

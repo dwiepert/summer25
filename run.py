@@ -359,7 +359,7 @@ if __name__ == "__main__":
     io_args.add_argument('--date_key', type=str, help='Specify column/key name for date in dataset metadata table')
     io_args.add_argument('--task_key', type=str, help='Specify column/key name for tasks in dataset metadata table')
     io_args.add_argument('--audio_key', type=str, help='Specify column/key name for audio file names in dataset metadata table')
-    io_args.add_argument('--proportions', nargs="+", type=List[float], default=[0.8,0.1,0.1], help='Specify split proportions.')
+    io_args.add_argument('--proportions', nargs="+", type=List[float], default=[0.75,0.15,0.15], help='Specify split proportions.')
     io_args.add_argument('--clip_length', type=float, help="Specify audio clip length in s.")
     io_args.add_argument('--trim_level', type=float, help="Specify silence trim level (dB for use_librosa, trigger level for torchaudio)")
     io_args.add_argument('--normalize', action='store_true', help='Specify whether to normalize audio.')
