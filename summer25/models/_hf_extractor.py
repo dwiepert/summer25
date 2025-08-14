@@ -113,6 +113,7 @@ class HFExtractor(BaseExtractor):
                 local_path = Path('.')
                 files = download_to_local(self.pt_ckpt, local_path, self.bucket, directory=True)
                 self.pt_ckpt = files[0].parents[0].absolute()
+                print(f'{self.pt_ckpt} exists = {self.pt_ckpt.exists()}')
                 
             self.feature_extractor = AutoFeatureExtractor.from_pretrained(str(self.pt_ckpt), trust_remote_code=True)
             self.local_path = self.pt_ckpt
