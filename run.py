@@ -250,7 +250,8 @@ def zip_splits(args:argparse.Namespace) -> dict:
     if args.stratify_threshold:
         if isinstance(args.stratify_threshold, float):
             split_args['stratify_threshold'] = args.stratify_threshold
-
+    if args.bucket:
+        split_args['bucket'] = args.bucket
     return split_args
 
 def zip_dataset(args:argparse.Namespace) -> dict:
