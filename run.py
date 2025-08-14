@@ -84,7 +84,7 @@ def check_load(args:dict) -> dict:
 
     return args
 
-def check_model(args:dict ) -> dict:
+def check_model(args:dict) -> dict:
     """
     Check if a model config file exists or has been given, load in if it does, and ensure required arguments are there and pass assertions. 
 
@@ -230,25 +230,25 @@ def zip_splits(args:argparse.Namespace) -> dict:
     split_args = {'audio_dir': args.audio_dir, 'split_dir': args.split_dir,
                   'seed': args.seed, 'save': args.save_split, 'load_existing': args.load_existing_split, 'as_json':args.as_json}
 
-    assert args['subject_key']
-    assert args['date_key']
-    assert args['task_key']
-    assert args['audio_key']
+    assert args.subject_key
+    assert args.date_key
+    assert args.task_key
+    assert args.audio_key
     split_args['subject_key'] = args.subject_key
     split_args['date_key'] = args.date_key
     split_args['task_key'] = args.task_key
     split_args['audio_key'] = args.audio_key
-    if args['target_tasks']:
-        if isinstance(args['target_tasks'], list):
+    if args.target_tasks:
+        if isinstance(args.target_tasks, list):
             split_args['target_tasks'] = args.target_tasks
-    if args['target_features']:
-        if isinstance(args['target_features'], list):
+    if args.target_features:
+        if isinstance(args.target_features, list):
             split_args['target_features'] = args.target_features
-    if args['proportions']:
-        if isinstance(args['proportions'], list):
+    if args.proportions:
+        if isinstance(args.proportions, list):
             split_args['proportions'] = args.proportions
-    if args['stratify_threshold']:
-        if isinstance(args['stratify_threshold'], float):
+    if args.stratify_threshold:
+        if isinstance(args.stratify_threshold, float):
             split_args['stratify_threshold'] = args.stratify_threshold
 
     return split_args
