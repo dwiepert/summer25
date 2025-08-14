@@ -335,7 +335,7 @@ class Trainer():
             true, pred = temp['true'],temp['pred']
             temp['bacc'] = balanced_accuracy_score(true, pred)
             temp['acc'] = accuracy_score(true, pred)
-            temp['roc_auc'] = roc_auc_score(true, pred)
+            #temp['roc_auc'] = roc_auc_score(true, pred)
             per_feature[t] = temp
 
         metrics = {'loss':running_loss, 'avg_loss': (running_loss / len(test_loader)), 'feature_metrics': per_feature}
