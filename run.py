@@ -38,13 +38,13 @@ def check_load(args:dict) -> dict:
     :param args: dictionary of arguments - vars(argparse object)
     :return args: updated args dictionary
     """ 
-    if 'load_cfg' in args:
+    if args['load_cfg']:
         load_cfg = args.pop('load_cfg')
         args.update(load_cfg)
 
     for r in _REQUIRED_LOAD:
-        assert r in args, f'The required argument `{r}` was not given. Use `-h` or `--help` if information on the argument is needed.'
-
+        assert args[r], f'The required argument `{r}` was not given. Use `-h` or `--help` if information on the argument is needed.'
+    
     assert args['audio_dir'], 'Audio directory not given.'
     assert args['split_dir'], 'Split dir not given.'
     assert args['output_dir'], 'Output directory not given.'
@@ -60,14 +60,16 @@ def check_load(args:dict) -> dict:
         assert args['scheduler_type'] in _SCHEDULER, 'Invalid scheduler type.'
         if args['scheduler_type'] == 'exponential':
             if not args['gamma']:
-                assert 'end_lr' in args, 'Must give end_lr for exponential scheduler.'
+                assert args['end_lr'], 'Must give end_lr for exponential scheduler.'
+                assert isinstance(args['end_lr'], float), 'Must give end_lr for exponential scheduler.'
         elif args['scheduler_type'] == 'warmup-cosine':
-            assert 'warmup_epochs' in args, 'Must give warmup_epochs for warmup lr'
-
+            assert args['warmup_epochs'], 'Must give warmup_epochs for warmup lr'
+            assert isinstance(args['warmup_epochs'], int), 'Must give warmup_epochs for warmup lr'
     assert args['optim_type'] in _OPTIMIZER, 'Invalid optimizer type'
 
     if args['bucket_name']:
-        assert 'project_name' in args, 'Must give project name'
+        assert args['project_name'], 'Must give project name'
+        assert isinstance(args['project_name'], str),  'Must give project name'
         storage_client = storage.Client(project=args['project_name'])
         bucket = storage_client.bucket(args['bucket_name'])
         existing = search_gcs(args['audio_dir'], args['audio_dir'], bucket)
@@ -101,16 +103,15 @@ def check_model(args:dict ) -> dict:
 
     #TODO: compare existing model_cfg and given arguments? or just overwrite with existing arguments? 
 
-    if 'model_cfg' in args:
+    if args['model_cfg']:
         model_cfg = args.pop('model_cfg')
-
         args.update(model_cfg)
 
     if existing_cfg is not None:
         args.update(existing_cfg)
         
     for r in _REQUIRED_MODEL_ARGS:
-        assert r in args, f'The required argument `{r}` was not given in a config file or in the command line. Use `-h` or `--help` if information on the argument is needed.'
+        assert args[r], f'The required argument `{r}` was not given in a config file or in the command line. Use `-h` or `--help` if information on the argument is needed.'
 
     if args['clf_ckpt'] is not None:
         if not isinstance(args['clf_ckpt'], Path): args['clf_ckpt'] = Path(args['clf_ckpt'])
@@ -120,10 +121,10 @@ def check_model(args:dict ) -> dict:
     args['hf_model'] = False
     if 'hf_hub' in _MODELS[args['model_type']]: args['hf_model'] = True
         
-    assert 'freeze_method' in args, 'Freeze method not given. Check command line arguments or model configuration file.'
-    if args['freeze_method'] == 'layer': assert 'unfreeze_layers' in args, 'unfreeze_layers must be given if freeze method is `layer`.'
+    assert args['freeze_method'], 'Freeze method not given. Check command line arguments or model configuration file.'
+    if args['freeze_method'] == 'layer': assert args['unfreeze_layers'], 'unfreeze_layers must be given if freeze method is `layer`.'
     
-    assert 'finetune_method' in args, 'Finetune method not given. Check command line arguments or model configuration file.'
+    assert args['finetune_method'], 'Finetune method not given. Check command line arguments or model configuration file.'
     
     if args['bucket']:
         assert args['pt_ckpt'], 'Must give pt_ckpt if loading from bucket'
@@ -229,22 +230,26 @@ def zip_splits(args:argparse.Namespace) -> dict:
     split_args = {'audio_dir': args.audio_dir, 'split_dir': args.split_dir,
                   'seed': args.seed, 'save': args.save_split, 'load_existing': args.load_existing_split, 'as_json':args.as_json}
 
-    assert 'subject_key' in args
-    assert 'date_key' in args
-    assert 'task_key' in args
-    assert 'audio_key' in args
+    assert args['subject_key']
+    assert args['date_key']
+    assert args['task_key']
+    assert args['audio_key']
     split_args['subject_key'] = args.subject_key
     split_args['date_key'] = args.date_key
     split_args['task_key'] = args.task_key
     split_args['audio_key'] = args.audio_key
-    if 'target_tasks' in args:
-        split_args['target_tasks'] = args.target_tasks
-    if 'target_features' in args:
-        split_args['target_features'] = args.target_features
-    if 'proportions' in args:
-        split_args['proportions'] = args.proportions
-    if 'stratify_threshold' in args:
-        split_args['stratify_threshold'] = args.stratify_threshold
+    if args['target_tasks']:
+        if isinstance(args['target_tasks'], list):
+            split_args['target_tasks'] = args.target_tasks
+    if args['target_features']:
+        if isinstance(args['target_features'], list):
+            split_args['target_features'] = args.target_features
+    if args['proportions']:
+        if isinstance(args['proportions'], list):
+            split_args['proportions'] = args.proportions
+    if args['stratify_threshold']:
+        if isinstance(args['stratify_threshold'], float):
+            split_args['stratify_threshold'] = args.stratify_threshold
 
     return split_args
 
@@ -398,12 +403,12 @@ if __name__ == "__main__":
     train_args.add_argument('--margin', type=float,default=1.0, help='Specify margin for rank loss.')
     train_args.add_argument('--bce_weight', type=float,default=0.5, help='Specify weighting of BCE for rank loss.')
     train_args.add_argument('--scheduler_type', type=str, choices=_SCHEDULER, help='Specify type of scheduler to use.')
-    train_args.add_argument('--end_lr', type=str, help='Specify end learning rate if using exponential scheduler')
-    train_args.add_argument('--end_tf_lr', type=str, help='Optionally specify end learning rate for transformer if using exponential scheduler')
-    train_args.add_argument('--gamma', type=str, help='Specify gamma if using exponential scheduler')
-    train_args.add_argument('--tf_gamma', type=str, help='Optionally specify gamma for transformer if using exponential scheduler')
-    train_args.add_argument('--warmup_epochs', type=str, help='Specify warmup_epochs if using warmup scheduler.')
-    train_args.add_argument('--tf_warmup_epochs', type=str, help='Optionally specify warmup_epochs for transformer if using warmup scheduler.')
+    train_args.add_argument('--end_lr', type=float, help='Specify end learning rate if using exponential scheduler')
+    train_args.add_argument('--end_tf_lr', type=float, help='Optionally specify end learning rate for transformer if using exponential scheduler')
+    train_args.add_argument('--gamma', type=float, help='Specify gamma if using exponential scheduler')
+    train_args.add_argument('--tf_gamma', type=float, help='Optionally specify gamma for transformer if using exponential scheduler')
+    train_args.add_argument('--warmup_epochs', type=int, help='Specify warmup_epochs if using warmup scheduler.')
+    train_args.add_argument('--tf_warmup_epochs', type=int, help='Optionally specify warmup_epochs for transformer if using warmup scheduler.')
     train_args.add_argument('--early_stop', action='store_true', help='Specify whether to use early stopping.')
     train_args.add_argument('--patience', type=int, help='Specify patience for early stopping. (default = 5)')
     train_args.add_argument('--delta', type=float, help='Specify delta for early stopping.')
