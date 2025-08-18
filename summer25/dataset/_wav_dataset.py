@@ -96,6 +96,8 @@ class WavDataset(BaseDataset):
         self.trim_level = self._check_existence(self.config,'trim_level')
 
         waveform_loader = UidToWaveform(prefix=self.prefix, bucket=self.bucket, extension=self.extension, lib=self.use_librosa, structured=self.structured)
+        
+        
         tensor_tfm = ToTensor()
         transform_list = [waveform_loader, tensor_tfm]
         if self.resample_rate: #16000

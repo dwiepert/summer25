@@ -38,8 +38,7 @@ def load_waveform(input_dir:Union[Path, str], uid:str, extension:str='wav', lib:
 
     if bucket: 
         blob = bucket.blob(str(waveform_path))
-        wave_input = blob.download_as_bytes()
-        #wave_input = io.BytesIO(wave_string)
+        wave_input = io.BytesIO(blob.download_as_bytes())
     else:
         wave_input = waveform_path 
     

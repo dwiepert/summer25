@@ -440,10 +440,14 @@ if __name__ == "__main__":
     da = zip_dataset(updated_args)
     fa = zip_finetune(updated_args) #don't forget extra scheduler args
 
-    if 'bucket' in ma:
-        print(ma['bucket'])
+    if updated_args.bucket:
+        assert 'bucket' in ma['config']
+        assert 'bucket' in sa
+        assert 'bucket' in da
+        assert 'bucket' in fa
     else:
         print('No bucket available')
+        
     model = CustomAutoModel.from_pretrained(**ma)
     
     #DATA SPLIT
