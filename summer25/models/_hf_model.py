@@ -590,13 +590,16 @@ class HFModel(BaseModel):
 
         clf_output = self.classifier_head(pooled)
 
-        del inputs
-        del attention_mask
-        del output 
-        del pooled 
-        del ds_attn_mask 
-        del expand_attn_mask 
-        
+        try:
+            del inputs
+            del attention_mask
+            del output 
+            del pooled 
+            del ds_attn_mask 
+            del expand_attn_mask 
+        except:
+            pass
+
         return clf_output
 
 

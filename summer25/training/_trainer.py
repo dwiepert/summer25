@@ -209,9 +209,12 @@ class Trainer():
 
             self.tf_optim.step()
             self.clf_optim.step()
-
-            del targets
-            del outputs
+            
+            try:
+                del targets
+                del outputs
+            except:
+                pass
 
 
         self.log['train_loss'].append(running_loss)
@@ -235,8 +238,12 @@ class Trainer():
 
                 loss = self.criterion(outputs, targets)
                 running_vloss += loss.item()
-                del targets
-                del outputs
+
+                try:
+                    del targets
+                    del outputs
+                except:
+                    pass
 
         self.log['val_loss'].append(running_vloss)
         self.log['avg_val_loss'].append((running_vloss / len(val_loader)))
@@ -333,9 +340,12 @@ class Trainer():
                     temp_true.extend(targets[:,i].tolist())
                     temp_pred.extend([(o>0.5).float().item() for o in outputs[:,i]])
                     per_feature[t]= {'true':temp_true, 'pred':temp_pred}
-      
-                del targets 
-                del outputs
+                
+                try:
+                    del targets 
+                    del outputs
+                except:
+                    pass
 
 
         for t in self.target_features:
