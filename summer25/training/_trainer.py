@@ -7,6 +7,7 @@ Last modified: 07/2025
 #IMPORTS
 ##built-in
 import json
+import gc
 from pathlib import Path
 import os
 from typing import Union, List
@@ -213,6 +214,8 @@ class Trainer():
             try:
                 del targets
                 del outputs
+                gc.collect()
+                torch.cuda.empty_cache()
             except:
                 pass
 
@@ -242,6 +245,8 @@ class Trainer():
                 try:
                     del targets
                     del outputs
+                    gc.collect()
+                    torch.cuda.empty_cache()
                 except:
                     pass
 
@@ -344,6 +349,8 @@ class Trainer():
                 try:
                     del targets 
                     del outputs
+                    gc.collect()
+                    torch.cuda.empty_cache()
                 except:
                     pass
 

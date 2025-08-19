@@ -7,6 +7,7 @@ Last modified: 06/2025
 
 #IMPORT
 ##built-in
+import gc
 import os
 from pathlib import Path
 import shutil
@@ -597,6 +598,8 @@ class HFModel(BaseModel):
             del pooled 
             del ds_attn_mask 
             del expand_attn_mask 
+            gc.collect()
+            torch.cuda.empty_cache()
         except:
             pass
 
