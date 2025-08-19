@@ -586,8 +586,18 @@ class HFModel(BaseModel):
         output[~(expand_attn_mask==1.0)] = 0.0
 
         pooled = self._pool(output, ds_attn_mask)
- 
-        return self.classifier_head(pooled)
+
+
+        clf_output = self.classifier_head(pooled)
+
+        del inputs
+        del attention_mask
+        del output 
+        del pooled 
+        del ds_attn_mask 
+        del expand_attn_mask 
+        
+        return clf_output
 
 
     

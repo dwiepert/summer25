@@ -197,7 +197,7 @@ class Trainer():
         self.model.train()
         running_loss = 0.
         for data in tqdm(train_loader):
-            inputs, targets = data['waveform'].to(self.model.device), data['targets'].to(self.model.device)
+            inputs, targets = data['waveform'], data['targets'].to(self.model.device)
             self.tf_optim.zero_grad()
             self.clf_optim.zero_grad()
 
@@ -210,7 +210,6 @@ class Trainer():
             self.tf_optim.step()
             self.clf_optim.step()
 
-            del inputs
             del targets
             del outputs
 
@@ -230,13 +229,12 @@ class Trainer():
         running_vloss = 0.0
         with torch.no_grad():
             for data in tqdm(val_loader):
-                inputs, targets= data['waveform'].to(self.model.device), data['targets'].to(self.model.device)
+                inputs, targets= data['waveform'], data['targets'].to(self.model.device)
     
                 outputs = self.model(inputs)
 
                 loss = self.criterion(outputs, targets)
                 running_vloss += loss.item()
-                del inputs
                 del targets
                 del outputs
 
@@ -318,7 +316,7 @@ class Trainer():
         with torch.no_grad():
             running_loss = 0.0
             for data in tqdm(test_loader):
-                inputs, targets = data['waveform'].to(self.model.device), data['targets'].to(self.model.device)
+                inputs, targets = data['waveform'], data['targets'].to(self.model.device)
                 
                 outputs = self.model(inputs)
                 
@@ -335,8 +333,7 @@ class Trainer():
                     temp_true.extend(targets[:,i].tolist())
                     temp_pred.extend([(o>0.5).float().item() for o in outputs[:,i]])
                     per_feature[t]= {'true':temp_true, 'pred':temp_pred}
-                
-                del inputs
+      
                 del targets 
                 del outputs
 
