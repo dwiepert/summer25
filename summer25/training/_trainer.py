@@ -200,8 +200,7 @@ class Trainer():
         gradient_accumulation_steps = 2
 
         for index, data in tqdm(enumerate(train_loader)):
-            print(f'Memory allocated: {torch.cuda.memory_allocated()}')
-            print(f'Max memory: {torch.cuda.max_memory_allocated()}')
+            self.model._check_memory(f'Batch {index} start.')
 
             inputs, targets = data['waveform'], data['targets'].to(self.model.device)
             
@@ -214,6 +213,7 @@ class Trainer():
             loss = loss / gradient_accumulation_steps
             loss.backward()
             running_loss += loss.item()
+            self.model._check_memory('Backprop finished.')
 
             if (index + 1) % gradient_accumulation_steps == 0:
                 self.tf_optim.step()
@@ -225,6 +225,8 @@ class Trainer():
             del outputs
             gc.collect()
             torch.cuda.empty_cache()
+
+            self.model._check_memory('Cache emptied.')
 
 
         self.log['train_loss'].append(running_loss)
@@ -242,7 +244,7 @@ class Trainer():
         running_vloss = 0.0
         with torch.no_grad():
             for data in tqdm(val_loader):
-                print(f'Memory used: {(torch.cuda.memory_allocated()/torch.cuda.max_memory_allocated())*100}%')
+                self.model._check_memory('Validation start.')
                 
                 inputs, targets= data['waveform'], data['targets'].to(self.model.device)
     

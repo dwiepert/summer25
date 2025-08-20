@@ -19,6 +19,7 @@ from huggingface_hub import snapshot_download
 from peft import LoraConfig, PromptTuningConfig, PromptTuningInit
 import torch
 import torch.nn.functional as F
+import torch.nn as nn
 from transformers import AutoModel, WhisperModel
 
 ##local
@@ -57,6 +58,7 @@ class HFModel(BaseModel):
     :param seed: int, specify random seed for ensuring reproducibility (default = 42)
     :param device: torch device (default = cuda)
     :param from_hub: bool, specify whether to load from hub or from existing pt_ckpt (default = True)
+    :param print_memory: bool, true if printing memory information
     :param bucket: gcs bucket (default = None)
     """
     def __init__(self, 
@@ -64,7 +66,7 @@ class HFModel(BaseModel):
                  out_features:int=1, nlayers:int=2, activation:str='relu', bottleneck:int=None, layernorm:bool=False, dropout:float=0.0, binary:bool=True, clf_type:str='linear', num_heads:int=4, separate:bool=True,
                  lora_rank:Optional[int]=8, lora_alpha:Optional[int]=16, lora_dropout:Optional[float]=0.0, virtual_tokens:Optional[int]=4,
                  seed:int=42, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
-                 from_hub:bool=True, bucket=None):
+                 from_hub:bool=True, print_bucket:bool=False, bucket=None):
 
         super().__init__(model_type=model_type, out_dir=out_dir, finetune_method=finetune_method,
                          freeze_method=freeze_method, unfreeze_layers=unfreeze_layers, pool_method=pool_method,
@@ -73,6 +75,7 @@ class HFModel(BaseModel):
                          device=device, seed=seed, pool_dim=_MODELS[model_type]['pool_dim'], bucket=bucket)
 
         #HF ARGS
+        self.print_bucket = print_bucket
         self.normalize = normalize
         self.lora_rank = lora_rank
         self.lora_alpha = lora_alpha
@@ -242,6 +245,15 @@ class HFModel(BaseModel):
 
         self.config['model_checkpoint'] = str(checkpoint)
     
+    def configure_data_parallel(self, data_parallel:bool):
+        """
+        Make model compatible with multiple gpus
+        """
+        assert self.base_model is not None, 'Model not loaded'
+        if data_parallel:
+            self.base_model = nn.DataParallel(self.base_model)
+            self.classifier_head.configure_data_parallel(data_parallel)
+        
     def _save_model_checkpoint(self, path:Union[str,Path]):
         """
         Save base model with hugging face specific method
@@ -560,6 +572,18 @@ class HFModel(BaseModel):
         attn_mask = F.interpolate(attn_mask, size=target_len, mode="nearest")  # downsample
         return attn_mask.squeeze(1)
     
+    def _check_memory(self, notice:str=None):
+        """
+        Check memory
+        notice: str, notice to print
+        """
+        if self.print_memory:
+            if notice:
+                print(f'{notice}')
+            print(f'Reserved memory: {torch.cuda.memory_reserved(0)}, {torch.cuda.memory_reserved(1)}')
+            print(f'Current memory allocated:{torch.cuda.memory_allocated(0)}, {torch.cuda.memory_allocated(1)}')
+            print(f'Current memory available:{torch.cuda.memory_reserved(0) - torch.cuda.memory_allocated(0)}, {torch.cuda.memory_reserved(1)-torch.cuda.memory_allocated(1)}')
+        
     ### main function(s) ###
     def forward(self, waveform:List[torch.Tensor]) -> torch.Tensor:
         """
@@ -568,7 +592,8 @@ class HFModel(BaseModel):
         :param sample: batched sample feature input
         :return: classifier output
         """
-        print(f'Memory used: {(torch.cuda.memory_allocated()/torch.cuda.max_memory_allocated())*100}%')
+        self._check_memory('Starting HF Model forward loop')
+        
         
         assert self.feature_extractor, 'Extractor checkpoints not loaded in.'
         assert self.base_model, 'Model checkpoints not loaded in.'
@@ -576,16 +601,16 @@ class HFModel(BaseModel):
         inputs, attention_mask = self.feature_extractor(waveform)
         inputs = inputs.to(self.device)
         attention_mask = attention_mask.bool()
-
-        print(f'Memory used: {(torch.cuda.memory_allocated()/torch.cuda.max_memory_allocated())*100}%')
-
+        
+        self._check_memory('Feature extractor finished. Inputs/attention mask sent to device. Geting base model outputs.')
+    
         if self.is_whisper_model:
             output = self.base_model.encoder(inputs, attention_mask=attention_mask)
         else:
             output = self.base_model(inputs, attention_mask=attention_mask)
 
         del inputs
-        print(f'Memory used: {(torch.cuda.memory_allocated()/torch.cuda.max_memory_allocated())*100}%')
+        self._check_memory('Model encoding retrieved. Starting pooling.')
 
         hs = output['last_hidden_state']
         del output 
@@ -597,18 +622,17 @@ class HFModel(BaseModel):
         pooled = self._pool(hs, ds_attn_mask.to(self.device))
         del ds_attn_mask
 
-        print(f'Memory used: {(torch.cuda.memory_allocated()/torch.cuda.max_memory_allocated())*100}%')
+        self._check_memory('Pooling finished. Sending to classifier.')
 
         clf_output = self.classifier_head(pooled)
         del pooled 
-
-        print(f'Memory used: {(torch.cuda.memory_allocated()/torch.cuda.max_memory_allocated())*100}%')
+        
+        self._check_memory('Classifier finished. Emptying cache.')
         
         gc.collect()
         torch.cuda.empty_cache()
         
-        print(f'Memory used: {(torch.cuda.memory_allocated()/torch.cuda.max_memory_allocated())*100}%')
+        self._check_memory()
         return clf_output
-
 
     

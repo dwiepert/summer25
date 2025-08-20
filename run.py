@@ -188,7 +188,7 @@ def zip_model(args:argparse.Namespace) -> dict:
         model_args = {'model_type':args.model_type,'out_dir':args.output_dir,
                     'freeze_method':args.freeze_method, 'pool_method':args.pool_method,
                     'seed':args.seed,'finetune_method': args.finetune_method,  'normalize':args.normalize,
-                    'device':torch.device("cuda" if torch.cuda.is_available() else "cpu")}
+                    'device':torch.device("cuda" if torch.cuda.is_available() else "cpu"), "print_memory":args.print_memory}
         d = model_args['device']
         print(f'Current device: {d}')
     else:
@@ -423,6 +423,7 @@ if __name__ == "__main__":
     train_args.add_argument('--delta', type=float, help='Specify delta for early stopping.')
     train_args.add_argument('--epochs', type=int, default=1, help='Specify epochs for finetuning. (default = 1)')
     train_args.add_argument('--eval_only', action='store_true', help='Specify whether to only run evaluation.')
+    train_args.add_argument('--print_memory', action='store_true', help='Specify whether to print memory.' )
     train_args.add_argument('--debug', action='store_true')
     args = parser.parse_args()
     

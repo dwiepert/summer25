@@ -9,9 +9,6 @@ Last modified: 08/2025
 from pathlib import Path
 from typing import Union, Optional
 
-##third-party
-import torch.nn.DataParallel as DataParallel
-
 ##local
 from summer25.constants import *
 from summer25.io import search_gcs
@@ -87,6 +84,7 @@ class CustomAutoModel:
             mt = config['model_type']
             raise NotImplementedError(f'{mt} not implemented')
         
+        model._check_memory('Model initialized')
         assert pt_checkpoint or ft_checkpoint or model.from_hub, 'Must give a pretrained checkpoint, finetuned checkpoint, or load from hf hub.'
 
         # PEFT
@@ -129,6 +127,7 @@ class CustomAutoModel:
             model.load_model_checkpoint(pt_checkpoint, pt_delete_download, pt_from_hub)
             if model.bucket:
                 pt_checkpoint = model.local_path
+
         if clf_checkpoint:
             model.load_clf_checkpoint(clf_checkpoint, delete_download)
 
@@ -137,13 +136,17 @@ class CustomAutoModel:
                 model.configure_peft(ft_checkpoint, 'ft', peft_delete_download, False)
             else:
                 model.configure_peft(pt_checkpoint, 'pt', peft_delete_download, peft_from_hub)
-            
+        
+        model._check_memory('Checkpoints loaded.')
+
         model.save_config() #TODO
 
         if data_parallel:
-            model = DataParallel(model)
-            
+            model.configure_data_parallel(data_parallel)
+            model._check_memory('Data parallelization set up.')
+
         model.to(model.device)
+        model._check_memory('Model sent to device.')
         return model 
     
     
