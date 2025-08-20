@@ -197,27 +197,34 @@ class Trainer():
         """
         self.model.train()
         running_loss = 0.
-        for data in tqdm(train_loader):
+        gradient_accumulation_steps = 2
+
+        for index, data in tqdm(enumerate(train_loader)):
+            print(f'Memory allocated: {torch.cuda.memory_allocated()}')
+            print(f'Max memory: {torch.cuda.max_memory_allocated()}')
+
             inputs, targets = data['waveform'], data['targets'].to(self.model.device)
-            self.tf_optim.zero_grad()
-            self.clf_optim.zero_grad()
+            
+            #self.tf_optim.zero_grad()
+            #self.clf_optim.zero_grad()
 
             outputs = self.model(inputs)
 
             loss = self.criterion(outputs, targets)
+            loss = loss / gradient_accumulation_steps
             loss.backward()
             running_loss += loss.item()
 
-            self.tf_optim.step()
-            self.clf_optim.step()
+            if (index + 1) % gradient_accumulation_steps == 0:
+                self.tf_optim.step()
+                self.clf_optim.step()
+                self.tf_optim.zero_grad()
+                self.clf_optim.zero_grad()
             
-            try:
-                del targets
-                del outputs
-                gc.collect()
-                torch.cuda.empty_cache()
-            except:
-                pass
+            del targets
+            del outputs
+            gc.collect()
+            torch.cuda.empty_cache()
 
 
         self.log['train_loss'].append(running_loss)
@@ -235,6 +242,8 @@ class Trainer():
         running_vloss = 0.0
         with torch.no_grad():
             for data in tqdm(val_loader):
+                print(f'Memory used: {(torch.cuda.memory_allocated()/torch.cuda.max_memory_allocated())*100}%')
+                
                 inputs, targets= data['waveform'], data['targets'].to(self.model.device)
     
                 outputs = self.model(inputs)
@@ -242,13 +251,11 @@ class Trainer():
                 loss = self.criterion(outputs, targets)
                 running_vloss += loss.item()
 
-                try:
-                    del targets
-                    del outputs
-                    gc.collect()
-                    torch.cuda.empty_cache()
-                except:
-                    pass
+                del targets
+                del outputs
+                gc.collect()
+                torch.cuda.empty_cache()
+
 
         self.log['val_loss'].append(running_vloss)
         self.log['avg_val_loss'].append((running_vloss / len(val_loader)))

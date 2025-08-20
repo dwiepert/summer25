@@ -568,41 +568,46 @@ class HFModel(BaseModel):
         :param sample: batched sample feature input
         :return: classifier output
         """
+        print(f'Memory used: {(torch.cuda.memory_allocated()/torch.cuda.max_memory_allocated())*100}%')
+        
         assert self.feature_extractor, 'Extractor checkpoints not loaded in.'
         assert self.base_model, 'Model checkpoints not loaded in.'
 
         inputs, attention_mask = self.feature_extractor(waveform)
         inputs = inputs.to(self.device)
-        attention_mask = attention_mask.bool().to(self.device)
+        attention_mask = attention_mask.bool()
+
+        print(f'Memory used: {(torch.cuda.memory_allocated()/torch.cuda.max_memory_allocated())*100}%')
 
         if self.is_whisper_model:
             output = self.base_model.encoder(inputs, attention_mask=attention_mask)
         else:
             output = self.base_model(inputs, attention_mask=attention_mask)
 
-        output = output['last_hidden_state']
+        del inputs
+        print(f'Memory used: {(torch.cuda.memory_allocated()/torch.cuda.max_memory_allocated())*100}%')
+
+        hs = output['last_hidden_state']
+        del output 
         
-        ds_attn_mask = self._downsample_attention_mask(attn_mask=attention_mask.to(torch.float16), target_len=output.shape[1])
+        ds_attn_mask = self._downsample_attention_mask(attn_mask=attention_mask.to(torch.float16), target_len=hs.shape[1])
         expand_attn_mask = ds_attn_mask.unsqueeze(-1).repeat(1, 1, output.shape[2])
-        output[~(expand_attn_mask==1.0)] = 0.0
+        hs[~(expand_attn_mask==1.0)] = 0.0
 
-        pooled = self._pool(output, ds_attn_mask)
+        pooled = self._pool(hs, ds_attn_mask.to(self.device))
+        del ds_attn_mask
 
+        print(f'Memory used: {(torch.cuda.memory_allocated()/torch.cuda.max_memory_allocated())*100}%')
 
         clf_output = self.classifier_head(pooled)
+        del pooled 
 
-        try:
-            del inputs
-            del attention_mask
-            del output 
-            del pooled 
-            del ds_attn_mask 
-            del expand_attn_mask 
-            gc.collect()
-            torch.cuda.empty_cache()
-        except:
-            pass
-
+        print(f'Memory used: {(torch.cuda.memory_allocated()/torch.cuda.max_memory_allocated())*100}%')
+        
+        gc.collect()
+        torch.cuda.empty_cache()
+        
+        print(f'Memory used: {(torch.cuda.memory_allocated()/torch.cuda.max_memory_allocated())*100}%')
         return clf_output
 
 
