@@ -2,7 +2,7 @@
 Model class for hugging face models
 
 Author(s): Daniela Wiepert
-Last modified: 06/2025
+Last modified: 08/2025
 """
 
 #IMPORT
@@ -66,7 +66,7 @@ class HFModel(BaseModel):
                  out_features:int=1, nlayers:int=2, activation:str='relu', bottleneck:int=None, layernorm:bool=False, dropout:float=0.0, binary:bool=True, clf_type:str='linear', num_heads:int=4, separate:bool=True,
                  lora_rank:Optional[int]=8, lora_alpha:Optional[int]=16, lora_dropout:Optional[float]=0.0, virtual_tokens:Optional[int]=4,
                  seed:int=42, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
-                 from_hub:bool=True, print_bucket:bool=False, bucket=None):
+                 from_hub:bool=True, print_memory:bool=False, bucket=None):
 
         super().__init__(model_type=model_type, out_dir=out_dir, finetune_method=finetune_method,
                          freeze_method=freeze_method, unfreeze_layers=unfreeze_layers, pool_method=pool_method,
@@ -75,7 +75,7 @@ class HFModel(BaseModel):
                          device=device, seed=seed, pool_dim=_MODELS[model_type]['pool_dim'], bucket=bucket)
 
         #HF ARGS
-        self.print_bucket = print_bucket
+        self.print_memory = print_memory
         self.normalize = normalize
         self.lora_rank = lora_rank
         self.lora_alpha = lora_alpha
@@ -600,14 +600,14 @@ class HFModel(BaseModel):
 
         inputs, attention_mask = self.feature_extractor(waveform)
         inputs = inputs.to(self.device)
-        attention_mask = attention_mask.bool()
+        attention_mask = attention_mask.bool().to(self.device)
         
         self._check_memory('Feature extractor finished. Inputs/attention mask sent to device. Geting base model outputs.')
     
         if self.is_whisper_model:
             output = self.base_model.encoder(inputs, attention_mask=attention_mask)
         else:
-            output = self.base_model(inputs, attention_mask=attention_mask)
+            output = self.base_model(inputs, attention_mask=attention_mask, key_padding_mask=None)
 
         del inputs
         self._check_memory('Model encoding retrieved. Starting pooling.')
@@ -615,9 +615,10 @@ class HFModel(BaseModel):
         hs = output['last_hidden_state']
         del output 
         
-        ds_attn_mask = self._downsample_attention_mask(attn_mask=attention_mask.to(torch.float16), target_len=hs.shape[1])
-        expand_attn_mask = ds_attn_mask.unsqueeze(-1).repeat(1, 1, output.shape[2])
+        ds_attn_mask = self._downsample_attention_mask(attn_mask=attention_mask.to(torch.float16).detach(), target_len=hs.shape[1])
+        expand_attn_mask = ds_attn_mask.unsqueeze(-1).repeat(1, 1, hs.shape[2])
         hs[~(expand_attn_mask==1.0)] = 0.0
+        del attention_mask
 
         pooled = self._pool(hs, ds_attn_mask.to(self.device))
         del ds_attn_mask

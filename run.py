@@ -434,28 +434,15 @@ if __name__ == "__main__":
     args_dict_m = check_model(args_dict_l)
     updated_args = save_path(argparse.Namespace(**args_dict_m))
 
-    ## INITIALIZE EXTRACTOR AND MODEL
-    ma = zip_model(updated_args)
-    ca, cckpt = zip_clf(updated_args)
-    temp_config = ma['config']
-    temp_config.update(ca)
-    ma['config'] = temp_config
-    ma['clf_checkpoint'] = cckpt
-
     sa = zip_splits(updated_args)
     da = zip_dataset(updated_args)
-    fa = zip_finetune(updated_args) #don't forget extra scheduler args
 
     if updated_args.bucket:
-        assert 'bucket' in ma['config']
         assert 'bucket' in sa
         assert 'bucket' in da
-        assert 'bucket' in fa
     else:
         print('No bucket available')
         
-    model = CustomAutoModel.from_pretrained(**ma)
-    
     #DATA SPLIT
     train_df, val_df, test_df = seeded_split(**sa)
 
@@ -464,10 +451,6 @@ if __name__ == "__main__":
         val_df = val_df[:10]
         test_df = test_df[:10]
     
-    if fa['scheduler_type']:
-        if 'cosine' in fa['scheduler_type']:
-            fa['train_len'] = len(train_df) # for cosine annealing scheduler
-
     train_dataset = WavDataset(data=train_df, **da)
     test_dataset = WavDataset(data=test_df,**da)
     val_dataset = WavDataset(data=val_df, **da)
@@ -477,19 +460,30 @@ if __name__ == "__main__":
     val_loader = DataLoader(dataset=val_dataset,batch_size=args.batch_sz,shuffle=False,collate_fn=collate_features, num_workers=args.num_workers)
     test_loader = DataLoader(dataset=test_dataset,batch_size=args.batch_sz,shuffle=False,collate_fn=collate_features, num_workers=args.num_workers)
     
-    """
-    TODO: delete if other option works
-    if model.is_whisper_model:
-        train_loader = DataLoader(dataset=train_dataset,batch_size=args.batch_sz,shuffle=True,collate_fn=collate_features, num_workers=args.num_workers)
-        val_loader = DataLoader(dataset=val_dataset,batch_size=args.batch_sz,shuffle=False,collate_fn=collate_features, num_workers=args.num_workers)
-        test_loader = DataLoader(dataset=test_dataset,batch_size=args.batch_sz,shuffle=False,collate_fn=collate_features, num_workers=args.num_workers)
-    else:
-        collate_fn = collate_wrapper(pad=args.pad, pad_method=args.pad_method)
-        train_loader = DataLoader(dataset=train_dataset,batch_size=args.batch_sz,shuffle=True,collate_fn=collate_fn, num_workers=args.num_workers)
-        val_loader = DataLoader(dataset=val_dataset,batch_size=args.batch_sz,shuffle=False,collate_fn=collate_fn, num_workers=args.num_workers)
-        test_aloader = DataLoader(dataset=test_dataset,batch_size=args.batch_sz,shuffle=False,collate_fn=collate_fn, num_workers=args.num_workers)
-    """
 
+    ## INITIALIZE EXTRACTOR AND MODEL
+    ma = zip_model(updated_args)
+    ca, cckpt = zip_clf(updated_args)
+    temp_config = ma['config']
+    temp_config.update(ca)
+    ma['config'] = temp_config
+    ma['clf_checkpoint'] = cckpt
+
+    fa = zip_finetune(updated_args) #don't forget extra scheduler args
+
+    if updated_args.bucket:
+        assert 'bucket' in ma['config']
+        assert 'bucket' in fa
+    else:
+        print('No bucket available')
+        
+    #INITIALIZE MODEL
+    model = CustomAutoModel.from_pretrained(**ma)
+    
+    if fa['scheduler_type']:
+        if 'cosine' in fa['scheduler_type']:
+            fa['train_len'] = len(train_df) # for cosine annealing scheduler
+    ## TRAIN MODEL
     model_trainer = Trainer(model=model, **fa)
     if not args.eval_only:
         model_trainer.fit(train_loader, val_loader, epochs=args.epochs)

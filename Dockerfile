@@ -21,4 +21,4 @@ RUN git clone https://github.com/dwiepert/summer25.git && \
     pip install .
 
 # #execute code
-#ENTRYPOINT ["python", "summer25/run.py"]
+ENTRYPOINT ["python", "summer25/run.py"]

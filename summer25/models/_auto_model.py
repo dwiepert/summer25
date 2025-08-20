@@ -149,7 +149,3 @@ class CustomAutoModel:
         model._check_memory('Model sent to device.')
         return model 
     
-    
-
-
-    
