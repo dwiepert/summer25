@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import List
 
 ##third-party
+import torch
 from google.cloud import storage
 from torch.utils.data import DataLoader
 
@@ -186,7 +187,10 @@ def zip_model(args:argparse.Namespace) -> dict:
     if args.hf_model:
         model_args = {'model_type':args.model_type,'out_dir':args.output_dir,
                     'freeze_method':args.freeze_method, 'pool_method':args.pool_method,
-                    'seed':args.seed,'finetune_method': args.finetune_method,  'normalize':args.normalize}
+                    'seed':args.seed,'finetune_method': args.finetune_method,  'normalize':args.normalize,
+                    'device':torch.device("cuda" if torch.cuda.is_available() else "cpu")}
+        d = model_args['device']
+        print(f'Current device: {d}')
     else:
         raise NotImplementedError('Only compatible with huggingface models currently.')
     
@@ -218,7 +222,7 @@ def zip_model(args:argparse.Namespace) -> dict:
         from_hub = False
 
     model_args['from_hub'] = from_hub
-    out_args = {'config': model_args, 'ft_checkpoint':ft_ckpt, 'pt_checkpoint':pt_ckpt, 'delete_download':args.delete_download}
+    out_args = {'config': model_args, 'ft_checkpoint':ft_ckpt, 'pt_checkpoint':pt_ckpt, 'delete_download':args.delete_download, 'data_parallel':args.data_parallel}
     return out_args
 
 def zip_splits(args:argparse.Namespace) -> dict:
@@ -343,6 +347,7 @@ if __name__ == "__main__":
     cfg_args.add_argument('--use_existing_cfg', action='store_true', help='Specify whether to use an existing config file if it exists in the given output_dir')
     #I/O
     io_args = parser.add_argument_group('io', 'file related arguments')
+    io_args.add_argument('--data_parallel', action='store_true', help='Specify whether using multiple gpus')
     io_args.add_argument('--bucket_name', type=str, help='Bucket name for GCS.')
     io_args.add_argument('--project_name', type=str, help='GCS project name.')
     io_args.add_argument('--audio_dir', type=Path, help='Directory with audio files & a csv with information on speakers/task.')

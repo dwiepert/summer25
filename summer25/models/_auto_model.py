@@ -9,6 +9,9 @@ Last modified: 08/2025
 from pathlib import Path
 from typing import Union, Optional
 
+##third-party
+import torch.nn.DataParallel as DataParallel
+
 ##local
 from summer25.constants import *
 from summer25.io import search_gcs
@@ -19,7 +22,7 @@ class CustomAutoModel:
     @classmethod
     def from_pretrained(cls, config:dict, ft_checkpoint:Optional[Union[str, Path]]=None, 
                         clf_checkpoint:Optional[Union[str,Path]]=None, pt_checkpoint:Optional[Union[str,Path]]=None,
-                        delete_download:bool=False):
+                        delete_download:bool=False, data_parallel:bool=False):
         """
         Load a model from a pretrained checkpoint
         :param config: dict, config of model arguments
@@ -27,6 +30,7 @@ class CustomAutoModel:
         :param clf_checkpoint: pathlike, classifier checkpoint path as a file (default = None)
         :param pt_checkpoint: pathlike, pretrained checkpoint path as a directorr (default = None)
         :param delete_download: bool, specify whether to delete any local downloads from hugging face (default = False)
+        :param data_parallel: bool, true if using multiple gpus
         """
 
         def _split_ft_checkpoint(ft_checkpoint, clf_checkpoint, bucket, model_type):
@@ -136,6 +140,9 @@ class CustomAutoModel:
             
         model.save_config() #TODO
 
+        if data_parallel:
+            model = DataParallel(model)
+            
         model.to(model.device)
         return model 
     
