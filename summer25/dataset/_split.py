@@ -2,7 +2,7 @@
 Split dataset into random train/val/test sets 
 
 Author(s): Hugo Botha, Daniela Wiepert
-Last modified: 06/2025
+Last modified: 07/2025
 """
 #IMPORTS
 #built-in
@@ -21,12 +21,12 @@ from summer25.constants import _TASKS, _FEATURES
 from summer25.io import search_gcs, upload_to_gcs
 
 ##### HELPER FUNCTIONS #####
-def _check_proportions(proportions:List[float]):
+def _check_proportions(proportions:List[float]) -> List[int]:
     """
     Check proportions are valid and get indices where there is a valid proportion
 
     :param proportions: list of float, list with proportions for each split (default = [.7, .15, .15])
-    :return prop_inds: list of float, list with valid proportions
+    :return prop_inds: list of ints list with indices of valid proportions
     """
     #CHECk PROPORTIONS
     assert len(proportions) == 3, 'Must give a proportion for train/val/test even if validation or test set is 0.'
@@ -37,7 +37,7 @@ def _check_proportions(proportions:List[float]):
 
     return prop_inds
 
-def _check_directories(audio_dir:Union[Path, str], split_dir:Union[Path, str], load_existing:bool, bucket):
+def _check_directories(audio_dir:Union[Path, str], split_dir:Union[Path, str], load_existing:bool, bucket) -> Tuple[Path, Path, bool]:
     """
     Check and adjust directories as necessary
 
@@ -66,7 +66,7 @@ def _check_directories(audio_dir:Union[Path, str], split_dir:Union[Path, str], l
     
     return audio_dir, split_dir, load_existing
 
-def _check_existing(split_dir:Union[Path,str], load_existing:bool, audio_dir:Union[Path,str], bucket):
+def _check_existing(split_dir:Union[Path,str], load_existing:bool, audio_dir:Union[Path,str], bucket) -> bool:
     """
     Check if parent directories exist
 
@@ -211,7 +211,7 @@ def _load_existing(split_dir:Path, as_json:bool, date_key:str, bucket) -> Tuple[
             print(f'No {k} set in split directory. Confirm this is expected behavior.')
             store[k] = None
     
-    ks = list(store.keys())
+    #ks = list(store.keys())
 
     return store['train'], store['val'], store['test']
 
@@ -227,7 +227,7 @@ def _sklearn_split(split_table:pd.DataFrame, subject_key:str, size:float, seed:i
     :return test_subjects: pd.Series, column with test subjects
     """
     # RUN SPLIT
-    X_train, X_test, y_train, y_test = train_test_split(split_table[[subject_key]], split_table[[subject_key]], 
+    X_train, X_test, _, _ = train_test_split(split_table[[subject_key]], split_table[[subject_key]], 
                                                         stratify=split_table[['stratify']],test_size=size, random_state=seed)
 
     train_subjects =  X_train[subject_key].values
@@ -235,7 +235,7 @@ def _sklearn_split(split_table:pd.DataFrame, subject_key:str, size:float, seed:i
     return train_subjects, test_subjects
 
 def _split_name(audio_dir:Union[Path, str] = None, split_dir:Union[Path, str] = None, proportions:List[float] = [0.7,0.15,0.15], 
-                target_tasks:List[str]=None, target_features:List[str]=None, bucket=None, seed:int=42):
+                target_tasks:List[str]=None, target_features:List[str]=None, seed:int=42):
     """
     Get name of split and updated split_dir
 
@@ -244,8 +244,6 @@ def _split_name(audio_dir:Union[Path, str] = None, split_dir:Union[Path, str] = 
     :param proportions: list of float, list with proportions for each split (default = [.7, .15, .15])
     :param target_tasks: List of target tasks to keep in split (default = None)
     :param target_features: List of target features to stratify on/keep (default = None)
-    :param bucket: GCS bucket (default = None)
-
     :return name: str, split name
     """
     # SPLIT NAME
@@ -415,7 +413,7 @@ def _create_split(audio_dir:Union[Path,str], split_dir:Union[Path,str],
     
     if save:
          # SPLIT NAME
-        name = _split_name(audio_dir=audio_dir, split_dir=split_dir, proportions=proportions, target_tasks=target_tasks, target_features=target_features, bucket=bucket, seed= seed)
+        name = _split_name(audio_dir=audio_dir, split_dir=split_dir, proportions=proportions, target_tasks=target_tasks, target_features=target_features, seed= seed)
         _save_split(split_dir, name, temp_dict, as_json, bucket)
 
     return train_df, val_df, test_df
@@ -423,10 +421,11 @@ def _create_split(audio_dir:Union[Path,str], split_dir:Union[Path,str],
 
 ##### SPLIT FUNCTION ##### 
 
-def seeded_split(subject_key:str, date_key:str, audio_key:str, task_key:str, audio_dir:Union[Path, str]=None, split_dir:Union[Path,str]=None, proportions:List[float]=[.7, .15, .15], seed:int=42,
-          save:bool=False, load_existing:bool=False, as_json:bool=False,
-          target_tasks:List[str]=None, target_features:List[str] = None, stratify_threshold:int=10,
-          bucket=None) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def seeded_split(subject_key:str, date_key:str, audio_key:str, task_key:str, audio_dir:Union[Path, str]=None, 
+                 split_dir:Union[Path,str]=None, proportions:List[float]=[.7, .15, .15], seed:int=42,
+                 save:bool=False, load_existing:bool=False, as_json:bool=False,
+                 target_tasks:List[str]=None, target_features:List[str] = None, stratify_threshold:int=10,
+                 bucket=None) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
     Create train/test/val splits
 

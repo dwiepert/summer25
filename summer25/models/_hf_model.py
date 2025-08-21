@@ -248,6 +248,8 @@ class HFModel(BaseModel):
     def configure_data_parallel(self, data_parallel:bool):
         """
         Make model compatible with multiple gpus
+
+        :param data_parallel: bool, true if using data parallelization
         """
         assert self.base_model is not None, 'Model not loaded'
         if data_parallel:
@@ -441,44 +443,7 @@ class HFModel(BaseModel):
         if self.finetune_method != 'none':
             model_name += f'_{self.finetune_method}'
         return model_name
-
-    def _check_checkpoints(self):
-        """
-        Check model checkpoint
-        """
-        #if self.bucket:
-        #    assert self.pt_ckpt, 'Must give pretrained checkpoint path if loading from bucket'
-        ckpt = None
-        #CHECK IF FINETUNED CKPT
-        if self.ft_ckpt:
-            if self.finetune_method == 'lora' or self.finetune_method == 'soft-prompt':
-                #IF NOT FROM HUB, CHECK THAT PT CKPT EXISTS
-                if not self.from_hub:
-                    assert self.pt_ckpt is not None, 'Must give a pt checkpoint'
-                    if not self.bucket:
-                        assert self.pt_ckpt.exists(), 'Given pt_ckpt does not exist.'
-                        assert self.pt_ckpt.is_dir(), 'Expects a directory for hugging face model checkpoints'
-                    else:
-                        existing = search_gcs(self.pt_ckpt, self.pt_ckpt, self.bucket)
-                        assert existing != [] and all([e != self.pt_ckpt for e in existing]), 'Hugging face finetuned model checkpoints should be directories.'
-                    ckpt = self.pt_ckpt
-                #IF FROM HUB, DO NOTHING IT'S FINE
-            else:
-                #IF NOT LORA 
-                ckpt = self.ft_ckpt 
-                self.from_hub = False #must give false to load directly from FT checkpoint
-        elif not self.from_hub or self.pt_ckpt:
-            # IF NOT LOADING FROM HUB AND NOT FT MODEL PATH
-            assert self.pt_ckpt is not None, 'Must give a pt checkpoint'
-
-            if not self.bucket:
-                assert self.pt_ckpt.exists(), 'Given pt_ckpt does not exist.'
-                assert self.pt_ckpt.is_dir(), 'Expects a directory for hugging face model checkpoints'
-            else:
-                existing = search_gcs(self.pt_ckpt, self.pt_ckpt, self.bucket)
-                assert existing != [] and all([e != self.pt_ckpt for e in existing]), 'Hugging face finetuned model checkpoints should be directories.'
-            ckpt = self.pt_ckpt 
-                   
+    
     def _freeze(self):
         """
         Freeze model with specified method

@@ -269,6 +269,8 @@ class Classifier(nn.Module):
     def configure_data_parallel(self, data_parallel:bool):
         """
         Configure data parallelization for multiple GPUs
+
+        :param data_parallel: bool, true if using data parallelization
         """
         if data_parallel:
             self.classifiers = nn.ModuleList([nn.DataParallel(c) for c in self.classifiers])
