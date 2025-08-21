@@ -607,7 +607,7 @@ class HFModel(BaseModel):
         if self.is_whisper_model:
             output = self.base_model.encoder(inputs, attention_mask=attention_mask)
         else:
-            output = self.base_model(inputs, attention_mask=attention_mask, key_padding_mask=None)
+            output = self.base_model(inputs, attention_mask=attention_mask)
 
         del inputs
         self._check_memory('Model encoding retrieved. Starting pooling.')
