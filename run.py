@@ -433,34 +433,7 @@ if __name__ == "__main__":
     args_dict_l = check_load(args_dict)
     args_dict_m = check_model(args_dict_l)
     updated_args = save_path(argparse.Namespace(**args_dict_m))
-
-    sa = zip_splits(updated_args)
-    da = zip_dataset(updated_args)
-
-    if updated_args.bucket:
-        assert 'bucket' in sa
-        assert 'bucket' in da
-    else:
-        print('No bucket available')
-        
-    #DATA SPLIT
-    train_df, val_df, test_df = seeded_split(**sa)
-
-    if args.debug:
-        train_df = train_df[:10]
-        val_df = val_df[:10]
-        test_df = test_df[:10]
     
-    train_dataset = WavDataset(data=train_df, **da)
-    test_dataset = WavDataset(data=test_df,**da)
-    val_dataset = WavDataset(data=val_df, **da)
-
-    #using custom collate
-    train_loader = DataLoader(dataset=train_dataset,batch_size=args.batch_sz,shuffle=True,collate_fn=collate_features, num_workers=args.num_workers)
-    val_loader = DataLoader(dataset=val_dataset,batch_size=args.batch_sz,shuffle=False,collate_fn=collate_features, num_workers=args.num_workers)
-    test_loader = DataLoader(dataset=test_dataset,batch_size=args.batch_sz,shuffle=False,collate_fn=collate_features, num_workers=args.num_workers)
-    
-
     ## INITIALIZE EXTRACTOR AND MODEL
     ma = zip_model(updated_args)
     ca, cckpt = zip_clf(updated_args)
@@ -478,7 +451,43 @@ if __name__ == "__main__":
         print('No bucket available')
         
     #INITIALIZE MODEL
-    model = CustomAutoModel.from_pretrained(**ma)
+    model, feature_extractor = CustomAutoModel.from_pretrained(**ma)
+    
+
+    ## DATA
+    sa = zip_splits(updated_args)
+    da = zip_dataset(updated_args)
+
+    if updated_args.bucket:
+        assert 'bucket' in sa
+        assert 'bucket' in da
+    else:
+        print('No bucket available')
+
+    #DATA SPLIT
+    train_df, val_df, test_df = seeded_split(**sa)
+
+    if args.debug:
+        train_df = train_df[:10]
+        val_df = val_df[:10]
+        test_df = test_df[:10]
+    
+    train_dataset = WavDataset(data=train_df, feature_extractor=feature_extractor, **da)
+    test_dataset = WavDataset(data=test_df, feature_extractor=feature_extractor, **da)
+    val_dataset = WavDataset(data=val_df,feature_extractor=feature_extractor, **da)
+
+    #using custom collate
+    train_loader = DataLoader(dataset=train_dataset,batch_size=args.batch_sz,shuffle=True,collate_fn=collate_features, num_workers=args.num_workers)
+    val_loader = DataLoader(dataset=val_dataset,batch_size=args.batch_sz,shuffle=False,collate_fn=collate_features, num_workers=args.num_workers)
+    test_loader = DataLoader(dataset=test_dataset,batch_size=args.batch_sz,shuffle=False,collate_fn=collate_features, num_workers=args.num_workers)
+    
+    ## FINETUNING
+    fa = zip_finetune(updated_args) #don't forget extra scheduler args
+
+    if updated_args.bucket:
+        assert 'bucket' in fa
+    else:
+        print('No bucket available')
     
     if fa['scheduler_type']:
         if 'cosine' in fa['scheduler_type']:

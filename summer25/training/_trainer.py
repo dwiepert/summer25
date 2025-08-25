@@ -202,12 +202,12 @@ class Trainer():
         for index, data in tqdm(enumerate(train_loader)):
             self.model._check_memory(f'Batch {index} start.')
 
-            inputs, targets = data['waveform'], data['targets'].to(self.model.device)
+            inputs, attn_mask, targets = data['waveform'].to(self.model.device), data['attn_mask'].to(self.model.device), data['targets'].to(self.model.device)
             
             #self.tf_optim.zero_grad()
             #self.clf_optim.zero_grad()
 
-            outputs = self.model(inputs)
+            outputs = self.model(inputs, attn_mask)
 
             loss = self.criterion(outputs, targets)
             loss = loss / gradient_accumulation_steps
@@ -246,9 +246,9 @@ class Trainer():
             for data in tqdm(val_loader):
                 self.model._check_memory('Validation start.')
                 
-                inputs, targets= data['waveform'], data['targets'].to(self.model.device)
+                inputs, attn_mask, targets = data['waveform'].to(self.model.device), data['attn_mask'].to(self.model.device), data['targets'].to(self.model.device)
     
-                outputs = self.model(inputs)
+                outputs = self.model(inputs, attn_mask)
 
                 loss = self.criterion(outputs, targets)
                 running_vloss += loss.item()
@@ -278,6 +278,9 @@ class Trainer():
         name_prefix =  f'{self.name_prefix}_e{epochs}'
 
         for e in range(epochs):
+            self.tf_optim.zero_grad()
+            self.clf_optim.zero_grad()
+
             self.train_step(train_loader)
 
             if val_loader:
@@ -337,9 +340,9 @@ class Trainer():
         with torch.no_grad():
             running_loss = 0.0
             for data in tqdm(test_loader):
-                inputs, targets = data['waveform'], data['targets'].to(self.model.device)
+                inputs, attn_mask, targets = data['waveform'].to(self.model.device), data['attn_mask'].to(self.model.device), data['targets'].to(self.model.device)
                 
-                outputs = self.model(inputs)
+                outputs = self.model(inputs, attn_mask)
                 
                 loss = self.criterion(outputs, targets)
                 running_loss += loss.item()

@@ -1,4 +1,4 @@
-__version__ = '0.5.4'
+__version__ = '0.5.5'
 
 #change log:
 # 0.0.0: initial commit
@@ -29,3 +29,4 @@ __version__ = '0.5.4'
 # 0.5.2: more debugging/tests
 # 0.5.3: fully debugged & tested version 0.5
 # 0.5.4: debugging memory issues
+# 0.5.5: restructure feature extraction

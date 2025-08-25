@@ -107,7 +107,7 @@ class HFModel(BaseModel):
         self.base_model = None
 
         ## INITIALIZE FEATURE EXTRACTOR
-        self.feature_extractor = None
+        #self.feature_extractor = None
 
         ## SET UP CONFIG
         self.model_name = self._get_model_name()
@@ -304,20 +304,20 @@ class HFModel(BaseModel):
         self._save_model_checkpoint(path=out_path / name_model)
         self._save_clf_checkpoint(path= out_path / (name_clf + '.pt'))
     
-    def load_feature_extractor(self, checkpoint:Union[str,Path], from_hub:bool=True, delete_download:bool=False):
-        """
-        Load feature extractor from a checkpoint
-        :param checkpoint: pathlike, path to checkpoint (must be a directory)
-        :param delete_download: bool, specify whether to delete any local downloads from hugging face (default = False)
-        :param from_hub: bool, specify whether to load from hub or from existing pt_ckpt (default = True)
-        """
-        if from_hub: 
-            bucket = None
-        else:
-            bucket = self.bucket
+    # def load_feature_extractor(self, checkpoint:Union[str,Path], from_hub:bool=True, delete_download:bool=False):
+    #     """
+    #     Load feature extractor from a checkpoint
+    #     :param checkpoint: pathlike, path to checkpoint (must be a directory)
+    #     :param delete_download: bool, specify whether to delete any local downloads from hugging face (default = False)
+    #     :param from_hub: bool, specify whether to load from hub or from existing pt_ckpt (default = True)
+    #     """
+    #     if from_hub: 
+    #         bucket = None
+    #     else:
+    #         bucket = self.bucket
 
-        self.feature_extractor = HFExtractor(model_type=self.model_type, pt_ckpt=checkpoint, from_hub=from_hub, normalize=self.normalize, bucket=bucket, delete_download=delete_download)
-        #self.remove_download(self.local_path, delete_download, from_hub)
+    #     self.feature_extractor = HFExtractor(model_type=self.model_type, pt_ckpt=checkpoint, from_hub=from_hub, normalize=self.normalize, bucket=bucket, delete_download=delete_download)
+    #     #self.remove_download(self.local_path, delete_download, from_hub)
 
     def configure_peft(self, checkpoint:Union[str,Path], checkpoint_type:str='pt',delete_download:bool=False, from_hub:bool=True, load_gcs:bool=True):
         """
@@ -550,7 +550,7 @@ class HFModel(BaseModel):
             print(f'Current memory available:{torch.cuda.memory_reserved(0) - torch.cuda.memory_allocated(0)}, {torch.cuda.memory_reserved(1)-torch.cuda.memory_allocated(1)}')
         
     ### main function(s) ###
-    def forward(self, waveform:List[torch.Tensor]) -> torch.Tensor:
+    def forward(self, inputs: torch.Tensor, attention_mask:torch.Tensor) -> torch.Tensor:
         """
         Overwritten forward loop. 
 
@@ -559,13 +559,12 @@ class HFModel(BaseModel):
         """
         self._check_memory('Starting HF Model forward loop')
         
-        
-        assert self.feature_extractor, 'Extractor checkpoints not loaded in.'
+        #assert self.feature_extractor, 'Extractor checkpoints not loaded in.'
         assert self.base_model, 'Model checkpoints not loaded in.'
 
-        inputs, attention_mask = self.feature_extractor(waveform)
-        inputs = inputs.to(self.device)
-        attention_mask = attention_mask.bool().to(self.device)
+        #inputs, attention_mask = self.feature_extractor(waveform)
+        #inputs = inputs.to(self.device)
+        #attention_mask = attention_mask.bool().to(self.device)
         
         self._check_memory('Feature extractor finished. Inputs/attention mask sent to device. Geting base model outputs.')
     

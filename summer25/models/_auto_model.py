@@ -7,19 +7,19 @@ Last modified: 08/2025
 #IMPORTS
 ##built-in
 from pathlib import Path
-from typing import Union, Optional
+from typing import Union, Optional, Tuple
 
 ##local
 from summer25.constants import *
 from summer25.io import search_gcs
-from ._hf_model import HFModel
+from ._hf_model import HFModel, HFExtractor
 
 
 class CustomAutoModel:
     @classmethod
     def from_pretrained(cls, config:dict, ft_checkpoint:Optional[Union[str, Path]]=None, 
                         clf_checkpoint:Optional[Union[str,Path]]=None, pt_checkpoint:Optional[Union[str,Path]]=None,
-                        delete_download:bool=False, data_parallel:bool=False):
+                        delete_download:bool=False, data_parallel:bool=False) -> Tuple[Union[HFModel], Union[HFExtractor]]:
         """
         Load a model from a pretrained checkpoint
         :param config: dict, config of model arguments
@@ -28,6 +28,7 @@ class CustomAutoModel:
         :param pt_checkpoint: pathlike, pretrained checkpoint path as a directorr (default = None)
         :param delete_download: bool, specify whether to delete any local downloads from hugging face (default = False)
         :param data_parallel: bool, true if using multiple gpus
+        :return model: loaded model
         """
 
         def _split_ft_checkpoint(ft_checkpoint, clf_checkpoint, bucket, model_type):
@@ -116,8 +117,13 @@ class CustomAutoModel:
         ft_checkpoint, clf_checkpoint = _split_ft_checkpoint(ft_checkpoint, clf_checkpoint, model.bucket, model.model_type)
 
         ### load feature extractor using a pt_checkpoint
-        model.load_feature_extractor(pt_checkpoint, ext_from_hub, ext_delete_download) 
-
+        if 'hf_hub' in _MODELS[config['model_type']]:
+            feature_extractor = HFExtractor(model_type=model.model_type, pt_ckpt=pt_checkpoint, from_hub=model.from_hub, normalize=model.normalize, bucket=model.bucket, delete_download=delete_download)
+        #model.load_feature_extractor(pt_checkpoint, ext_from_hub, ext_delete_download) 
+        else:
+            mt = config['model_type']
+            raise NotImplementedError(f'{mt} not implemented')
+       
         ### check if there is a ft_checkpoint AND it's not soft prompt
         if ft_checkpoint and not model.peft:
             model.load_model_checkpoint(ft_checkpoint, ft_delete_download, False)
@@ -147,5 +153,5 @@ class CustomAutoModel:
 
         model.to(model.device)
         model._check_memory('Model sent to device.')
-        return model 
+        return model, feature_extractor
     

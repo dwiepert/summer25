@@ -20,7 +20,11 @@ def collate_features(batch: List[dict]) -> dict:
     uid = [item['uid'] for item in batch]
     sr = [item['sample_rate'] for item in batch]
     targets = torch.stack([item['targets'] for item in batch])
-    waveform = [item['waveform'] for item in batch]
-    sample = {'uid':uid, 'targets':targets, 'sample_rate':sr, 'waveform':waveform}
+    waveform = torch.stack([item['waveform'] for item in batch])
+    attn_mask = torch.stack([item['attn_mask'] for item in batch])
+    #wav_len = [item['waveform'].size() for item in batch]
+
+    #waveform = [item['waveform'] for item in batch]
+    sample = {'uid':uid, 'targets':targets, 'sample_rate':sr, 'waveform':waveform, 'attn_mask':attn_mask}
 
     return sample

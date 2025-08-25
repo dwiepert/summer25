@@ -146,19 +146,25 @@ class HFExtractor(BaseExtractor):
             self.feature_extractor_kwargs['padding'] = True
     
     ### main function(s) ###
-    def __call__(self, wav:torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def __call__(self, sample:dict) -> dict:
         """
         Run feature extraction on a sample
-        :param wav: input tensor
-        :return: torch.tensor, processed input
-        :return: torch.tensor, attention mask
+        :param sample: dict
+        :return new_sample: dict
         """
+        new_sample = sample.copy()
+        wav = new_sample['waveform']
+
         if self.feature_extractor:
             wav = [torch.squeeze(w).numpy() for w in wav]
             preprocessed_wav = self.feature_extractor(wav,
                                                         return_tensors='pt', 
                                                         sampling_rate = self.feature_extractor.sampling_rate,
                                                         **self.feature_extractor_kwargs)
-            return preprocessed_wav[self.features_key], preprocessed_wav[self.attention_key]
+            new_sample['waveform'] = preprocessed_wav[self.features_key]
+            new_sample['attn_mask'] = preprocessed_wav[self.attention_key].bool()
+            #return preprocessed_wav[self.features_key], preprocessed_wav[self.attention_key].bool()
         else:
-            return wav, None
+            new_sample['attn_mask'] = None
+        
+        return new_sample

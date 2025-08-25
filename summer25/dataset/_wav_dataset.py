@@ -18,10 +18,11 @@ import torchvision
 from summer25.constants import _MODELS
 from summer25.transforms import *
 from ._base_dataset import BaseDataset
+from summer25.models import HFExtractor
      
 class WavDataset(BaseDataset):
     def __init__(self, data:pd.DataFrame, prefix:str, model_type:str, uid_col:str,
-                 config:dict, target_labels:str, rank_prefix:str=None, bucket=None,
+                 config:dict, target_labels:str, feature_extractor:Union[HFExtractor] = None, rank_prefix:str=None, bucket=None,
                  transforms=None, extension:str='wav', structured:bool=False):
         '''
         Dataset that manages audio recordings. 
@@ -32,15 +33,17 @@ class WavDataset(BaseDataset):
         :param uid_col: str, specify which column is the uid col
         :param config: dictionary with transform parameters (ones not specified in _MODELS)
         :param target_labels: str list of targets to extract from data. Can be none only for 'asr'.
-        :param rank_prefix: str, prefix for columns with rank target
+        :param feature_extractor: initialized feature extactor (dfault = None)
+        :param rank_prefix: str, prefix for columns with rank target (default = None)
         :param bucket: gcs bucket (default=None)
         :param transforms: torchvision transforms function to run on data (default=None)
-        :param extension: str, audio extension
+        :param extension: str, audio extension (default = wav)
         :param structured: bool, indicate whether audio files are in structured format (prefix/uid/waveform.wav) or not (default=False)
         '''
 
         super().__init__(data=data, uid_col=uid_col, target_labels=target_labels, transforms=None)
 
+        self.feature_extractor = feature_extractor
         self.model_type = model_type
         self.config = config
         self.bucket = bucket
@@ -96,7 +99,6 @@ class WavDataset(BaseDataset):
         self.trim_level = self._check_existence(self.config,'trim_level')
 
         waveform_loader = UidToWaveform(prefix=self.prefix, bucket=self.bucket, extension=self.extension, lib=self.use_librosa, structured=self.structured)
-        
         
         tensor_tfm = ToTensor()
         transform_list = [waveform_loader, tensor_tfm]
@@ -190,7 +192,10 @@ class WavDataset(BaseDataset):
         if self.data_augmentation:
             aug_wav = self.al_transforms(samples=sample['waveform'], sample_rate = sample['sample_rate']) #audio augmentations
             sample['waveform'] = torch.from_numpy(aug_wav).type(torch.float32)
-    
+
+        if self.feature_extractor:
+            sample = self.feature_extractor(sample)
+
         return sample
     
     def __len__(self):
