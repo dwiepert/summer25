@@ -2,7 +2,7 @@
 Run experiments
 
 Author(s): Daniela Wiepert
-Last modified: 06/2025
+Last modified: 08/2025
 """
 #IMPORTS
 ##built-in
@@ -442,11 +442,8 @@ if __name__ == "__main__":
     ma['config'] = temp_config
     ma['clf_checkpoint'] = cckpt
 
-    fa = zip_finetune(updated_args) #don't forget extra scheduler args
-
     if updated_args.bucket:
         assert 'bucket' in ma['config']
-        assert 'bucket' in fa
     else:
         print('No bucket available')
         
