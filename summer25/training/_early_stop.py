@@ -6,7 +6,7 @@ Last modified: 07/2025
 """
 # IMPORTS
 ## built-in
-from typing import Union
+from typing import Union, Tuple
 ## local
 from summer25.models import HFModel
 
@@ -54,7 +54,7 @@ class EarlyStopping:
         if self.test:
             self.early_stop=True
     
-    def get_best_model(self) -> tuple[Union[HFModel],int,float]:
+    def get_best_model(self) -> Tuple[Union[HFModel],int,float]:
         """
         :return self.best_model: best model during training
         :return self.best_epoch: best epoch

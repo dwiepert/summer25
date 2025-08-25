@@ -545,10 +545,14 @@ class HFModel(BaseModel):
         if self.print_memory:
             if notice:
                 print(f'{notice}')
-            print(f'Reserved memory: {torch.cuda.memory_reserved(0)}, {torch.cuda.memory_reserved(1)}')
-            print(f'Current memory allocated:{torch.cuda.memory_allocated(0)}, {torch.cuda.memory_allocated(1)}')
-            print(f'Current memory available:{torch.cuda.memory_reserved(0) - torch.cuda.memory_allocated(0)}, {torch.cuda.memory_reserved(1)-torch.cuda.memory_allocated(1)}')
-        
+            try:
+                print(f'Reserved memory: {torch.cuda.memory_reserved(0)}, {torch.cuda.memory_reserved(1)}')
+                print(f'Current memory allocated:{torch.cuda.memory_allocated(0)}, {torch.cuda.memory_allocated(1)}')
+                print(f'Current memory available:{torch.cuda.memory_reserved(0) - torch.cuda.memory_allocated(0)}, {torch.cuda.memory_reserved(1)-torch.cuda.memory_allocated(1)}')
+            except:
+                print(f'Reserved memory: {torch.cuda.memory_reserved(0)}')
+                print(f'Current memory allocated:{torch.cuda.memory_allocated(0)}')
+                print(f'Current memory available:{torch.cuda.memory_reserved(0) - torch.cuda.memory_allocated(0)}')
     ### main function(s) ###
     def forward(self, inputs: torch.Tensor, attention_mask:torch.Tensor) -> torch.Tensor:
         """

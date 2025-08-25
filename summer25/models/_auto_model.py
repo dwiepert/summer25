@@ -118,7 +118,7 @@ class CustomAutoModel:
 
         ### load feature extractor using a pt_checkpoint
         if 'hf_hub' in _MODELS[config['model_type']]:
-            feature_extractor = HFExtractor(model_type=model.model_type, pt_ckpt=pt_checkpoint, from_hub=model.from_hub, normalize=model.normalize, bucket=model.bucket, delete_download=delete_download)
+            feature_extractor = HFExtractor(model_type=model.model_type, pt_ckpt=pt_checkpoint, from_hub=ext_from_hub, normalize=model.normalize, bucket=model.bucket, delete_download=ext_delete_download)
         #model.load_feature_extractor(pt_checkpoint, ext_from_hub, ext_delete_download) 
         else:
             mt = config['model_type']
