@@ -19,7 +19,7 @@ class CustomAutoModel:
     @classmethod
     def from_pretrained(cls, config:dict, ft_checkpoint:Optional[Union[str, Path]]=None, 
                         clf_checkpoint:Optional[Union[str,Path]]=None, pt_checkpoint:Optional[Union[str,Path]]=None,
-                        delete_download:bool=False, data_parallel:bool=False) -> Tuple[Union[HFModel], Union[HFExtractor]]:
+                        delete_download:bool=False) -> Tuple[Union[HFModel], Union[HFExtractor]]:
         """
         Load a model from a pretrained checkpoint
         :param config: dict, config of model arguments
@@ -27,8 +27,8 @@ class CustomAutoModel:
         :param clf_checkpoint: pathlike, classifier checkpoint path as a file (default = None)
         :param pt_checkpoint: pathlike, pretrained checkpoint path as a directorr (default = None)
         :param delete_download: bool, specify whether to delete any local downloads from hugging face (default = False)
-        :param data_parallel: bool, true if using multiple gpus
         :return model: loaded model
+        :return feature_extractor: loaded feature extractor
         """
 
         def _split_ft_checkpoint(ft_checkpoint, clf_checkpoint, bucket, model_type):

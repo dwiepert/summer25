@@ -203,7 +203,7 @@ class Trainer():
         self.model.train()
         running_loss = 0.
 
-        for index, data in tqdm(enumerate(train_loader)):
+        for index, data in enumerate(tqdm(train_loader)):
             self.model._check_memory(f'Batch {index} start.')
 
             inputs, attn_mask, targets = data['waveform'].to(self.model.device), data['attn_mask'].to(self.model.device), data['targets'].to(self.model.device)
