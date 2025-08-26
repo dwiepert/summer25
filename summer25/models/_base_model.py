@@ -191,21 +191,24 @@ class BaseModel(nn.Module):
                 lengths = torch.count_nonzero(x[:,:,0], dim=1)
             return self.attention_pooling(x, lengths)
     
-    def save_config(self):
+    def save_config(self, sub_dir:Path = None):
         """
         Save a config dictionary
         :param config: Dict
         """
+        if sub_dir: 
+            out_path = self.out_dir / sub_dir
+        else:
+            out_path = self.out_dir
+
         if self.bucket:
             save_path = Path('.') 
-            save_path.mkdir(exist_ok=True)
-            save_path = save_path / 'model_config.json'
-            out_path = self.out_dir / 'configs'
         else:
-            save_path = self.out_dir / 'configs'
-            save_path.mkdir(exist_ok=True)
-            save_path = save_path / 'model_config.json'
-            if save_path.exists(): print(f'Overwriting model config file saved at {str(save_path)}')
+            save_path = out_path
+
+        save_path.mkdir(exist_ok=True)
+        save_path = save_path / 'model_config.json'
+        if save_path.exists(): print(f'Overwriting model config file saved at {str(save_path)}')
 
         with open(str(save_path), "w") as outfile:
             json.dump(self.config, outfile)
@@ -213,5 +216,4 @@ class BaseModel(nn.Module):
         if self.bucket:
             upload_to_gcs(out_path, save_path, self.bucket)
             os.remove(save_path)
-
 

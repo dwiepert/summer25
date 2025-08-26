@@ -94,22 +94,9 @@ def check_model(args:dict) -> dict:
     :param args: dictionary of arguments - vars(argparse object)
     :return args: updated args dictionary
     """
-    #check for mismatch between existing and not existing model cfg
-    ec = [e for e in args['output_dir'].rglob('*model_config.json')] 
-    if ec != [] and args['use_existing_cfg']:
-        existing_cfg = load_config(ec[0])
-    else:
-        existing_cfg = None
-        #raise NotImplementedError('Updating args with existing config is not implemented.')
-
-    #TODO: compare existing model_cfg and given arguments? or just overwrite with existing arguments? 
-
     if args['model_cfg']:
         model_cfg = args.pop('model_cfg')
         args.update(model_cfg)
-
-    if existing_cfg is not None:
-        args.update(existing_cfg)
         
     for r in _REQUIRED_MODEL_ARGS:
         assert args[r], f'The required argument `{r}` was not given in a config file or in the command line. Use `-h` or `--help` if information on the argument is needed.'
@@ -181,9 +168,9 @@ def zip_model(args:argparse.Namespace) -> dict:
     :param args: argparse Namespace object
     :return model_args: dict of model arguments
     """
-    to_add = f'e{args.epochs}_lr{args.learning_rate}_{args.optim_type}_{args.scheduler_type}'
+    #to_add = f'e{args.epochs}_lr{args.learning_rate}_{args.optim_type}_{args.scheduler_type}'
 
-    args.output_dir = args.output_dir / to_add
+    #args.output_dir = args.output_dir / to_add
     if args.hf_model:
         model_args = {'model_type':args.model_type,'out_dir':args.output_dir,
                     'freeze_method':args.freeze_method, 'pool_method':args.pool_method,
@@ -344,7 +331,6 @@ if __name__ == "__main__":
     cfg_args = parser.add_argument_group('cfg', 'configuration file related arguments')
     cfg_args.add_argument('--load_cfg', type=load_config, help='Audio loading configuration json')
     cfg_args.add_argument('--model_cfg', type=load_config, help="Model configuration json")
-    cfg_args.add_argument('--use_existing_cfg', action='store_true', help='Specify whether to use an existing config file if it exists in the given output_dir')
     #I/O
     io_args = parser.add_argument_group('io', 'file related arguments')
     #io_args.add_argument('--data_parallel', action='store_true', help='Specify whether using multiple gpus')

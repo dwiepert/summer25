@@ -145,7 +145,7 @@ class CustomAutoModel:
         
         model._check_memory('Checkpoints loaded.')
 
-        model.save_config() #TODO
+        #model.save_config() #TODO
 
         #if data_parallel:
         #    model.configure_data_parallel(data_parallel)

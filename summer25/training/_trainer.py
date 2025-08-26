@@ -287,6 +287,9 @@ class Trainer():
         else:
             self.path = self.model.out_dir / name_prefix
             self.path.mkdir(parents = True, exist_ok = True)
+
+        self.model.save_config(sub_dir=name_prefix)
+
         config_path = self.path / 'train_config.json'
         with open(str(config_path), 'w') as f:
             json.dump(self.config, f)
@@ -348,6 +351,7 @@ class Trainer():
             else:
                 self.path = self.model.out_dir / name_prefix
                 self.path.mkdir(parents = True, exist_ok = True)
+                self.model.save_config(sub_dir=name_prefix)
             
         self.model.eval()
         running_loss = 0.0
