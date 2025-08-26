@@ -3,11 +3,12 @@
 Train a variety of hugging face transformers to predict pathological speech features. 
 
 ## Training a model 
-A full example of training exists in [run.py](https://github.com/dwiepert/summer25/run.py).
+A full example of training exists in [run.py](https://github.com/dwiepert/summer25/run.py). You can minimally run this function using an edited version of [load_cfg.json](TODO) and [model_cfg.json](TODO). Just run 
+```python run.py --load_cfg=<PATH_TO_LOAD_CFG> --model_cfg=<PATH_TO_MODEL_CFG>```
 
 This package trains with three custom components: [WavDataset](https://github.com/dwiepert/summer25/summer25/dataset/_wav_dataset.py), [CustomAutoModel](https://github.com/dwiepert/summer25/summer25/models/_auto_model.py), and [Trainer](https://github.com/dwiepert/summer25/summer25/training/_trainer.py).
 
-It also contains code to create dataset splits [seeded_split](https://github.com/dwiepert/summer25/summer25/dataset/_split.py) and collate data into a batch [collate_features](https://github.com/dwiepert/summer25/summer25/dataset/_custom_collate.py). 
+It also contains code to create dataset splits [seeded_split](https://github.com/dwiepert/summer25/summer25/dataset/_split.py) and collate data into a batch [collate_wrapper](https://github.com/dwiepert/summer25/summer25/dataset/_custom_collate.py). 
 
 ### Data Loading
 This package expects the data to be in one of the following formats:
@@ -69,7 +70,7 @@ See example of a config for adding additional data augmentations [transform_conf
 #### Data loading example:
 ```
 from torch.utils.data import DataLoader
-from summer25.dataset import seeded_split, WavDataset, collate_features 
+from summer25.dataset import seeded_split, WavDataset, collate_wrapper
 
 #generate data split
 train_df, val_df, test_df = seeded_split(**split_params)
@@ -80,17 +81,18 @@ val_dataset = WavDataset(data=val_df, **dataset_params)
 test_dataset = WavDataset(data=test_df, **dataset_params)
 
 #set up DataLoader with custom collate
-train_loader = DataLoader(dataset=train_dataset,batch_size=1,shuffle=True,collate_fn=collate_features, num_workers=0)
-val_loader = DataLoader(dataset=val_dataset,batch_size=1,shuffle=False,collate_fn=collate_features, num_workers=0)
-test_loader = DataLoader(dataset=test_dataset,batch_size=1,shuffle=False,collate_fn=collate_features, num_workers=s)
+collate_fn = collate_wrapper(feature_extractor)
+train_loader = DataLoader(dataset=train_dataset,batch_size=args.batch_sz,shuffle=True,collate_fn=collate_fn, num_workers=args.num_workers)
+val_loader = DataLoader(dataset=val_dataset,batch_size=args.batch_sz,shuffle=False,collate_fn=collate_fn, num_workers=args.num_workers)
+test_loader = DataLoader(dataset=test_dataset,batch_size=args.batch_sz,shuffle=False,collate_fn=collate_fn, num_workers=args.num_workers)
+    
 ```
-
 
 ### Model initialization 
 The basic model is initialized with the `from_pretrained` function of [CustomAutoModel](https://github.com/dwiepert/summer25/summer25/models/_auto_model.py). 
 
 ```
-CustomAutoModel.from_pretrained(config:dict, ft_checkpoint:Optional[Union[str, Path]]=None, clf_checkpoint:Optional[Union[str,Path]]=None, pt_checkpoint:Optional[Union[str,Path]]=None, delete_download:bool=False, data_parallel:bool=False)
+CustomAutoModel.from_pretrained(config:dict, ft_checkpoint:Optional[Union[str, Path]]=None, clf_checkpoint:Optional[Union[str,Path]]=None, pt_checkpoint:Optional[Union[str,Path]]=None, delete_download:bool=False)
 
 Load a model from a pretrained checkpoint
     :param config: dict, config of model arguments
@@ -98,8 +100,8 @@ Load a model from a pretrained checkpoint
     :param clf_checkpoint: pathlike, classifier checkpoint path as a file (default = None)
     :param pt_checkpoint: pathlike, pretrained checkpoint path as a directorr (default = None)
     :param delete_download: bool, specify whether to delete any local downloads from hugging face (default = False)
-    :param data_parallel: bool, true if using multiple gpus
     :return model: loaded model
+    :return feature_extractor: loaded feature extractor
 ```
 
 In this function, the following conditions must be met:
@@ -176,6 +178,10 @@ from summer25.dataset import seeded_split, WavDataset, collate_features
 from summer25.models import CustomAutoModel
 from summer25.training import Trainer
 
+#INITIALIZE MODEL
+model, feature_extractor = CustomAutoModel.from_pretrained(**ma)
+    
+
 #generate data split
 train_df, val_df, test_df = seeded_split(**split_params)
 
@@ -185,12 +191,11 @@ val_dataset = WavDataset(data=val_df, **dataset_params)
 test_dataset = WavDataset(data=test_df, **dataset_params)
 
 #set up DataLoader with custom collate
-train_loader = DataLoader(dataset=train_dataset,batch_size=1,shuffle=True,collate_fn=collate_features, num_workers=0)
-val_loader = DataLoader(dataset=val_dataset,batch_size=1,shuffle=False,collate_fn=collate_features, num_workers=0)
-test_loader = DataLoader(dataset=test_dataset,batch_size=1,shuffle=False,collate_fn=collate_features, num_workers=s)
-
-#initialize model
-model = CustomAutoModel.from_pretrained(**model_params)
+collate_fn = collate_wrapper(feature_extractor)
+train_loader = DataLoader(dataset=train_dataset,batch_size=args.batch_sz,shuffle=True,collate_fn=collate_fn, num_workers=args.num_workers)
+val_loader = DataLoader(dataset=val_dataset,batch_size=args.batch_sz,shuffle=False,collate_fn=collate_fn, num_workers=args.num_workers)
+test_loader = DataLoader(dataset=test_dataset,batch_size=args.batch_sz,shuffle=False,collate_fn=collate_fn, num_workers=args.num_workers)
+    
 
 #training
 trainer = Trainer(model=model, **training_params)
