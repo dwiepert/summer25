@@ -57,6 +57,8 @@ class Trainer():
     :param optim_type: str, optimizer type (default = adamw)
     :param learning_rate: float, learning rate (default = 1e-3)
     :param loss_type: str, loss type (default = bce)
+    :param gradient_accumulation_steps: int, number of steps for gradient accumulation (default = 4)
+    :param batch_size: int, batch size (default = 2)
     :param scheduler_type: str, scheduler type (default = None)
     :param early_stop: bool, specify whether to use early stopping (default = False)
     :param save_checkpoints: bool, specify whether to save checkpoints (default = True)
@@ -65,20 +67,23 @@ class Trainer():
     :param kwargs: additional values for rank classification loss or schedulers (e.g., rating_threshold/margin/bce_weight for rank loss and end_lr/epochs for Exponential scheduler)
     """
     def __init__(self, model:Union[HFModel], target_features:List[str], optim_type:str="adamw", 
-                 tf_learning_rate:float=None, learning_rate:float=1e-4, loss_type:str="bce", scheduler_type:str=None,
-                 early_stop:bool=False, save_checkpoints:bool=True, patience:int=5, delta:float=0.0, **kwargs):
+                 tf_learning_rate:float=None, learning_rate:float=1e-4, loss_type:str="bce", gradient_accumulation_steps:int=4, batch_size:int=2,
+                 scheduler_type:str=None, early_stop:bool=False, save_checkpoints:bool=True, patience:int=5, delta:float=0.0, **kwargs):
         self.model = model
         self.name_prefix = f'{optim_type}_{loss_type}'
         self.target_features = target_features
         self.learning_rate= learning_rate
-        
+        self.gradient_accumulation_steps = gradient_accumulation_steps
+        self.batch_size = batch_size
+    
         if tf_learning_rate:
             self.tf_learning_rate = tf_learning_rate
         else:
             self.tf_learning_rate = learning_rate
         self.name_prefix += f'_lr{self.learning_rate}_tflr{self.tf_learning_rate}'
 
-        self.config = {'learning_rate': self.learning_rate, 'tf_learning_rate': self.tf_learning_rate, 'optim_type':optim_type, 'loss_type': loss_type, 'scheduler_type':scheduler_type}
+        self.config = {'learning_rate': self.learning_rate, 'tf_learning_rate': self.tf_learning_rate, 'optim_type':optim_type, 'loss_type': loss_type, 'scheduler_type':scheduler_type,
+                       'gradient_accumulation_steps':self.gradient_accumulation_steps, 'batch_size':self.batch_size}
 
         self.save_checkpoints = save_checkpoints
         if optim_type == 'adamw':
@@ -186,9 +191,9 @@ class Trainer():
         else:
             self.early_stop = None
 
+        self.name_prefix += f'_bs{self.batch_size}_gas{self.gradient_accumulation_steps}'
         self.log = {"train_loss":[], "avg_train_loss":[], "val_loss":[], "avg_val_loss":[]}
         self.log.update(self.config)
-
 
     def train_step(self, train_loader:DataLoader):
         """
@@ -197,7 +202,6 @@ class Trainer():
         """
         self.model.train()
         running_loss = 0.
-        gradient_accumulation_steps = 2
 
         for index, data in tqdm(enumerate(train_loader)):
             self.model._check_memory(f'Batch {index} start.')
@@ -210,12 +214,12 @@ class Trainer():
             outputs = self.model(inputs, attn_mask)
 
             loss = self.criterion(outputs, targets)
-            loss = loss / gradient_accumulation_steps
+            loss = loss / self.gradient_accumulation_steps
             loss.backward()
             running_loss += loss.item()
             self.model._check_memory('Backprop finished.')
 
-            if (index + 1) % gradient_accumulation_steps == 0:
+            if (index + 1) % self.gradient_accumulation_steps == 0:
                 self.tf_optim.step()
                 self.clf_optim.step()
                 self.tf_optim.zero_grad()
@@ -276,6 +280,20 @@ class Trainer():
         """
         self.epochs = epochs
         name_prefix =  f'{self.name_prefix}_e{epochs}'
+        #FLUSH CONFIG
+        if self.model.bucket:
+            self.path = Path('.')
+            self.upload_path = self.model.out_dir / name_prefix
+        else:
+            self.path = self.model.out_dir / name_prefix
+            self.path.mkdir(parents = True, exist_ok = True)
+        config_path = self.path / 'train_config.json'
+        with open(str(config_path), 'w') as f:
+            json.dump(self.config, f)
+
+        if self.model.bucket:
+            upload_to_gcs(self.upload_path, config_path, self.model.bucket, overwrite=True)
+            os.remove(config_path)
 
         for e in range(epochs):
             self.tf_optim.zero_grad()
@@ -286,38 +304,33 @@ class Trainer():
             if val_loader:
                 self.val_step(val_loader, e)
 
-            #FLUSH LOG 
-            if self.model.bucket:
-                path = Path('.')
-                upload_path = self.model.out_dir / name_prefix
-            else:
-                path = self.model.out_dir / name_prefix
-                path.mkdir(parents = True, exist_ok = True)
-            
-            log_path = path / 'train_log.json'
+            log_path = self.path / 'train_log.json'
             with open(str(log_path), 'w') as f:
                 json.dump(self.log, f)
 
             if self.model.bucket:
-                upload_to_gcs(upload_path, log_path, self.model.bucket, overwrite=True)
+                upload_to_gcs(self.upload_path, log_path, self.model.bucket, overwrite=True)
                 os.remove(log_path)
             
             if self.early_stop:
                 if self.early_stop.early_stop:
                     best_model, best_epoch, _ = self.early_stop.get_best_model()
-                    best_model.save_model_components(f'best{best_epoch}_', name_prefix)
+                    out_name = Path(name_prefix) /f'best{best_epoch}'
+                    best_model.save_model_components(sub_dir=out_name)
                     break
             
             #checkpointing
             if (e ==0 or e % 5 == 0) and (e != epochs - 1) and self.save_checkpoints:
-                self.model.save_model_components(f'checkpoint{e}_', name_prefix)
+                out_name = Path(name_prefix) /f'checkpoint{e}'
+                self.model.save_model_components(sub_dir=out_name)
             
             if self.tf_scheduler:
                 self.tf_scheduler.step()
                 self.clf_scheduler.step()
         
             if e == epochs - 1:
-                self.model.save_model_components(f'final{e}_', name_prefix)
+                out_name = Path(name_prefix) /f'final{e}'
+                self.model.save_model_components(sub_dir = out_name)
 
             self.fit = True 
 
@@ -327,10 +340,15 @@ class Trainer():
 
         :param testloader: DataLoader with test data
         """
-        if self.fit:
-            name_prefix = f'{self.name_prefix}_e{self.epochs}'
-        else:
+        if not self.fit:
             name_prefix = self.name_prefix
+            if self.model.bucket:
+                self.path = Path('.')
+                self.upload_path = self.model.out_dir / name_prefix
+            else:
+                self.path = self.model.out_dir / name_prefix
+                self.path.mkdir(parents = True, exist_ok = True)
+            
         self.model.eval()
         running_loss = 0.0
         per_feature = {}
@@ -377,19 +395,11 @@ class Trainer():
 
         metrics = {'loss':running_loss, 'avg_loss': (running_loss / len(test_loader)), 'feature_metrics': per_feature}
         
-
-        if self.model.bucket:
-            path = Path('.')
-            upload_path = self.model.out_dir / name_prefix
-        else:
-            path = self.model.out_dir / name_prefix
-            path.mkdir(parents = True, exist_ok = True)
+        log_path = self.path / 'evaluation.json'
         
-        log_path = path / 'evaluation.json'
-        
-        with open(str(path / 'evaluation.json'), 'w') as f:
+        with open(str(self.path / 'evaluation.json'), 'w') as f:
             json.dump(metrics, f)
         
         if self.model.bucket:
-            upload_to_gcs(upload_path, log_path, self.model.bucket, overwrite=True)
+            upload_to_gcs(self.upload_path, log_path, self.model.bucket, overwrite=True)
             os.remove(log_path)

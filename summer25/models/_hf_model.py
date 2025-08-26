@@ -13,6 +13,7 @@ from pathlib import Path
 import shutil
 from typing import Union, Optional, List
 import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
 
 ##third-party
 from huggingface_hub import snapshot_download
@@ -245,16 +246,16 @@ class HFModel(BaseModel):
 
         self.config['model_checkpoint'] = str(checkpoint)
     
-    def configure_data_parallel(self, data_parallel:bool):
-        """
-        Make model compatible with multiple gpus
+    # def configure_data_parallel(self, data_parallel:bool):
+    #     """
+    #     Make model compatible with multiple gpus
 
-        :param data_parallel: bool, true if using data parallelization
-        """
-        assert self.base_model is not None, 'Model not loaded'
-        if data_parallel:
-            self.base_model = nn.DataParallel(self.base_model)
-            self.classifier_head.configure_data_parallel(data_parallel)
+    #     :param data_parallel: bool, true if using data parallelization
+    #     """
+    #     assert self.base_model is not None, 'Model not loaded'
+    #     if data_parallel:
+    #         self.base_model = nn.DataParallel(self.base_model)
+    #         self.classifier_head.configure_data_parallel(data_parallel)
         
     def _save_model_checkpoint(self, path:Union[str,Path]):
         """
@@ -545,14 +546,14 @@ class HFModel(BaseModel):
         if self.print_memory:
             if notice:
                 print(f'{notice}')
-            try:
-                print(f'Reserved memory: {torch.cuda.memory_reserved(0)}, {torch.cuda.memory_reserved(1)}')
-                print(f'Current memory allocated:{torch.cuda.memory_allocated(0)}, {torch.cuda.memory_allocated(1)}')
-                print(f'Current memory available:{torch.cuda.memory_reserved(0) - torch.cuda.memory_allocated(0)}, {torch.cuda.memory_reserved(1)-torch.cuda.memory_allocated(1)}')
-            except:
-                print(f'Reserved memory: {torch.cuda.memory_reserved(0)}')
-                print(f'Current memory allocated:{torch.cuda.memory_allocated(0)}')
-                print(f'Current memory available:{torch.cuda.memory_reserved(0) - torch.cuda.memory_allocated(0)}')
+            c = torch.cuda.device_count()
+            rm = [torch.cuda.memory_reserved(i) for i in range(c)]
+            cm = [torch.cuda.memory_allocated(i) for i in range(c)]
+            am = [rm[i]-cm[i] for i in range(c)]
+            print(f'Reserved memory: {rm}')
+            print(f'Current memory allocated:{cm}')
+            print(f'Current memory available:{am}')
+            
     ### main function(s) ###
     def forward(self, inputs: torch.Tensor, attention_mask:torch.Tensor) -> torch.Tensor:
         """
@@ -599,7 +600,7 @@ class HFModel(BaseModel):
         self._check_memory('Classifier finished. Emptying cache.')
         
         gc.collect()
-        torch.cuda.empty_cache()
+        #torch.cuda.empty_cache()
         
         self._check_memory()
         return clf_output

@@ -162,7 +162,7 @@ class HFExtractor(BaseExtractor):
                                                         sampling_rate = self.feature_extractor.sampling_rate,
                                                         **self.feature_extractor_kwargs)
             new_sample['waveform'] = preprocessed_wav[self.features_key]
-            new_sample['attn_mask'] = preprocessed_wav[self.attention_key].bool()
+            new_sample['attn_mask'] = preprocessed_wav[self.attention_key]
             #return preprocessed_wav[self.features_key], preprocessed_wav[self.attention_key].bool()
         else:
             new_sample['attn_mask'] = None

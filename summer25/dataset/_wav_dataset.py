@@ -22,7 +22,7 @@ from summer25.models import HFExtractor
      
 class WavDataset(BaseDataset):
     def __init__(self, data:pd.DataFrame, prefix:str, model_type:str, uid_col:str,
-                 config:dict, target_labels:str, feature_extractor:Union[HFExtractor] = None, rank_prefix:str=None, bucket=None,
+                 config:dict, target_labels:str, rank_prefix:str=None, bucket=None,
                  transforms=None, extension:str='wav', structured:bool=False):
         '''
         Dataset that manages audio recordings. 
@@ -33,7 +33,6 @@ class WavDataset(BaseDataset):
         :param uid_col: str, specify which column is the uid col
         :param config: dictionary with transform parameters (ones not specified in _MODELS)
         :param target_labels: str list of targets to extract from data. Can be none only for 'asr'.
-        :param feature_extractor: initialized feature extactor (dfault = None)
         :param rank_prefix: str, prefix for columns with rank target (default = None)
         :param bucket: gcs bucket (default=None)
         :param transforms: torchvision transforms function to run on data (default=None)
@@ -43,7 +42,6 @@ class WavDataset(BaseDataset):
 
         super().__init__(data=data, uid_col=uid_col, target_labels=target_labels, transforms=None)
 
-        self.feature_extractor = feature_extractor
         self.model_type = model_type
         self.config = config
         self.bucket = bucket
@@ -193,8 +191,6 @@ class WavDataset(BaseDataset):
             aug_wav = self.al_transforms(samples=sample['waveform'], sample_rate = sample['sample_rate']) #audio augmentations
             sample['waveform'] = torch.from_numpy(aug_wav).type(torch.float32)
 
-        if self.feature_extractor:
-            sample = self.feature_extractor(sample)
 
         return sample
     

@@ -18,7 +18,7 @@ from torch.utils.data import DataLoader
 
 ##local
 from summer25.models import CustomAutoModel
-from summer25.dataset import seeded_split, WavDataset, collate_features
+from summer25.dataset import seeded_split, WavDataset, collate_wrapper
 from summer25.constants import _MODELS,_FREEZE, _FEATURES, _FINETUNE, _LOSS, _SCHEDULER, _OPTIMIZER
 from summer25.training import Trainer
 from summer25.io import search_gcs
@@ -222,7 +222,7 @@ def zip_model(args:argparse.Namespace) -> dict:
         from_hub = False
 
     model_args['from_hub'] = from_hub
-    out_args = {'config': model_args, 'ft_checkpoint':ft_ckpt, 'pt_checkpoint':pt_ckpt, 'delete_download':args.delete_download, 'data_parallel':args.data_parallel}
+    out_args = {'config': model_args, 'ft_checkpoint':ft_ckpt, 'pt_checkpoint':pt_ckpt, 'delete_download':args.delete_download} #, 'data_parallel':args.data_parallel}
     return out_args
 
 def zip_splits(args:argparse.Namespace) -> dict:
@@ -347,7 +347,7 @@ if __name__ == "__main__":
     cfg_args.add_argument('--use_existing_cfg', action='store_true', help='Specify whether to use an existing config file if it exists in the given output_dir')
     #I/O
     io_args = parser.add_argument_group('io', 'file related arguments')
-    io_args.add_argument('--data_parallel', action='store_true', help='Specify whether using multiple gpus')
+    #io_args.add_argument('--data_parallel', action='store_true', help='Specify whether using multiple gpus')
     io_args.add_argument('--bucket_name', type=str, help='Bucket name for GCS.')
     io_args.add_argument('--project_name', type=str, help='GCS project name.')
     io_args.add_argument('--audio_dir', type=Path, help='Directory with audio files & a csv with information on speakers/task.')
@@ -402,7 +402,7 @@ if __name__ == "__main__":
     #TRAINING ARGS
     train_args = parser.add_argument_group('train', 'training/testing related arguments')
     train_args.add_argument('--batch_sz', default=1, type=int, help='Set batch size.')
-    train_args.add_argument('--num_workers', default=0, type=int, help='Set num workers for DataLoader.')
+    train_args.add_argument('--num_workers', default=2, type=int, help='Set num workers for DataLoader.')
     train_args.add_argument('--optim_type', type=str, default='adamw', choices=_OPTIMIZER, help='Specify type of optimizer to use. (default = adamw)')
     train_args.add_argument('--learning_rate', type=float, default=1e-3, help='Specify learning rate (default=1e-3)')
     train_args.add_argument('--tf_learning_rate', type=float, help='Optionally specify transformer specific learning rate')
@@ -469,14 +469,15 @@ if __name__ == "__main__":
         val_df = val_df[:10]
         test_df = test_df[:10]
     
-    train_dataset = WavDataset(data=train_df, feature_extractor=feature_extractor, **da)
-    test_dataset = WavDataset(data=test_df, feature_extractor=feature_extractor, **da)
-    val_dataset = WavDataset(data=val_df,feature_extractor=feature_extractor, **da)
+    train_dataset = WavDataset(data=train_df, **da)
+    test_dataset = WavDataset(data=test_df, **da)
+    val_dataset = WavDataset(data=val_df, **da)
 
     #using custom collate
-    train_loader = DataLoader(dataset=train_dataset,batch_size=args.batch_sz,shuffle=True,collate_fn=collate_features, num_workers=args.num_workers)
-    val_loader = DataLoader(dataset=val_dataset,batch_size=args.batch_sz,shuffle=False,collate_fn=collate_features, num_workers=args.num_workers)
-    test_loader = DataLoader(dataset=test_dataset,batch_size=args.batch_sz,shuffle=False,collate_fn=collate_features, num_workers=args.num_workers)
+    collate_fn = collate_wrapper(feature_extractor)
+    train_loader = DataLoader(dataset=train_dataset,batch_size=args.batch_sz,shuffle=True,collate_fn=collate_fn, num_workers=args.num_workers)
+    val_loader = DataLoader(dataset=val_dataset,batch_size=args.batch_sz,shuffle=False,collate_fn=collate_fn, num_workers=args.num_workers)
+    test_loader = DataLoader(dataset=test_dataset,batch_size=args.batch_sz,shuffle=False,collate_fn=collate_fn, num_workers=args.num_workers)
     
     ## FINETUNING
     fa = zip_finetune(updated_args) #don't forget extra scheduler args

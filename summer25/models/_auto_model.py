@@ -147,9 +147,9 @@ class CustomAutoModel:
 
         model.save_config() #TODO
 
-        if data_parallel:
-            model.configure_data_parallel(data_parallel)
-            model._check_memory('Data parallelization set up.')
+        #if data_parallel:
+        #    model.configure_data_parallel(data_parallel)
+        #    model._check_memory('Data parallelization set up.')
 
         model.to(model.device)
         model._check_memory('Model sent to device.')

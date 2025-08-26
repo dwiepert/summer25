@@ -30,3 +30,4 @@ __version__ = '0.5.5'
 # 0.5.3: fully debugged & tested version 0.5
 # 0.5.4: debugging memory issues
 # 0.5.5: restructure feature extraction
+# 0.5.6: remove data parallel

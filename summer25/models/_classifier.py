@@ -265,15 +265,15 @@ class Classifier(nn.Module):
                        'num_heads': self.num_heads, 'seed': self.seed, 'bottleneck': self.bottleneck, 'layernorm':self.layernorm,
                        'dropout':self.dropout}
     
-    ### public helpers ###
-    def configure_data_parallel(self, data_parallel:bool):
-        """
-        Configure data parallelization for multiple GPUs
+    # ### public helpers ###
+    # def configure_data_parallel(self, data_parallel:bool):
+    #     """
+    #     Configure data parallelization for multiple GPUs
 
-        :param data_parallel: bool, true if using data parallelization
-        """
-        if data_parallel:
-            self.classifiers = nn.ModuleList([nn.DataParallel(c) for c in self.classifiers])
+    #     :param data_parallel: bool, true if using data parallelization
+    #     """
+    #     if data_parallel:
+    #         self.classifiers = nn.ModuleList([nn.DataParallel(c) for c in self.classifiers])
         
     ### private helpers ###
     def _get_clf_name(self) -> str:
