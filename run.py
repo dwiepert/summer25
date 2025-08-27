@@ -286,7 +286,8 @@ def zip_finetune(args):
     :return finetune_args: dict of finetune arguments
     """
     finetune_args = {'optim_type': args.optim_type, 'learning_rate':args.learning_rate, 'loss_type':args.loss_type,
-                     'scheduler_type': args.scheduler_type, 'epochs': args.epochs, 'early_stop':args.early_stop}
+                     'scheduler_type': args.scheduler_type, 'epochs': args.epochs, 'early_stop':args.early_stop, 
+                     'gradient_accumulation_steps':args.gradient_accumulation_steps}
     
     if args.tf_learning_rate:
         finetune_args['tf_learning_rate'] = args.tf_learning_rate
@@ -388,7 +389,8 @@ if __name__ == "__main__":
     #TRAINING ARGS
     train_args = parser.add_argument_group('train', 'training/testing related arguments')
     train_args.add_argument('--batch_sz', default=1, type=int, help='Set batch size.')
-    train_args.add_argument('--num_workers', default=2, type=int, help='Set num workers for DataLoader.')
+    train_args.add_argument('--gradient_accumulation_steps', default=4, type=int, help='Set steps for gradient accumulation. Effective batch size is gradient accumulation steps * batch size.')
+    train_args.add_argument('--num_workers', default=0, type=int, help='Set num workers for DataLoader.')
     train_args.add_argument('--optim_type', type=str, default='adamw', choices=_OPTIMIZER, help='Specify type of optimizer to use. (default = adamw)')
     train_args.add_argument('--learning_rate', type=float, default=1e-3, help='Specify learning rate (default=1e-3)')
     train_args.add_argument('--tf_learning_rate', type=float, help='Optionally specify transformer specific learning rate')

@@ -16,9 +16,9 @@ COPY requirements.txt requirements.txt
 RUN pip install -r requirements.txt
 
 # #Clone and build summer25
-# RUN git clone https://github.com/dwiepert/summer25.git && \
-#     cd summer25 && \
-#     pip install .
+RUN git clone https://github.com/dwiepert/summer25.git && \
+    cd summer25 && \
+    pip install .
 
 # #execute code
-#ENTRYPOINT ["python", "summer25/run.py"]
+ENTRYPOINT ["python", "summer25/run.py"]
