@@ -64,17 +64,19 @@ class Trainer():
     :param save_checkpoints: bool, specify whether to save checkpoints (default = True)
     :param patience: int, patience for early stopping (default = 5)
     :param delta: float, minimum change for early stopping (default = 0.0)
+    :param rating_threshold: float, for converting rank to binary
     :param kwargs: additional values for rank classification loss or schedulers (e.g., rating_threshold/margin/bce_weight for rank loss and end_lr/epochs for Exponential scheduler)
     """
     def __init__(self, model:Union[HFModel], target_features:List[str], optim_type:str="adamw", 
                  tf_learning_rate:float=None, learning_rate:float=1e-4, loss_type:str="bce", gradient_accumulation_steps:int=4, batch_size:int=2,
-                 scheduler_type:str=None, early_stop:bool=False, save_checkpoints:bool=True, patience:int=5, delta:float=0.0, **kwargs):
+                 scheduler_type:str=None, early_stop:bool=False, save_checkpoints:bool=True, patience:int=5, delta:float=0.0, rating_threshold:float=2.0, **kwargs):
         self.model = model
         self.name_prefix = f'{optim_type}_{loss_type}'
         self.target_features = target_features
         self.learning_rate= learning_rate
         self.gradient_accumulation_steps = gradient_accumulation_steps
         self.batch_size = batch_size
+        self.rating_threshold = rating_threshold
     
         if tf_learning_rate:
             self.tf_learning_rate = tf_learning_rate
@@ -97,9 +99,8 @@ class Trainer():
             self.criterion = nn.BCEWithLogitsLoss()
         elif loss_type == 'rank':
             assert 'rating_threshold' in kwargs, 'Must give rating threshold for rank loss.'
-            th = kwargs.pop('rating_threshold')
-            args = {'rating_threshold': th}
-            self.name_prefix += f'_th{th}'
+            args = {'rating_threshold': self.rating_threshold}
+            self.name_prefix += f'_th{self.rating_threshold}'
 
             if 'margin' in kwargs:
                 m = kwargs.pop('margin')
@@ -236,7 +237,7 @@ class Trainer():
         self.log['train_loss'].append(running_loss)
         self.log['avg_train_loss'].append((running_loss / len(train_loader)))
         
-        self.fit = False
+        #self.fit = True
 
     def val_step(self, val_loader:DataLoader, e:int):
         """
@@ -320,6 +321,7 @@ class Trainer():
                     best_model, best_epoch, _ = self.early_stop.get_best_model()
                     out_name = Path(name_prefix) /f'best{best_epoch}'
                     best_model.save_model_components(sub_dir=out_name)
+                    self.fit = True
                     break
             
             #checkpointing
@@ -376,7 +378,8 @@ class Trainer():
                     temp = per_feature[t]
                     temp_true = temp['true']
                     temp_pred = temp['pred']
-                    temp_true.extend(targets[:,i].tolist())
+                    binary_true = (targets[:,i] >= self.rating_threshold).float().tolist()
+                    temp_true.extend(binary_true)
                     temp_pred.extend([(o>0.5).float().item() for o in outputs[:,i]])
                     per_feature[t]= {'true':temp_true, 'pred':temp_pred}
                 
