@@ -35,33 +35,41 @@ class RankedClassificationLoss(nn.Module):
         """
         # Convert ratings to binary labels for BCE loss
         binary_labels = (ratings >= self.rating_threshold).float()
-        mr_loss_entries = []
+
+        # Initialize a tensor to accumulate the margin ranking loss
+        total_mr_loss = torch.tensor(0.0, device=logits.device)
+        num_targets = ratings.shape[1]
+
         # Iterate over each target to calculate pairwise margin ranking loss
-        for c in range(ratings.shape[1]):
+        for c in range(num_targets):
+            # If batch size is less than 2, we can't create pairs.
+            if ratings.shape[0] < 2:
+                continue
+
             # Get all unique pairs of ratings and logits for the current target
             rating_pairs = torch.combinations(ratings[:, c])
             logit_pairs = torch.combinations(logits[:, c])
  
-            # Determine the target ranking (-1, 0, or 1)
-            # y = 1 means x1 should be > x2
-            # y = -1 means x2 should be > x1
+            # Determine the target ranking (1 or -1)
             y = torch.sign(rating_pairs[:, 0] - rating_pairs[:, 1])
- 
-            x1 = logit_pairs[:, 0]
-            x2 = logit_pairs[:, 1]
- 
-            # Calculate and store the margin ranking loss for the current target
-            l = self.mr_criterion(x1, x2, y)
-            mr_loss_entries.append(l)
- 
-        # Stack the losses to keep them in the computation graph, then take the mean
-        if mr_loss_entries:
-            mr_loss = torch.stack(mr_loss_entries).mean()
-        else:
-            mr_loss = torch.tensor(0.0, device=logits.device)
- 
+
+            # Filter out pairs with the same rating (y=0)
+            valid_pairs_mask = y != 0
+            if not valid_pairs_mask.any():
+                continue # No valid pairs in this batch for this target
+
+            x1 = logit_pairs[valid_pairs_mask, 0]
+            x2 = logit_pairs[valid_pairs_mask, 1]
+            y_filtered = y[valid_pairs_mask]
+
+            # Calculate and accumulate the margin ranking loss for the current target
+            total_mr_loss += self.mr_criterion(x1, x2, y_filtered)
+            # Average the loss over the number of targets
+        mr_loss = total_mr_loss / num_targets if num_targets > 0 else total_mr_loss
+
         # Calculate standard BCE loss
         bce_loss = self.bce_criterion(logits, binary_labels)
+
        
         # Return the weighted average of the two losses
         return (1 - self.bce_weight) * mr_loss + self.bce_weight * bce_loss

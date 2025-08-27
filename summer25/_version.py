@@ -1,4 +1,4 @@
-__version__ = '0.5.7'
+__version__ = '0.5.8'
 
 #change log:
 # 0.0.0: initial commit
@@ -32,3 +32,4 @@ __version__ = '0.5.7'
 # 0.5.5: restructure feature extraction
 # 0.5.6: remove data parallel
 # 0.5.7: small saving fixes
+# 0.5.8: update rank loss
