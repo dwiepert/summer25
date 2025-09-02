@@ -98,7 +98,7 @@ class Trainer():
         if loss_type == 'bce':
             self.criterion = nn.BCEWithLogitsLoss()
         elif loss_type == 'rank':
-            assert 'rating_threshold' in kwargs, 'Must give rating threshold for rank loss.'
+            #assert 'rating_threshold' in kwargs, 'Must give rating threshold for rank loss.'
             args = {'rating_threshold': self.rating_threshold}
             self.name_prefix += f'_th{self.rating_threshold}'
 
