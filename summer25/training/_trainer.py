@@ -77,7 +77,7 @@ class Trainer():
         self.gradient_accumulation_steps = gradient_accumulation_steps
         self.batch_size = batch_size
         self.rating_threshold = rating_threshold
-    
+        self.best_model = None
         if tf_learning_rate:
             self.tf_learning_rate = tf_learning_rate
         else:
@@ -321,6 +321,7 @@ class Trainer():
                     best_model, best_epoch, _ = self.early_stop.get_best_model()
                     out_name = Path(name_prefix) /f'best{best_epoch}'
                     best_model.save_model_components(sub_dir=out_name)
+                    self.best_model = best_model
                     self.fit = True
                     break
             
@@ -337,25 +338,35 @@ class Trainer():
                 out_name = Path(name_prefix) /f'final{e}'
                 self.model.save_model_components(sub_dir = out_name)
 
+                if self.early_stop:
+                    best_model, best_epoch, _ = self.early_stop.get_best_model()
+                    out_name = Path(name_prefix) /f'best{best_epoch}'
+                    best_model.save_model_components(sub_dir=out_name)
+                    self.best_model = best_model
+
             self.fit = True 
 
-    def test(self, test_loader:DataLoader):
+    def test(self, test_loader:DataLoader, test_best:bool=True):
         """
         Evaluate model on test data
 
         :param testloader: DataLoader with test data
         """
+        if self.best_model is not None and test_best:
+            model = self.best_model
+        else:
+            model = self.model 
         if not self.fit:
             name_prefix = self.name_prefix
-            if self.model.bucket:
+            if model.bucket:
                 self.path = Path('.')
-                self.upload_path = self.model.out_dir / name_prefix
+                self.upload_path = model.out_dir / name_prefix
             else:
-                self.path = self.model.out_dir / name_prefix
+                self.path = model.out_dir / name_prefix
                 self.path.mkdir(parents = True, exist_ok = True)
-                self.model.save_config(sub_dir=name_prefix)
+                model.save_config(sub_dir=name_prefix)
             
-        self.model.eval()
+        model.eval()
         running_loss = 0.0
         per_feature = {}
         for t in self.target_features:
@@ -364,9 +375,9 @@ class Trainer():
         with torch.no_grad():
             running_loss = 0.0
             for data in tqdm(test_loader):
-                inputs, attn_mask, targets = data['waveform'].to(self.model.device), data['attn_mask'].to(self.model.device), data['targets'].to(self.model.device)
+                inputs, attn_mask, targets = data['waveform'].to(model.device), data['attn_mask'].to(model.device), data['targets'].to(model.device)
                 
-                outputs = self.model(inputs, attn_mask)
+                outputs = model(inputs, attn_mask)
                 
                 loss = self.criterion(outputs, targets)
                 running_loss += loss.item()
@@ -407,6 +418,6 @@ class Trainer():
         with open(str(self.path / 'evaluation.json'), 'w') as f:
             json.dump(metrics, f)
         
-        if self.model.bucket:
-            upload_to_gcs(self.upload_path, log_path, self.model.bucket, overwrite=True)
+        if model.bucket:
+            upload_to_gcs(self.upload_path, log_path, model.bucket, overwrite=True)
             os.remove(log_path)

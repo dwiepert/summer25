@@ -396,7 +396,7 @@ if __name__ == "__main__":
     train_args.add_argument('--tf_learning_rate', type=float, help='Optionally specify transformer specific learning rate')
     train_args.add_argument('--loss_type', type=str, default='bce', choices=_LOSS, help='Specify type of optimizer to use. (default = bce)')
     train_args.add_argument('--rank_prefix', type=str, default='rank_', help='Specify prefix for columns with rank targets if using rank loss.')
-    train_args.add_argument('--rating_threshold', type=float, help='Specify rating threshold for rank loss.')
+    train_args.add_argument('--rating_threshold', type=float, default=2.0, help='Specify rating threshold for rank loss.')
     train_args.add_argument('--margin', type=float,default=1.0, help='Specify margin for rank loss.')
     train_args.add_argument('--bce_weight', type=float,default=0.5, help='Specify weighting of BCE for rank loss.')
     train_args.add_argument('--scheduler_type', type=str, choices=_SCHEDULER, help='Specify type of scheduler to use.')
