@@ -15,6 +15,7 @@ setup(
         "scikit-learn==1.7.0",
         "scipy==1.15.3",
         "librosa==0.10.2.post1",
+        "matplotlib==3.10.6",
         "pandas==2.3.0",
         "huggingface-hub==0.32.4",
         "peft==0.15.2",
