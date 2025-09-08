@@ -8,30 +8,45 @@ import matplotlib.colors as mcolors
 import random
 import numpy as np
 from sklearn.metrics import balanced_accuracy_score, accuracy_score, roc_auc_score
+import pandas as pd
 
 def get_data(directory:Union[str,Path], bucket=None):
     """
     """
-    patterns = ['model_config.json', 'train_config.json', 'train_log.json', 'evaluation.json']
+    patterns = ['model_config.json', 'train_config.json', 'train_log.json', 'evaluation.json', 'best*']
 
     data = {}
     if bucket:
         for p in patterns:
             files = search_gcs(p, directory, bucket)
-            assert len(files) == 1
-            with tempfile.TemporaryDirectory() as tmpdirname:
-                paths = download_to_local(files[0], tmpdirname, bucket, True)
-                with open(str(paths[0]), 'r') as j:
-                    d = json.load(j)
-                data[p] = d 
+            if p != 'best*':
+                assert len(files) == 1
+                with tempfile.TemporaryDirectory() as tmpdirname:
+                    paths = download_to_local(files[0], tmpdirname, bucket, True)
+                    with open(str(paths[0]), 'r') as j:
+                        d = json.load(j)
+                    data[p] = d 
+            else:
+                s = str(files[0]).split('/')
+                best = [f for f in s if 'best' in f]
+                best_epoch = [f for f in best[0] if f.isdigit()]
+                best_epoch = ''.join(best_epoch)
+                data[p] = best_epoch
     else:
         for p in patterns:
             if not isinstance(directory, Path): directory = Path(directory)
             files = [f for f in directory.glob(f'*{p}')]
-            assert len(files)==1
-            with open(str(files[0]), 'r') as j:
-                d = json.load(j)
-            data[p] = d
+            if p != 'best*':
+                assert len(files)==1
+                with open(str(files[0]), 'r') as j:
+                    d = json.load(j)
+                data[p] = d
+            else:
+                s = str(files[0]).split('/')
+                best = [f for f in s if 'best' in f]
+                best_epoch = [f for f in best[0] if f.isdigit()]
+                best_epoch = ''.join(best_epoch)
+                data[p] = best_epoch
     return data
 
 def extract_data_from_parentdir(parent_directory:Union[str,Path], bucket=None):
@@ -94,6 +109,24 @@ def plot_training_loss(data, save_dir):
     plt.savefig(str(Path(save_dir) / 'training_loss.png'), bbox_inches='tight', dpi=300)
     plt.close()
 
+    i=0
+    for f in data:
+        output = data[f]
+        train_md = output['train_config.json']
+        tflr= train_md['tf_learning_rate']
+        lr = train_md['learning_rate']
+
+
+        plt.plot(output['train_log.json']['avg_val_loss'], label= f'Validation loss - tf_lr{tflr}; lr{lr}', linestyle='--', color=r_colors[i])
+        i += 1
+
+    plt.title('Average validation loss')
+    plt.xlabel('Avg. loss')
+    plt.ylabel('Epochs')
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.savefig(str(Path(save_dir) / 'validation_loss.png'), bbox_inches='tight', dpi=300)
+    plt.close()
+
     i = 0
     for f in data:
         output = data[f]
@@ -152,8 +185,9 @@ def plot_auc(data, save_dir):
                 features[name] = [auc]
     
 
+    #AUC across learning rates
     x = np.arange(len(categories))
-    bar_width = 0.25
+    bar_width = 0.15
 
     multiplier = 0
     fig, ax = plt.subplots(layout='constrained')
@@ -315,3 +349,19 @@ def plot_accuracy(data, save_dir):
         plt.savefig(str(Path(save_dir) / f'accuracy_{categories[i]}.png'), dpi=300)
         plt.close()
 
+
+def get_best_epoch(data):
+    tflr = []
+    lr = []
+    best = []
+
+    for f in data:
+        output = data[f]
+        train_md = output['train_config.json']
+        tflr.append(train_md['tf_learning_rate'])
+        lr.append(train_md['learning_rate'])
+        best.append(output['best*'])
+    
+    df = pd.DataFrame({'tflr':tflr, 'lr':lr, 'best_epoch':best})
+    print(df)
+    return df
