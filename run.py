@@ -478,6 +478,7 @@ if __name__ == "__main__":
     if fa['scheduler_type']:
         if 'cosine' in fa['scheduler_type']:
             fa['train_len'] = len(train_df) # for cosine annealing scheduler
+    
     ## TRAIN MODEL
     model_trainer = Trainer(model=model, **fa)
     if not args.eval_only:

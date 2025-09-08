@@ -10,9 +10,11 @@ import json
 import gc
 from pathlib import Path
 import os
-from typing import Union, List
+from typing import Union, List, Tuple
 
 ##third party
+import numpy as np
+from scipy.stats import spearmanr
 from sklearn.metrics import balanced_accuracy_score, accuracy_score, roc_auc_score
 import torch
 from torch.utils.data import DataLoader
@@ -71,7 +73,7 @@ class Trainer():
                  tf_learning_rate:float=None, learning_rate:float=1e-4, loss_type:str="bce", gradient_accumulation_steps:int=4, batch_size:int=2,
                  scheduler_type:str=None, early_stop:bool=False, save_checkpoints:bool=True, patience:int=5, delta:float=0.0, rating_threshold:float=2.0, **kwargs):
         self.model = model
-        self.name_prefix = f'{optim_type}_{loss_type}_{model.finetune_method}'
+        self.name_prefix = f'{model.model_name}_{optim_type}_{loss_type}'
         self.target_features = target_features
         self.learning_rate= learning_rate
         self.gradient_accumulation_steps = gradient_accumulation_steps
@@ -97,10 +99,11 @@ class Trainer():
         #loss
         if loss_type == 'bce':
             self.criterion = nn.BCEWithLogitsLoss()
+            self.name_prefix += '_bce'
         elif loss_type == 'rank':
             #assert 'rating_threshold' in kwargs, 'Must give rating threshold for rank loss.'
             args = {'rating_threshold': self.rating_threshold}
-            self.name_prefix += f'_th{self.rating_threshold}'
+            self.name_prefix += f'_rank_th{self.rating_threshold}'
 
             if 'margin' in kwargs:
                 m = kwargs.pop('margin')
@@ -195,6 +198,8 @@ class Trainer():
         self.name_prefix += f'_bs{self.batch_size}_gas{self.gradient_accumulation_steps}'
         self.log = {"train_loss":[], "avg_train_loss":[], "val_loss":[], "avg_val_loss":[]}
         self.log.update(self.config)
+
+        self.model_fit = False
 
     def train_step(self, train_loader:DataLoader):
         """
@@ -293,7 +298,7 @@ class Trainer():
 
         config_path = self.path / 'train_config.json'
         with open(str(config_path), 'w') as f:
-            json.dump(self.config, f)
+            json.dump(self.config, f, indent=4)
 
         if self.model.bucket:
             upload_to_gcs(self.upload_path, config_path, self.model.bucket, overwrite=True)
@@ -310,7 +315,7 @@ class Trainer():
 
             log_path = self.path / 'train_log.json'
             with open(str(log_path), 'w') as f:
-                json.dump(self.log, f)
+                json.dump(self.log, f, indent=4)
 
             if self.model.bucket:
                 upload_to_gcs(self.upload_path, log_path, self.model.bucket, overwrite=True)
@@ -322,7 +327,8 @@ class Trainer():
                     out_name = Path(name_prefix) /f'best{best_epoch}'
                     best_model.save_model_components(sub_dir=out_name)
                     self.best_model = best_model
-                    self.fit = True
+                    self.best_epoch = best_epoch
+                    self.model_fit = True
                     break
             
             #checkpointing
@@ -343,8 +349,9 @@ class Trainer():
                     out_name = Path(name_prefix) /f'best{best_epoch}'
                     best_model.save_model_components(sub_dir=out_name)
                     self.best_model = best_model
+                    self.best_epoch = best_epoch
 
-            self.fit = True 
+            self.model_fit = True 
 
     def test(self, test_loader:DataLoader, test_best:bool=True):
         """
@@ -356,7 +363,7 @@ class Trainer():
             model = self.best_model
         else:
             model = self.model 
-        if not self.fit:
+        if not self.model_fit:
             name_prefix = self.name_prefix
             if model.bucket:
                 self.path = Path('.')
@@ -368,10 +375,10 @@ class Trainer():
             
         model.eval()
         running_loss = 0.0
-        per_feature = {}
-        for t in self.target_features:
-            per_feature[t] = {'true':[], 'pred':[]}
         
+        output_list = []
+        target_list = []
+
         with torch.no_grad():
             running_loss = 0.0
             for data in tqdm(test_loader):
@@ -384,40 +391,111 @@ class Trainer():
 
                 outputs = outputs.cpu()
                 targets = targets.cpu()
-                for i in range(len(self.target_features)):
-                    t = self.target_features[i]
-                    temp = per_feature[t]
-                    temp_true = temp['true']
-                    temp_pred = temp['pred']
-                    binary_true = (targets[:,i] >= self.rating_threshold).float().tolist()
-                    temp_true.extend(binary_true)
-                    temp_pred.extend([(o>0.5).float().item() for o in outputs[:,i]])
-                    per_feature[t]= {'true':temp_true, 'pred':temp_pred}
+                
+                output_list.append(outputs)
+                target_list.append(targets)
+                
+
+               # output_dict = {'features':self.target_features, 'outputs':outputs.tolist(), 'targets':targets.tolist(), 'binary_outputs':binary_outputs.tolist(), 'binary_targets':binary_targets.tolist()}
+                
+                # for i in range(len(self.target_features)):
+                #     t = self.target_features[i]
+                #     temp = per_feature[t]
+                #     temp_true = temp['true']
+                #     temp_pred = temp['pred']
+                #     binary_true = (targets[:,i] >= self.rating_threshold).float().tolist()
+                #     temp_true.extend(binary_true)
+                #     temp_pred.extend([(o>0.5).float().item() for o in outputs[:,i]])
+                #     per_feature[t]= {'true':temp_true, 'pred':temp_pred}
                 
                 try:
                     del targets 
                     del outputs
                     gc.collect()
-                    torch.cuda.empty_cache()
+                    #torch.cuda.empty_cache()
                 except:
                     pass
-
-
-        for t in self.target_features:
-            temp = per_feature[t]
-            true, pred = temp['true'],temp['pred']
-            temp['bacc'] = balanced_accuracy_score(true, pred)
-            temp['acc'] = accuracy_score(true, pred)
-            #temp['roc_auc'] = roc_auc_score(true, pred)
-            per_feature[t] = temp
-
-        metrics = {'loss':running_loss, 'avg_loss': (running_loss / len(test_loader)), 'feature_metrics': per_feature}
         
+        outputs = torch.vstack(output_list)
+        targets = torch.vstack(target_list)
+        probabilities, binary_targets = self._binarize(outputs, targets)
+
+        binary_metrics = self._binary_metrics(probabilities.numpy(), binary_targets.numpy())
+        rating_metrics = self._rating_metrics(outputs.numpy(), targets.numpy())
+        metrics = binary_metrics.copy()
+        metrics.update(rating_metrics)
+
+        metrics['test_loss'] =  running_loss
+        metrics['avg_test_loss'] = (running_loss / len(test_loader))
+
+        if self.best_model:
+            metrics['best_epoch'] = self.best_epoch
+
         log_path = self.path / 'evaluation.json'
         
         with open(str(self.path / 'evaluation.json'), 'w') as f:
-            json.dump(metrics, f)
+            json.dump(metrics, f, indent=4)
         
         if model.bucket:
             upload_to_gcs(self.upload_path, log_path, model.bucket, overwrite=True)
             os.remove(log_path)
+
+    def _binarize(self, outputs:torch.Tensor, targets:torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Calculate binary evaluation metrics
+
+        :params outputs: torch.Tensor, model outputs
+        :params targets: torch.Tensor, target labels (n_test, n_features)
+        :return output_probabilities: torch.Tensor, model probabilities
+        :params binary_targets: torch.Tensor, binary target labels (n_test, n_features)
+        """
+
+        #binary targets: 
+        binary_targets = (targets >= self.rating_threshold).float()
+        activation = torch.nn.Sigmoid()
+        output_probabilities = activation(outputs) 
+        #binary_outputs = (output_probabilities > 0.5).float()
+        return output_probabilities, binary_targets #binary_outputs, binary_targets
+    
+    def _binary_metrics(self, probabilities:np.ndarray, targets:np.ndarray) -> dict:
+        """
+        TODO
+        """
+        binary_outputs= (probabilities > 0.5).astype('float')
+        #OVERALL AUC
+        macro_auc = roc_auc_score(targets,probabilities, average='macro')
+        weighted_auc = roc_auc_score(targets,probabilities, average='weighted')
+        sample_auc = roc_auc_score(targets,probabilities, average='samples')
+
+        #OVERALL ACCURACY
+        overall_acc = accuracy_score(targets, binary_outputs)
+
+        bacc_per_feature = []
+        acc_per_feature = []
+        auc_per_feature = []
+        for i in range(len(self.target_features)):
+            bacc_per_feature.append(balanced_accuracy_score(targets[:,i], binary_outputs[:,i]))
+            acc_per_feature.append(accuracy_score(targets[:,i], binary_outputs[:,i]))
+            auc_per_feature.append(roc_auc_score(targets[:,i], probabilities[:,i]))
+  
+        return {'probabilities':probabilities.tolist(), 'binary_targets':targets.tolist(), 'macro_auc': macro_auc, 'weighted_auc':weighted_auc, 'sample_auc':sample_auc,
+                'overall_acc':overall_acc, 'bacc_per_feature':bacc_per_feature, 'acc_per_feature':acc_per_feature, 'auc_per_feature': auc_per_feature, 'target_features':self.target_features}
+        
+    def _rating_metrics(self, outputs:np.ndarray, targets:np.ndarray) -> dict:
+        """
+        TODO
+        """    
+        #overral correlation
+        rho, pval = spearmanr(targets, outputs, axis=None)
+
+        #per feature
+        rho_per_feature = []
+        p_per_feature = []
+        for i in range(len(self.target_features)):
+            r, p = spearmanr(outputs[:,i], targets[:,i])
+            rho_per_feature.append(r.item())
+            p_per_feature.append(p.item())
+        
+        return {'outputs': outputs.tolist(), 'targets':targets.tolist(), 'overall_rho':rho.item(), 'overall_p':pval.item(), 'target_features':self.target_features, 'rho_per_feature':rho_per_feature, 'p_per_feature':p_per_feature}
+
+

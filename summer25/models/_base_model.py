@@ -211,7 +211,7 @@ class BaseModel(nn.Module):
         if save_path.exists(): print(f'Overwriting model config file saved at {str(save_path)}')
 
         with open(str(save_path), "w") as outfile:
-            json.dump(self.config, outfile)
+            json.dump(self.config, outfile, indent=4)
         
         if self.bucket:
             upload_to_gcs(out_path, save_path, self.bucket)

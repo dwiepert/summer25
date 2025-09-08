@@ -1,4 +1,4 @@
-__version__ = '0.5.9'
+__version__ = '0.6.0'
 
 #change log:
 # 0.0.0: initial commit
@@ -34,3 +34,4 @@ __version__ = '0.5.9'
 # 0.5.7: small saving fixes
 # 0.5.8: update rank loss
 # 0.5.9: early stopping update
+# 0.6.0: Evaluation fix, some visualization/analysis added
