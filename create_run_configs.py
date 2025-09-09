@@ -77,7 +77,7 @@ base_arg_list = [   f"--output_dir={args.output_dir}",
 
 
 learning_rates = [1e-5, 1e-4, 1e-3] #--learning_rate
-tf_learning_rates = [1e-5] #--tf_learning_rate
+tf_learning_rates = [1e-6, 1e-5, 1e-4] #--tf_learning_rate
 model_type = ['wavlm-large', 'hubert-large', 'whisper-medium'] #--model_type
 args.pt_checkpoint_root = Path(args.pt_checkpoint_root)
 checkpoints = [str(args.pt_checkpoint_root / m) for m in model_type] #--pt_ckpt
@@ -86,69 +86,94 @@ freeze = ['all', 'exclude-last', 'half'] #--freeze_method
 finetune = ['lora', 'none', 'soft-prompt'] #--finetune_method
 pool = ['mean', 'max', 'attn'] #--pool_method
 bce_weight = [0.5, 0, 0.25, 1]
-seed = [100, 42]#, 56]
+seed = [100]#, 42]#, 56]
 
-
-sub_dir = 'freeze_test'
-for s in seed: # each of these needs to be run for each seed 
-    for i in range(len(model_type)): #run for each model type
+sub_dir = 'lr_test_v2'
+for i in range(len(model_type)): #run for each model type
+    if i == 0:
         mt = model_type[i]
         ckpt = checkpoints[i] 
         for lr in learning_rates: #run for each learning rate 
-            for l in nlayers: #run for different numbers of clf layers 
-                for f in freeze:
-                    ###### if unfreezing: for f in freeze:
-                    ##### if finetuning: for f in finetune: 
-                    for p in pool: # for different pooling types
-                        for b in bce_weight: # for different bce weights
-                            test_name = f'seed{s}_lr{lr}_{mt}_nlayers{l}_freeze{f}_pool{p}_bw{b}'
-                            args_list = base_arg_list.copy()
-                            args_list.append(f"--learning_rate={lr}")
-                            args_list.append(f"--tf_learning_rate={tf_learning_rates[0]}")
-                            args_list.append(f"--model_type={mt}")
-                            args_list.append(f"--pt_ckpt={ckpt}")
-                            args_list.append(f"--nlayers={l}")
-                            args_list.append(f"--freeze_method={f}") 
-                            args_list.append(f"--finetune_method=none")
-                            args_list.append(f"--pool_method={p}")
-                            args_list.append(f"--bce_weight={b}")
-                            args_list.append(f"--seed={s}")
+            for tf in tf_learning_rates:
+                test_name = f'seed{seed[0]}_tflr{tf}_lr{lr}_{mt}' #_nlayers{l}_freeze{f}_pool{p}_bw{b}'
+                args_list = base_arg_list.copy()
+                args_list.append(f"--learning_rate={lr}")
+                args_list.append(f"--tf_learning_rate={tf_learning_rates[0]}")
+                args_list.append(f"--model_type={mt}")
+                args_list.append(f"--pt_ckpt={ckpt}")
+                args_list.append(f"--nlayers={3}")
+                args_list.append(f"--freeze_method=exclude-last") 
+                args_list.append(f"--finetune_method=none")
+                args_list.append(f"--pool_method={pool[0]}")
+                args_list.append(f"--bce_weight={bce_weight[0]}")
+                args_list.append(f"--seed={seed[0]}")
 
-                            out_path = args.cfg_path / sub_dir
-                            out_path.mkdir(parents=True, exist_ok=True)
-                            out_path = str(out_path / f"{test_name}.json")
-                            set_args(base_cfg, args_list, out_path)
+                out_path = args.cfg_path / sub_dir
+                out_path.mkdir(parents=True, exist_ok=True)
+                out_path = str(out_path / f"{test_name}.json")
+                set_args(base_cfg, args_list, out_path)
 
-sub_dir = 'finetune_test'
-for s in seed: # each of these needs to be run for each seed 
-    for i in range(len(model_type)): #run for each model type
-        mt = model_type[i]
-        ckpt = checkpoints[i] 
-        for lr in learning_rates: #run for each learning rate 
-            for l in nlayers: #run for different numbers of clf layers 
-                ###### if unfreezing: for f in freeze:
-                ##### if finetuning: for f in finetune: 
-                for f in finetune:
-                    if f != 'none':
-                        for p in pool: # for different pooling types
-                            for b in bce_weight: # for different bce weights
-                                test_name = f'seed{s}_lr{lr}_{mt}_nlayers{l}_ft{f}_pool{p}_bw{b}'
-                                args_list = base_arg_list.copy()
-                                args_list.append(f"--learning_rate={lr}")
-                                args_list.append(f"--tf_learning_rate={tf_learning_rates[0]}")
-                                args_list.append(f"--model_type={mt}")
-                                args_list.append(f"--pt_ckpt={ckpt}")
-                                args_list.append(f"--nlayers={l}")
-                                args_list.append(f"--freeze_method=all") 
-                                args_list.append(f"--finetune_method={f}")
-                                args_list.append(f"--pool_method={p}")
-                                args_list.append(f"--bce_weight={b}")
-                                args_list.append(f"--seed={s}")
 
-                                out_path = args.cfg_path / sub_dir
-                                out_path.mkdir(parents=True, exist_ok=True)
-                                out_path = str(out_path / f"{test_name}.json")
-                                set_args(base_cfg, args_list, out_path)
+# sub_dir = 'freeze_test'
+# for s in seed: # each of these needs to be run for each seed 
+#     for i in range(len(model_type)): #run for each model type
+#         mt = model_type[i]
+#         ckpt = checkpoints[i] 
+#         for lr in learning_rates: #run for each learning rate 
+#             for l in nlayers: #run for different numbers of clf layers 
+#                 for f in freeze:
+#                     ###### if unfreezing: for f in freeze:
+#                     ##### if finetuning: for f in finetune: 
+#                     for p in pool: # for different pooling types
+#                         for b in bce_weight: # for different bce weights
+#                             test_name = f'seed{s}_lr{lr}_{mt}_nlayers{l}_freeze{f}_pool{p}_bw{b}'
+#                             args_list = base_arg_list.copy()
+#                             args_list.append(f"--learning_rate={lr}")
+#                             args_list.append(f"--tf_learning_rate={tf_learning_rates[0]}")
+#                             args_list.append(f"--model_type={mt}")
+#                             args_list.append(f"--pt_ckpt={ckpt}")
+#                             args_list.append(f"--nlayers={l}")
+#                             args_list.append(f"--freeze_method={f}") 
+#                             args_list.append(f"--finetune_method=none")
+#                             args_list.append(f"--pool_method={p}")
+#                             args_list.append(f"--bce_weight={b}")
+#                             args_list.append(f"--seed={s}")
+
+#                             out_path = args.cfg_path / sub_dir
+#                             out_path.mkdir(parents=True, exist_ok=True)
+#                             out_path = str(out_path / f"{test_name}.json")
+#                             set_args(base_cfg, args_list, out_path)
+
+# sub_dir = 'finetune_test'
+# for s in seed: # each of these needs to be run for each seed 
+#     for i in range(len(model_type)): #run for each model type
+#         mt = model_type[i]
+#         ckpt = checkpoints[i] 
+#         for lr in learning_rates: #run for each learning rate 
+#             for l in nlayers: #run for different numbers of clf layers 
+#                 ###### if unfreezing: for f in freeze:
+#                 ##### if finetuning: for f in finetune: 
+#                 for f in finetune:
+#                     if f != 'none':
+#                         for p in pool: # for different pooling types
+#                             for b in bce_weight: # for different bce weights
+#                                 test_name = f'seed{s}_lr{lr}_{mt}_nlayers{l}_ft{f}_pool{p}_bw{b}'
+#                                 args_list = base_arg_list.copy()
+#                                 args_list.append(f"--learning_rate={lr}")
+#                                 args_list.append(f"--tf_learning_rate={tf_learning_rates[0]}")
+#                                 args_list.append(f"--model_type={mt}")
+#                                 args_list.append(f"--pt_ckpt={ckpt}")
+#                                 args_list.append(f"--nlayers={l}")
+#                                 args_list.append(f"--freeze_method=all") 
+#                                 args_list.append(f"--finetune_method={f}")
+#                                 args_list.append(f"--pool_method={p}")
+#                                 args_list.append(f"--bce_weight={b}")
+#                                 args_list.append(f"--seed={s}")
+
+#                                 out_path = args.cfg_path / sub_dir
+#                                 out_path.mkdir(parents=True, exist_ok=True)
+#                                 out_path = str(out_path / f"{test_name}.json")
+#                                 set_args(base_cfg, args_list, out_path)
 
 """ # TEST - unfreezing
 

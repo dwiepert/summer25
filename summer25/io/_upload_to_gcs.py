@@ -47,7 +47,10 @@ def upload_to_gcs(gcs_prefix:str, path:Union[str,Path], bucket, overwrite:bool=F
                 keep.append(r)
         to_upload = keep
 
-    for u in to_upload:  
+    for u in to_upload:
+        if len(to_upload) > 100:
+            ind = to_upload.index(u)
+            if ind % 100 == 0: print(f'{ind}/{len(to_upload)}')
         name = str(u).split("/")
         i = len(name) - 1
         to_add = []
