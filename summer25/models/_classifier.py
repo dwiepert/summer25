@@ -136,7 +136,7 @@ class LinearClassifier(nn.Module):
         self.layernorm = layernorm
         self.dropout=dropout
 
-        if self.nlayers == 2 and not self.bottleneck:
+        if not self.bottleneck:
             self.bottleneck = self.in_feats 
 
         self.activation = activation 
@@ -155,14 +155,32 @@ class LinearClassifier(nn.Module):
         Get linear classifier parameters based on input parameters
         """
         self.params = {}
-        if self.nlayers == 1:
-            self.params['in_feats'] = [self.in_feats]
-            self.params['out_feats'] = [self.out_feats]
-        elif self.nlayers == 2:
-            self.params['in_feats'] = [self.in_feats,self.bottleneck]
-            self.params['out_feats'] = [self.bottleneck, self.out_feats]
-        else:
-            raise NotImplementedError(f'Classifier parameters not yet implemented for given inputs.')
+        in_feats = [self.in_feats]
+        out_feats = [self.out_feats]
+        
+        for n in range(self.nlayers-1):
+            in_feats.append(self.bottleneck)
+            out_feats.insert(0, self.bottleneck)
+
+        assert len(in_feats) == self.nlayers and len(out_feats) == self.nlayers, 'Classifier parameters must be same length as nlayers.'
+        if len(in_feats) >= 2:
+            assert in_feats[0] == self.in_feats and in_feats[-1] == self.bottleneck
+            assert out_feats[0] == self.bottleneck and out_feats[-1] == self.out_feats
+
+        self.params['in_feats'] = in_feats
+        self.params['out_feats'] = out_feats
+                
+        # if self.nlayers == 1:
+        #     self.params['in_feats'] = [self.in_feats]
+        #     self.params['out_feats'] = [self.out_feats]
+        # elif self.nlayers == 2:
+        #     self.params['in_feats'] = [self.in_feats,self.bottleneck]
+        #     self.params['out_feats'] = [self.bottleneck, self.out_feats]
+        # elif self.nlayers == 3:
+        #     self.params['in_feats'] = [self.in_feats,self.bottleneck]
+        #     self.params['out_feats'] = [self.bottleneck, self.out_feats]
+        # else:
+        #     raise NotImplementedError(f'Classifier parameters not yet implemented for given inputs.')
 
     def _get_activation_layer(self, activation) -> nn.Module:
         """
