@@ -73,7 +73,9 @@ class Trainer():
                  tf_learning_rate:float=None, learning_rate:float=1e-4, loss_type:str="bce", gradient_accumulation_steps:int=4, batch_size:int=2,
                  scheduler_type:str=None, early_stop:bool=False, save_checkpoints:bool=True, patience:int=5, delta:float=0.0, rating_threshold:float=2.0, **kwargs):
         self.model = model
-        self.name_prefix = f'{model.model_name}_{optim_type}_{loss_type}'
+        model_name = model.config['model_name']
+        clf_name = model.config['clf_name']
+        self.name_prefix = f'{model_name}_{clf_name}_{optim_type}_{loss_type}'
         self.target_features = target_features
         self.learning_rate= learning_rate
         self.gradient_accumulation_steps = gradient_accumulation_steps

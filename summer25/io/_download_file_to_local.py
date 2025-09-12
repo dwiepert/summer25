@@ -23,6 +23,7 @@ def download_to_local(gcs_prefix: Union[str, Path], savepath: Union[str, Path], 
     """
     #file_blob = bucket.blob(str(gcs_path))
     #check if directory 
+    if not isinstance(savepath, Path): savepath = Path(savepath)
     assert bucket is not None, 'no bucket given for uploading'
     savepath = savepath.absolute()
     gcs_pattern = str(Path(gcs_prefix).name)

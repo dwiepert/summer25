@@ -53,7 +53,6 @@ base_arg_list = [   f"--output_dir={args.output_dir}",
                     f"--bucket_name={args.bucket_name}",
                     f"--project_name={args.project_name}",
                     "--load_existing_split",
-                    "--save_split",
                     f"--subject_key={args.subject_key}",
                     f"--date_key={args.date_key}",
                     f"--audio_key={args.audio_key}",
@@ -77,7 +76,7 @@ base_arg_list = [   f"--output_dir={args.output_dir}",
 
 
 learning_rates = [1e-5, 1e-4, 1e-3] #--learning_rate
-tf_learning_rates = [1e-6, 1e-5, 1e-4] #--tf_learning_rate
+tf_learning_rates = [1e-4, 1e-5, 1e-6] #--tf_learning_rate
 model_type = ['wavlm-large', 'hubert-large', 'whisper-medium'] #--model_type
 args.pt_checkpoint_root = Path(args.pt_checkpoint_root)
 checkpoints = [str(args.pt_checkpoint_root / m) for m in model_type] #--pt_ckpt
@@ -93,12 +92,12 @@ for i in range(len(model_type)): #run for each model type
     if i == 0:
         mt = model_type[i]
         ckpt = checkpoints[i] 
-        for lr in learning_rates: #run for each learning rate 
-            for tf in tf_learning_rates:
-                test_name = f'seed{seed[0]}_tflr{tf}_lr{lr}_{mt}' #_nlayers{l}_freeze{f}_pool{p}_bw{b}'
+        for tflr in tf_learning_rates:
+            for lr in learning_rates: #run for each learning rate 
+                test_name = f'seed{seed[0]}_tflr{tflr}_lr{lr}_{mt}' #_nlayers{l}_freeze{f}_pool{p}_bw{b}'
                 args_list = base_arg_list.copy()
                 args_list.append(f"--learning_rate={lr}")
-                args_list.append(f"--tf_learning_rate={tf_learning_rates[0]}")
+                args_list.append(f"--tf_learning_rate={tflr}")
                 args_list.append(f"--model_type={mt}")
                 args_list.append(f"--pt_ckpt={ckpt}")
                 args_list.append(f"--nlayers={3}")

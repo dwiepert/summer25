@@ -13,40 +13,26 @@ import pandas as pd
 def get_data(directory:Union[str,Path], bucket=None):
     """
     """
-    patterns = ['model_config.json', 'train_config.json', 'train_log.json', 'evaluation.json', 'best*']
+    patterns = ['model_config.json', 'train_config.json', 'train_log.json', 'evaluation.json']
 
     data = {}
     if bucket:
         for p in patterns:
             files = search_gcs(p, directory, bucket)
-            if p != 'best*':
-                assert len(files) == 1
-                with tempfile.TemporaryDirectory() as tmpdirname:
-                    paths = download_to_local(files[0], tmpdirname, bucket, True)
-                    with open(str(paths[0]), 'r') as j:
-                        d = json.load(j)
-                    data[p] = d 
-            else:
-                s = str(files[0]).split('/')
-                best = [f for f in s if 'best' in f]
-                best_epoch = [f for f in best[0] if f.isdigit()]
-                best_epoch = ''.join(best_epoch)
-                data[p] = best_epoch
+            assert len(files) == 1
+            with tempfile.TemporaryDirectory() as tmpdirname:
+                paths = download_to_local(files[0], tmpdirname, bucket, True)
+                with open(str(paths[0]), 'r') as j:
+                    d = json.load(j)
+                data[p] = d 
     else:
         for p in patterns:
             if not isinstance(directory, Path): directory = Path(directory)
             files = [f for f in directory.glob(f'*{p}')]
-            if p != 'best*':
-                assert len(files)==1
-                with open(str(files[0]), 'r') as j:
-                    d = json.load(j)
-                data[p] = d
-            else:
-                s = str(files[0]).split('/')
-                best = [f for f in s if 'best' in f]
-                best_epoch = [f for f in best[0] if f.isdigit()]
-                best_epoch = ''.join(best_epoch)
-                data[p] = best_epoch
+            assert len(files)==1
+            with open(str(files[0]), 'r') as j:
+                d = json.load(j)
+            data[p] = d
     return data
 
 def extract_data_from_parentdir(parent_directory:Union[str,Path], bucket=None):
@@ -56,8 +42,7 @@ def extract_data_from_parentdir(parent_directory:Union[str,Path], bucket=None):
     if bucket:
         files = search_gcs(parent_directory, parent_directory, bucket)
         files = [Path(f) for f in files]
-        sub_dirs = [f for f in files if str(f.parent) == str(parent_directory)]
-        pass
+        sub_dirs = list(set([f.parent for f in files if str(f.parent.parent) == str(parent_directory)]))
     else:
         sub_dirs = [d for d in parent_directory.iterdir() if (str(d.parent) == str(parent_directory) and d.is_dir())]
 
@@ -148,6 +133,8 @@ def plot_training_loss(data, save_dir):
 def plot_auc(data, save_dir):
     """
     """
+    if not isinstance(save_dir, Path): save_dir = Path(save_dir)
+    save_dir.mkdir(parents=True, exist_ok = True)
     colors = list(mcolors.TABLEAU_COLORS)
     r_colors = random.sample(colors, len(data))
     categories = []
@@ -159,9 +146,11 @@ def plot_auc(data, save_dir):
         tflr= train_md['tf_learning_rate']
         lr = train_md['learning_rate']
         categories.append(f'tflr{tflr}_lr{lr}')
-        eval = output['evaluation.json']['feature_metrics']
-        for k in eval:
-            auc = roc_auc_score(eval[k]['true'], eval[k]['pred'])
+        eval = output['evaluation.json']
+        feat_list = eval['target_features']
+        for i in range(len(feat_list)):
+            k = feat_list[i]
+            auc = eval['auc_per_feature'][i]
             if k == 'inappropriate_silences_or_prolonged_intervals':
                 name = 'ispi'
             if k == 'monopitch_monoloudness':
@@ -263,6 +252,8 @@ def plot_auc(data, save_dir):
 def plot_accuracy(data, save_dir):
     """
     """
+    if not isinstance(save_dir, Path): save_dir = Path(save_dir)
+    save_dir.mkdir(parents=True, exist_ok = True)
     colors = list(mcolors.TABLEAU_COLORS)
     r_colors = random.sample(colors, len(data))
     categories = []  # X positions for categories
@@ -275,16 +266,21 @@ def plot_accuracy(data, save_dir):
         tflr= train_md['tf_learning_rate']
         lr = train_md['learning_rate']
         categories.append(f'tflr{tflr}_lr{lr}')
-        eval = output['evaluation.json']['feature_metrics']
-        for k in eval:
-            if k not in features:
-                features[k] = {'bacc':[eval[k]['bacc']], 'acc':[eval[k]['acc']]}
-            else:
+        eval = output['evaluation.json']
+        feat_list = eval['target_features']
+        bacc_per_feature = eval['bacc_per_feature']
+        acc_per_feature = eval['acc_per_feature']
+        for i in range(len(feat_list)):
+            k= feat_list[i]
+            if k in features:
                 temp_bacc = features[k]['bacc']
-                temp_bacc.append(eval[k]['bacc'])
+                temp_bacc.append(bacc_per_feature[i])
                 temp_acc = features[k]['acc']
-                temp_acc.append(eval[k]['acc'])
-                features[k] = {'bacc':temp_bacc, 'acc':temp_acc}
+                temp_acc.append(acc_per_feature[i])
+                features[k]['bacc'] = temp_bacc
+                features[k]['acc'] = temp_acc
+            else:
+                features[k] = {'bacc':[bacc_per_feature[i]], 'acc':[acc_per_feature[i]]}
         
     #i = 0
     x = np.arange(len(categories))
