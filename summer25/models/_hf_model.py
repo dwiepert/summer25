@@ -301,7 +301,7 @@ class HFModel(BaseModel):
         out_path = path / 'weights'
 
         if not self.bucket: out_path.mkdir(parents=True, exist_ok=True)
-            
+    
         self._save_model_checkpoint(path=out_path / name_model)
         self._save_clf_checkpoint(path= out_path / (name_clf + '.pt'))
     

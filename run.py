@@ -374,7 +374,7 @@ if __name__ == "__main__":
     model_args.add_argument('--freeze_method', type=str, choices=_FREEZE, help='Specify what freeze method to use.')
     model_args.add_argument('--unfreeze_layers', nargs="+", help="If freeze_method is `layer`, use this to specify which layers to freeze")
     model_args.add_argument('--ft_ckpt', type=Path, help='Specify finetuned model checkpoint')
-    model_args.add_argument('--pool_method', type=str, choices=['mean', 'max', 'attn'], help='Specify pooling method prior to classification head.')
+    model_args.add_argument('--pool_method', type=str, choices=['mean', 'max', 'attention'], help='Specify pooling method prior to classification head.')
     #CLASSIFIER
     clf_args = parser.add_argument_group('classifier', 'classifier related arguments')
     clf_args.add_argument('--clf_type', type=str, default='linear', help='Specify whether to use linear classifier or transformer classifier.')
