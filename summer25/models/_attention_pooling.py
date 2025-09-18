@@ -37,6 +37,6 @@ class SelfAttentionPooling(nn.Module):
         """
         mask = torch.arange(x.size(1), device=x.device)[None, :] < lengths[:, None]
         weights = self.W(x).squeeze(-1)  # [batch, time]
-        weights[~mask.unsqueeze(0)] = float('-inf')  # mask padding
+        weights[~mask] = float('-inf')  # mask padding
         attn_weights = torch.softmax(weights, dim=1)
         return (x * attn_weights.unsqueeze(-1)).sum(dim=1)
