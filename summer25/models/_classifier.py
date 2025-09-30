@@ -301,6 +301,12 @@ class Classifier(nn.Module):
         :return model_name: str with classifier model name
         """
         model_name = f'Classifier_{self.clf_type}_in{self.in_feats}_out{self.out_feats}_{self.activation}_n{self.nlayers}'
+        if self.bottleneck != self.in_feats:
+            model_name += f'_bottleneck{self.bottleneck}'
+        if self.dropout != 0.0:
+            model_name += f'_dropout{self.dropout}'
+        if self.binary:
+            model_name += '_binary'
         return model_name
     
     def _get_classifiers(self): 

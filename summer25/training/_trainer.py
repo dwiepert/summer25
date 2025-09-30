@@ -24,7 +24,7 @@ from tqdm import tqdm
 
 ##local
 from summer25.models import HFModel
-from summer25.io import upload_to_gcs
+from summer25.io import upload_to_gcs, search_gcs
 from ._early_stop import EarlyStopping
 from ._ranked_clf_loss import RankedClassificationLoss
 
@@ -71,70 +71,87 @@ class Trainer():
     """
     def __init__(self, model:Union[HFModel], target_features:List[str], optim_type:str="adamw", 
                  tf_learning_rate:float=None, learning_rate:float=1e-4, loss_type:str="bce", gradient_accumulation_steps:int=4, batch_size:int=2,
-                 scheduler_type:str=None, early_stop:bool=False, save_checkpoints:bool=True, patience:int=5, delta:float=0.0, rating_threshold:float=2.0, **kwargs):
+                 scheduler_type:str=None, early_stop:bool=False, save_checkpoints:bool=True, patience:int=5, delta:float=0.0, rating_threshold:float=2.0, 
+                 margin:float=1.0, bce_weight:float=0.5,**kwargs):
+        
         self.model = model
-        model_name = model.config['model_name']
-        clf_name = model.config['clf_name']
-        self.name_prefix = f'{model_name}_{clf_name}_{optim_type}_{loss_type}'
         self.target_features = target_features
+        self.optim_type = optim_type
         self.learning_rate= learning_rate
         self.gradient_accumulation_steps = gradient_accumulation_steps
         self.batch_size = batch_size
         self.rating_threshold = rating_threshold
+        self.margin = margin
+        self.bce_weight = bce_weight 
         self.best_model = None
         if tf_learning_rate:
             self.tf_learning_rate = tf_learning_rate
         else:
             self.tf_learning_rate = learning_rate
-        self.name_prefix += f'_lr{self.learning_rate}_tflr{self.tf_learning_rate}'
 
-        self.config = {'learning_rate': self.learning_rate, 'tf_learning_rate': self.tf_learning_rate, 'optim_type':optim_type, 'loss_type': loss_type, 'scheduler_type':scheduler_type,
+        self.loss_type = loss_type
+        self.scheduler_type = scheduler_type
+        self.patience = patience
+        self.delta = delta
+        self.config = {'learning_rate': self.learning_rate, 'tf_learning_rate': self.tf_learning_rate, 'optim_type':self.optim_type, 'loss_type': self.loss_type, 'scheduler_type':self.scheduler_type,
                        'gradient_accumulation_steps':self.gradient_accumulation_steps, 'batch_size':self.batch_size}
 
         self.save_checkpoints = save_checkpoints
-        if optim_type == 'adamw':
+        
+        self._set_up_optimizer()
+        self._set_up_loss()
+        self._set_up_scheduler(kwargs)
+
+        self._set_up_early_stop(early_stop, kwargs)
+
+        self._generate_save_name()
+
+        self.log = {"train_loss":[], "avg_train_loss":[], "val_loss":[], "avg_val_loss":[]}
+        self.log.update(self.config)
+
+        self.model_fit = False
+
+    def _set_up_optimizer(self):
+        """
+        """
+        if self.optim_type == 'adamw':
             self.tf_optim = torch.optim.AdamW(params=self.model.base_model.parameters(),lr=self.tf_learning_rate)
             self.clf_optim = torch.optim.AdamW(params=self.model.classifier_head.parameters(), lr=self.learning_rate)
         else:
-            raise NotImplementedError(f'{optim_type} not implemented.')
+            raise NotImplementedError(f'{self.optim_type} not implemented.')
         
-        #loss
-        if loss_type == 'bce':
+    def _set_up_loss(self):
+        """
+        """
+        if self.loss_type == 'bce':
             self.criterion = nn.BCEWithLogitsLoss()
-            self.name_prefix += '_bce'
-        elif loss_type == 'rank':
+        elif self.loss_type == 'rank':
             #assert 'rating_threshold' in kwargs, 'Must give rating threshold for rank loss.'
-            args = {'rating_threshold': self.rating_threshold}
-            self.name_prefix += f'_rank_th{self.rating_threshold}'
-
-            if 'margin' in kwargs:
-                m = kwargs.pop('margin')
-                args['margin'] = m
-                self.name_prefix += f'_mar{m}'
-            if 'bce_weight' in kwargs:
-                b = kwargs.pop('bce_weight')
-                args['bce_weight'] = b
-                self.name_prefix += f'_weight{m}'
-
+            args = {'rating_threshold': self.rating_threshold, 'margin': self.margin, 'bce_weight':self.bce_weight}
             self.config.update(args)
             self.criterion = RankedClassificationLoss(**args)
         else:
-            raise NotImplementedError(f'{loss_type} not implemented.')
-        
-        #scheduler
-        if scheduler_type == 'exponential':
-            self.name_prefix += f'_{scheduler_type}'
+            raise NotImplementedError(f'{self.loss_type} not implemented.')
+    
+    def _set_up_scheduler(self, kwargs):
+        """
+        """
+        if self.scheduler_type == 'exponential':
             if 'gamma' in kwargs:
                 clf_gamma = kwargs['gamma']
                 if 'tf_gamma' in kwargs:
                     tf_gamma = kwargs['tf_gamma']
                 else:
                     tf_gamma = clf_gamma
-                self.name_prefix += f'_g{clf_gamma}_tg{tf_gamma}'
-                self.config['gamma'] = clf_gamma
-                self.config['tf_gamma'] = tf_gamma
-            else:
 
+                self.clf_gamma = clf_gamma
+                self.tf_gamma = tf_gamma 
+
+                self.config['gamma'] = self.clf_gamma
+                self.config['tf_gamma'] = self.tf_gamma
+            else:
+                self.clf_gamma = None
+                self.tf_gamma = None
                 assert 'end_lr' in kwargs, 'Must give end_lr if using exponential learning rate decay scheduler.'
                 assert 'epochs' in kwargs, 'Must give epochs if using exponential learning rate decay scheduler.'
                 end_clf_lr = kwargs['end_lr']
@@ -143,17 +160,19 @@ class Trainer():
                 else:
                     end_tf_lr = end_clf_lr
                 epochs = kwargs['epochs']
-                self.name_prefix += f'_endlr{end_clf_lr}_tfendlr{end_tf_lr}'
                 tf_gamma = end_tf_lr / (self.tf_learning_rate**(1/epochs))
                 clf_gamma = end_clf_lr / (self.learning_rate**(1/epochs))
-                self.config['end_lr'] = end_clf_lr
-                self.config['end_tf_lr'] = end_tf_lr
-                self.config['epochs'] = epochs
+                self.end_clf_lr = end_clf_lr
+                self.end_tf_lr = end_tf_lr 
+                self.epochs = epochs
+                self.config['end_lr'] = self.end_clf_lr
+                self.config['end_tf_lr'] = self.end_tf_lr
+                self.config['epochs'] = self.epochs
 
             self.tf_scheduler = ExponentialLR(self.tf_optim, gamma=tf_gamma)
             self.clf_scheduler = ExponentialLR(self.clf_optim, gamma=clf_gamma)
 
-        elif scheduler_type == 'warmup-cosine':
+        elif self.scheduler_type == 'warmup-cosine':
             assert 'warmup_epochs' in kwargs,'Must give warmup_epochs if using warmup.'
             assert 'train_len' in kwargs, 'Must give train_len if using cosine annealing lr.'
             clf_warmup_e = kwargs['warmup_epochs']
@@ -161,35 +180,40 @@ class Trainer():
                 tf_warmup_e = kwargs['tf_warmup_epochs']
             else:
                 tf_warmup_e = clf_warmup_e
-            self.config['warmup_epochs'] = clf_warmup_e
-            self.config['tf_warmup_epochs'] = tf_warmup_e
-            self.config['train_len'] = kwargs['train_len']
+            self.clf_warmup_e = clf_warmup_e 
+            self.tf_warmup_e = tf_warmup_e
+            self.train_len = kwargs['train_len']
+            self.config['warmup_epochs'] = self.clf_warmup_e
+            self.config['tf_warmup_epochs'] = self.tf_warmup_e
+            self.config['train_len'] =self.train_len
 
-            self.name_prefix += f'_we{clf_warmup_e}_tfwe{tf_warmup_e}'
             tf_warmup = LambdaLR(self.tf_optim, lr_lambda=warmup_wrapper(tf_warmup_e))
             clf_warmup = LambdaLR(self.clf_optim, lr_lambda=warmup_wrapper(clf_warmup_e))
-            tf_cosine = CosineAnnealingLR(self.tf_optim, T_max = kwargs['train_len'])
-            clf_cosine = CosineAnnealingLR(self.clf_optim, T_max = kwargs['train_len'])
+            tf_cosine = CosineAnnealingLR(self.tf_optim, T_max = self.train_len)
+            clf_cosine = CosineAnnealingLR(self.clf_optim, T_max = self.train_len)
             self.tf_scheduler = SequentialLR(self.tf_optim, schedulers=[tf_warmup,tf_cosine], milestones=[tf_warmup_e-1]) #TODO: check what milestone should be based on warmup epoch?
             self.clf_scheduler = SequentialLR(self.clf_optim, schedulers=[clf_warmup,clf_cosine], milestones=[clf_warmup_e-1]) 
         
-        elif scheduler_type == 'cosine':
+        elif self.scheduler_type == 'cosine':
             assert 'train_len' in kwargs, 'Must give train_len if using cosine annealing lr.'
-            self.config['train_len'] = kwargs['train_len']
+            self.train_len = kwargs['train_len']
+            self.config['train_len'] = self.train_len
             self.tf_scheduler = CosineAnnealingLR(self.tf_optim, T_max = kwargs['train_len'])
             self.clf_scheduler = CosineAnnealingLR(self.clf_optim, T_max = kwargs['train_len'])
-        
-        elif scheduler_type is not None:
-            raise NotImplementedError(f'{scheduler_type} not implemented.')
+        elif self.scheduler_type is not None:
+            raise NotImplementedError(f'{self.scheduler_type} not implemented.')
         else:
             self.tf_scheduler = None
             self.clf_scheduler = None
-        
+
+    def _set_up_early_stop(self, early_stop, kwargs):
+        """
+        """
         #es 
         if early_stop:
+            self._set_up_early_stop()
             self.config['early_stop'] = True
-            self.name_prefix += f'_es'
-            es_params = {'patience':patience, 'delta':delta}
+            es_params = {'patience':self.patience, 'delta':self.delta}
             self.config.update(es_params)
             if 'test' in kwargs:
                 es_params['test'] = kwargs.pop('test')
@@ -197,12 +221,36 @@ class Trainer():
         else:
             self.early_stop = None
 
+    def _generate_save_name(self):
+        """
+        """
+        #MODEL COMPONENT
+        model_name = self.model.config['model_name']
+        clf_name = self.model.config['clf_name']
+        self.name_prefix = f'{model_name}_{clf_name}_seed{self.model.config['seed']}'
+        
+        
+        #TRAINING COMPONENT
+        self.name_prefix += f'_{self.optim_type}__lr{self.learning_rate}_tflr{self.tf_learning_rate}_{self.loss_type}'
+        
+        if self.loss_type == 'rank':
+            self.name_prefix += f'_th{self.rating_threshold}_margin{self.margin}_bceweight{self.bce_weight}'
+        
+        if self.scheduler_type == 'exponential':
+            if self.clf_gamma:
+                self.name_prefix += f'_{self.scheduler_type}_g{self.clf_gamma}_tg{self.tf_gamma}'
+            else:
+                self.name_prefix += f'_{self.scheduler_type}_endlr{self.end_clf_lr}_tfendlr{self.end_tf_lr}'
+        elif self.scheduler_type == 'warmup-cosine':
+            self.name_prefix += f'_{self.scheduler_type}_we{self.clf_warmup_e}_tfwe{self.tf_warmup_e}_tl{self.train_len}'
+        elif self.scheduler_type == 'cosine':
+            self.name_prefix += f'_{self.scheduler_type}_tl{self.train_len}'
+
+        if self.early_stop:
+            self.name_prefix += '_es'
+
         self.name_prefix += f'_bs{self.batch_size}_gas{self.gradient_accumulation_steps}'
-        self.log = {"train_loss":[], "avg_train_loss":[], "val_loss":[], "avg_val_loss":[]}
-        self.log.update(self.config)
-
-        self.model_fit = False
-
+  
     def train_step(self, train_loader:DataLoader):
         """
         Training step
@@ -278,25 +326,36 @@ class Trainer():
             self.early_stop(running_vloss, self.model, e)
 
         
-    def fit(self, train_loader:DataLoader, val_loader:DataLoader=None, epochs:int=10):
+    def fit(self, train_loader:DataLoader, out_dir:Union[Path,str], val_loader:DataLoader=None, epochs:int=10):
         """
         Fit the model with train_loader and optional val_loader
 
         :param tain_loader: DataLoader with training data
         :param val_loader: DataLoader with validation data (default=None)
         :param epochs: int, number of epochs to train for
+        :param: TODO
         """
+        if not isinstance(out_dir, Path): out_dir = Path(out_dir)
+
         self.epochs = epochs
         name_prefix =  f'{self.name_prefix}_e{epochs}'
         #FLUSH CONFIG
         if self.model.bucket:
             self.path = Path('.')
-            self.upload_path = self.model.out_dir / name_prefix
+            self.upload_path = out_dir / name_prefix
+            
+            #CHECK EXISTENCE
+            check_files = search_gcs(self.upload_path, self.upload_path, self.model.bucket)
+            if check_files != []:
+                raise ValueError(f'Trying to overwrite a file. Please check values: {self.upload_path}.')
+
         else:
-            self.path = self.model.out_dir / name_prefix
+            self.path = out_dir / name_prefix
+            if self.path.exists():
+                raise ValueError(f'Trying to overwrite a file. Please check values: {self.path}.')
             self.path.mkdir(parents = True, exist_ok = True)
 
-        self.model.save_config(sub_dir=name_prefix)
+        self.model.save_config(out_dir, sub_dir=name_prefix)
 
         config_path = self.path / 'train_config.json'
         with open(str(config_path), 'w') as f:
@@ -327,7 +386,7 @@ class Trainer():
                 if self.early_stop.early_stop:
                     best_model, best_epoch, _ = self.early_stop.get_best_model()
                     out_name = Path(name_prefix) /f'best{best_epoch}'
-                    best_model.save_model_components(sub_dir=out_name)
+                    best_model.save_model_components(out_dir, sub_dir=out_name)
                     self.best_model = best_model
                     self.best_epoch = best_epoch
                     self.model_fit = True
@@ -336,7 +395,7 @@ class Trainer():
             #checkpointing
             if (e ==0 or e % 5 == 0) and (e != epochs - 1) and self.save_checkpoints:
                 out_name = Path(name_prefix) /f'checkpoint{e}'
-                self.model.save_model_components(sub_dir=out_name)
+                self.model.save_model_components(out_dir, sub_dir=out_name)
             
             if self.tf_scheduler:
                 self.tf_scheduler.step()
@@ -344,23 +403,25 @@ class Trainer():
         
             if e == epochs - 1:
                 out_name = Path(name_prefix) /f'final{e}'
-                self.model.save_model_components(sub_dir = out_name)
+                self.model.save_model_components(out_dir, sub_dir = out_name)
 
                 if self.early_stop:
                     best_model, best_epoch, _ = self.early_stop.get_best_model()
                     out_name = Path(name_prefix) /f'best{best_epoch}'
-                    best_model.save_model_components(sub_dir=out_name)
+                    best_model.save_model_components(out_dir, sub_dir=out_name)
                     self.best_model = best_model
                     self.best_epoch = best_epoch
 
             self.model_fit = True 
 
-    def test(self, test_loader:DataLoader, test_best:bool=True):
+    def test(self, test_loader:DataLoader, out_dir:Union[Path,str], test_best:bool=True):
         """
         Evaluate model on test data
 
         :param testloader: DataLoader with test data
         """
+        if not isinstance(out_dir, Path): out_dir = Path(out_dir)
+
         if self.best_model is not None and test_best:
             model = self.best_model
         else:
@@ -369,11 +430,18 @@ class Trainer():
             name_prefix = self.name_prefix
             if model.bucket:
                 self.path = Path('.')
-                self.upload_path = model.out_dir / name_prefix
+                self.upload_path = out_dir / name_prefix
+
+                check_files = search_gcs(self.upload_path, self.upload_path, self.model.bucket)
+            if check_files != []:
+                raise ValueError(f'Trying to overwrite a file. Please check values: {self.upload_path}.')
+
             else:
-                self.path = model.out_dir / name_prefix
+                self.path = out_dir / name_prefix
+                if self.path.exists():
+                    raise ValueError(f'Trying to overwrite a file. Please check values: {self.path}.')
                 self.path.mkdir(parents = True, exist_ok = True)
-                model.save_config(sub_dir=name_prefix)
+                model.save_config(out_dir, sub_dir=name_prefix)
             
         model.eval()
         running_loss = 0.0

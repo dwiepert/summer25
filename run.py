@@ -172,7 +172,7 @@ def zip_model(args:argparse.Namespace) -> dict:
 
     #args.output_dir = args.output_dir / to_add
     if args.hf_model:
-        model_args = {'model_type':args.model_type,'out_dir':args.output_dir,
+        model_args = {'model_type':args.model_type,
                     'freeze_method':args.freeze_method, 'pool_method':args.pool_method,
                     'seed':args.seed,'finetune_method': args.finetune_method,  'normalize':args.normalize,
                     'device':torch.device("cuda" if torch.cuda.is_available() else "cpu"), "print_memory":args.print_memory}
@@ -438,7 +438,6 @@ if __name__ == "__main__":
     #INITIALIZE MODEL
     model, feature_extractor = CustomAutoModel.from_pretrained(**ma)
     
-
     ## DATA
     sa = zip_splits(updated_args)
     da = zip_dataset(updated_args)
@@ -482,8 +481,8 @@ if __name__ == "__main__":
     ## TRAIN MODEL
     model_trainer = Trainer(model=model, **fa)
     if not args.eval_only:
-        model_trainer.fit(train_loader, val_loader, epochs=args.epochs)
+        model_trainer.fit(train_loader, args.output_dir, val_loader, epochs=args.epochs)
         
-    model_trainer.test(test_loader)
+    model_trainer.test(test_loader, args.output_dir)
    
 

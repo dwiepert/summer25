@@ -58,10 +58,6 @@ class BaseModel(nn.Module):
 
         # INITIALIZE VARIABLES
         self.model_type = model_type
-        self.out_dir = out_dir
-        if not isinstance(self.out_dir, Path): self.out_dir = Path(self.out_dir)
-        if not bucket:
-            self.out_dir.mkdir(parents=True, exist_ok=True)
         self.finetune_method = finetune_method
         self.freeze_method = freeze_method
         self.pool_method = pool_method
@@ -146,7 +142,7 @@ class BaseModel(nn.Module):
         :return base_config: Dict[str -> str or List of str]
         """
         base_config={'freeze_method': self.freeze_method, 'pool_method':self.pool_method, 
-                     'finetune_method':self.finetune_method, 'out_dir': str(self.out_dir), 'seed':self.seed}
+                     'finetune_method':self.finetune_method, 'seed':self.seed}
         if self.freeze_method == 'layer':
             base_config['unfreeze_layers'] = self.unfreeze_layers
         if self.bucket:
@@ -191,22 +187,24 @@ class BaseModel(nn.Module):
                 lengths = torch.count_nonzero(x[:,:,0], dim=1)
             return self.attention_pooling(x, lengths)
     
-    def save_config(self, sub_dir:Path = None):
+    def save_config(self, out_dir:Union[str,Path], sub_dir:Path = None):
         """
         Save a config dictionary
         :param config: Dict
         """
+        if not isinstance(out_dir, Path): out_dir = Path(out_dir)
+
         if sub_dir: 
-            out_path = self.out_dir / sub_dir
+            out_path = out_dir / sub_dir
         else:
-            out_path = self.out_dir
+            out_path = out_dir
 
         if self.bucket:
             save_path = Path('.') 
         else:
             save_path = out_path
 
-        save_path.mkdir(exist_ok=True)
+        save_path.mkdir(parents=True, exist_ok=True)
         save_path = save_path / 'model_config.json'
         if save_path.exists(): print(f'Overwriting model config file saved at {str(save_path)}')
 

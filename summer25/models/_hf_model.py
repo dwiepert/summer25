@@ -63,13 +63,13 @@ class HFModel(BaseModel):
     :param bucket: gcs bucket (default = None)
     """
     def __init__(self, 
-                 out_dir:Union[Path, str], model_type:str, finetune_method:str='none', freeze_method:str = 'required-only', unfreeze_layers:Optional[List[str]]=None, pool_method:str = 'mean', normalize:bool=False,
+                 model_type:str, finetune_method:str='none', freeze_method:str = 'required-only', unfreeze_layers:Optional[List[str]]=None, pool_method:str = 'mean', normalize:bool=False,
                  out_features:int=1, nlayers:int=2, activation:str='relu', bottleneck:int=None, layernorm:bool=False, dropout:float=0.0, binary:bool=True, clf_type:str='linear', num_heads:int=4, separate:bool=True,
                  lora_rank:Optional[int]=8, lora_alpha:Optional[int]=16, lora_dropout:Optional[float]=0.0, virtual_tokens:Optional[int]=4,
                  seed:int=42, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
                  from_hub:bool=True, print_memory:bool=False, bucket=None):
 
-        super().__init__(model_type=model_type, out_dir=out_dir, finetune_method=finetune_method,
+        super().__init__(model_type=model_type, finetune_method=finetune_method,
                          freeze_method=freeze_method, unfreeze_layers=unfreeze_layers, pool_method=pool_method,
                          in_features=_MODELS[model_type]['in_features'], out_features=out_features, nlayers=nlayers, activation=activation, 
                          bottleneck=bottleneck, layernorm=layernorm, dropout=dropout, binary=binary, clf_type=clf_type, num_heads=num_heads, separate=separate,
@@ -279,18 +279,19 @@ class HFModel(BaseModel):
             upload_to_gcs(str(out_path), path, self.bucket, overwrite=True, directory=True)
             shutil.rmtree(path)
 
-    def save_model_components(self, name_prefix:str=None, sub_dir:Path = None):
+    def save_model_components(self, out_dir:Union[Path, str], name_prefix:str=None, sub_dir:Path = None):
         """
         Save base model and classifier separately
         :param name_prefix: str, name prefix for model and classifier (default = None)
         :param sub_dir: Path, optional sub dir to save model components to
         """
         assert self.base_model is not None, 'Must have loaded base model'
-        
+        if not isinstance(out_dir, Path): out_dir = Path(out_dir)
+
         if sub_dir: 
-            path = self.out_dir / sub_dir
+            path = out_dir / sub_dir
         else:
-            path = self.out_dir
+            path = out_dir
         
         name_model = self.model_name
         name_clf = self.classifier_head.config['clf_name']

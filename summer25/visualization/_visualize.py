@@ -9,6 +9,7 @@ import random
 import numpy as np
 from sklearn.metrics import balanced_accuracy_score, accuracy_score, roc_auc_score
 import pandas as pd
+import re
 
 def get_data(directory:Union[str,Path], bucket=None):
     """
@@ -52,11 +53,150 @@ def extract_data_from_parentdir(parent_directory:Union[str,Path], bucket=None):
     
     return data
 
+def check_config(data):
+    """
+    """
+    for d in data:
+        split_d = str(d.name).split("_")
+        check = {'model_type':split_d[0], 'seed':int(re.findall(r'\d+', split_d[1])[0]), 'freeze_method':split_d[2], 'pool_method':split_d[3],
+                 'finetune_method':split_d[4], 'optim_type':split_d[5], 'loss_type':split_d[6], 'learning_rate':float(".".join(re.findall(r'\d+', split_d[7]))),
+                 'tf_learning_rate':float(".".join(re.findall(r'\d+', split_d[8]))), 'threshold':float(".".join(re.findall(r'\d+', split_d[10]))), 'margin':float(".".join(re.findall(r'\d+', split_d[11]))),
+                 'bce_weight':float(".".join(re.findall(r'\d+', split_d[12]))), 'early_stop':True, 'batch_size':int(re.findall(r'\d+', split_d[14])[0]), 'gradient_accumulation_steps':int(re.findall(r'\d+', split_d[15])[0]),
+                 'epochs':int(re.findall(r'\d+', split_d[16])[0])}
+
+        model = data[d]['model_config.json']
+        train = data[d]['train_config.json']
+
+        
+
+    print('pause')
+
+def create_data_csvs(parent_directory,  bucket, savedir):
+    data = extract_data_from_parentdir(parent_directory, bucket)
+
+    assert not check_config(data)
+
+    metadata_dict = {'file_path':[]}
+    training_dict = {'file_path':[]}
+    eval_dict = {'file_path':[]}
+    for k in data:
+        model_path = str(k)
+        model_data = data[k]
+        model_md = model_data['model_config.json']
+        
+        temp = metadata_dict['file_path']
+        temp.append(model_path)
+        metadata_dict['file_path'] = temp
+
+        for m in model_md:
+            if m not in metadata_dict:
+                metadata_dict[m] = [model_md[m]]
+            else:
+                temp = metadata_dict[m]
+                temp.append(model_md[m])
+                metadata_dict[m] = temp 
+        
+        train_md = model_data['train_config.json']
+        for m in train_md:
+            if m not in metadata_dict:
+                metadata_dict[m] = [train_md[m]]
+            else:
+                temp = metadata_dict[m]
+                temp.append(train_md[m])
+                metadata_dict[m] = temp 
+
+        train_log = model_data['train_log.json']
+        length = None
+        for d in train_log:
+            item = train_log[d]
+            if isinstance(item, list) and length is None:
+                length = len(item)
+            elif not isinstance(item, list):
+                new_item = [item] * length 
+                item = new_item
+
+            if d not in training_dict:
+                training_dict[d] = item
+            else:
+                temp = training_dict[d]
+                temp.extend(item)
+                training_dict[d] = temp
+        
+        epochs = list(range(length)) 
+        if 'epoch' not in training_dict:
+            training_dict['epoch'] = epochs
+        else:
+            temp = training_dict['epoch']
+            temp.extend(epochs)
+            training_dict['epoch'] = d
+
+        temp = training_dict['file_path']
+        temp.extend([model_path]*length)
+        training_dict['file_path'] = temp 
+
+
+        evaluation = model_data['evaluation.json']
+        eval_length = None
+        target_features = evaluation['target_features']
+
+        for d in evaluation:
+            item = evaluation[d]
+            if d == 'target_features':
+                continue 
+
+            if isinstance(item,list):
+                if len(item) != len(target_features):
+                    if eval_length is None:
+                        eval_length = len(item)
+                    
+                    new_list = []
+                    features = []
+                    for i in range(len(item)):
+                        for j in range(len(target_features)):
+                            new_list.append(item[i,j])
+                            features.append(target_features[j])
+                    
+                    if d not in eval_dict:
+                        eval_dict[d] = new_list
+                        eval_dict['target_features'] = features
+                    else:
+                        temp_list = eval_dict[d]
+                        temp_list.extend(new_list)
+                        eval_dict[d]
+                        temp_feats = eval_dict['target_features']
+                        temp_feats.extend(features)
+                        eval_dict['target_features'] = features 
+                else:
+                    new_item = item * eval_length
+                    if d not in eval_dict:
+                        eval_dict[d] = new_item
+                    else:
+                        temp_list = eval_dict[d]
+                        temp_list.extend(new_item)
+                        eval_dict[d]
+            else:
+                new_item = [item] * (eval_length*len(target_features))
+                if d not in eval_dict:
+                    eval_dict[d] = new_item
+                else:
+                    temp_list = eval_dict[d]
+                    temp_list.extend(new_item)
+                    eval_dict[d]
+                    
+
+
+        temp = eval_dict['file_path']
+        temp.extend([model_path]*(eval_length*len(target_features)))
+        eval_dict['file_path'] = temp 
+
+
+    print('pause')
+
 def plot_training_loss(data, save_dir):
     """
     """    
-    colors = list(mcolors.TABLEAU_COLORS)
-    r_colors = random.sample(colors, len(data))
+    #colors = list(mcolors.TABLEAU_COLORS)
+    #r_colors = random.sample(colors, len(data))
     i = 0
     for f in data:
         output = data[f]
@@ -65,8 +205,8 @@ def plot_training_loss(data, save_dir):
         lr = train_md['learning_rate']
 
 
-        plt.plot(output['train_log.json']['avg_train_loss'], label= f'Training loss - tf_lr{tflr}; lr{lr}', color=r_colors[i])
-        plt.plot(output['train_log.json']['avg_val_loss'], label= f'Val loss - tf_lr{tflr}; lr{lr}', linestyle='--', color=r_colors[i])
+        plt.plot(output['train_log.json']['avg_train_loss'], label= f'Training loss - tf_lr{tflr}; lr{lr}')#, color=r_colors[i])
+        plt.plot(output['train_log.json']['avg_val_loss'], label= f'Val loss - tf_lr{tflr}; lr{lr}', linestyle='--')#, color=r_colors[i])
         i += 1
 
     plt.title('Average loss during training')
@@ -84,7 +224,7 @@ def plot_training_loss(data, save_dir):
         lr = train_md['learning_rate']
 
 
-        plt.plot(output['train_log.json']['avg_train_loss'], label= f'Training loss - tf_lr{tflr}; lr{lr}', color=r_colors[i])
+        plt.plot(output['train_log.json']['avg_train_loss'], label= f'Training loss - tf_lr{tflr}; lr{lr}')#, color=r_colors[i])
         i += 1
 
     plt.title('Average loss during training')
@@ -102,7 +242,7 @@ def plot_training_loss(data, save_dir):
         lr = train_md['learning_rate']
 
 
-        plt.plot(output['train_log.json']['avg_val_loss'], label= f'Validation loss - tf_lr{tflr}; lr{lr}', linestyle='--', color=r_colors[i])
+        plt.plot(output['train_log.json']['avg_val_loss'], label= f'Validation loss - tf_lr{tflr}; lr{lr}', linestyle='--')#, color=r_colors[i])
         i += 1
 
     plt.title('Average validation loss')
