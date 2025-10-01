@@ -48,7 +48,7 @@ class BaseModel(nn.Module):
     :param device: torch device (default = cuda)
     :param bucket: gcs bucket (default = None)
     """
-    def __init__(self, model_type:str, out_dir:Union[Path, str], finetune_method:str='none', 
+    def __init__(self, model_type:str, finetune_method:str='none', 
                  freeze_method:str = 'required-only', unfreeze_layers:Optional[List[str]]=None, 
                  pool_method:str = 'mean', pool_dim:Optional[Union[int, tuple]] = None,
                  in_features:int=768, out_features:int=1, nlayers:int=2, bottleneck:int=None, layernorm:bool=False, dropout:float=0.0, binary:bool=True, clf_type:str='linear', num_heads:int=4,
