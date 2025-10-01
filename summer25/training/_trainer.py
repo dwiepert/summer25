@@ -227,7 +227,8 @@ class Trainer():
         #MODEL COMPONENT
         model_name = self.model.config['model_name']
         clf_name = self.model.config['clf_name']
-        self.name_prefix = f'{model_name}_{clf_name}_seed{self.model.config['seed']}'
+        seed = self.model.config['seed']
+        self.name_prefix = f'{model_name}_{clf_name}_seed{seed}'
         
         
         #TRAINING COMPONENT
