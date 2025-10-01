@@ -211,7 +211,6 @@ class Trainer():
         """
         #es 
         if early_stop:
-            self._set_up_early_stop()
             self.config['early_stop'] = True
             es_params = {'patience':self.patience, 'delta':self.delta}
             self.config.update(es_params)
