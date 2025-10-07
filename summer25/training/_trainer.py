@@ -226,12 +226,11 @@ class Trainer():
         #MODEL COMPONENT
         model_name = self.model.config['model_name']
         clf_name = self.model.config['clf_name']
-        seed = self.model.config['seed']
-        self.name_prefix = f'{model_name}_{clf_name}_seed{seed}'
+        self.name_prefix = f'{model_name}_{clf_name}'
         
         
         #TRAINING COMPONENT
-        self.name_prefix += f'_{self.optim_type}__lr{self.learning_rate}_tflr{self.tf_learning_rate}_{self.loss_type}'
+        self.name_prefix += f'_{self.optim_type}_lr{self.learning_rate}_tflr{self.tf_learning_rate}_{self.loss_type}'
         
         if self.loss_type == 'rank':
             self.name_prefix += f'_th{self.rating_threshold}_margin{self.margin}_bceweight{self.bce_weight}'

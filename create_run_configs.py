@@ -85,12 +85,12 @@ nlayers = [2]#,1,3] #--nlayers
 freeze = ['all', 'exclude-last'] #, 'half'] #--freeze_method
 finetune = ['lora', 'soft-prompt'] #--finetune_method
 pool = ['mean', 'attention'] #--pool_method max
-bce_weight = [0.5, 1] #0.25
+bce_weight = [1.0] #[0.5, 1.0] #0.25
 seed = [100]#, 42]#, 56]
 
 
 
-""" #### CLASSIFIER ONLY - multiple layers, freeze vs. unfreeze
+#### CLASSIFIER ONLY - multiple layers, freeze vs. unfreeze
 sub_dir = 'clf_tests'
 for i in range(len(model_type)):
     mt = model_type[i]
@@ -117,9 +117,9 @@ for i in range(len(model_type)):
                         out_path = args.cfg_path / sub_dir
                         out_path.mkdir(parents=True, exist_ok=True)
                         out_path = str(out_path / f"{test_name}.json")
-                        set_args(base_cfg, args_list, out_path) """
+                        set_args(base_cfg, args_list, out_path)
 
-# #### finetune - multiple layers, freeze vs. unfreeze
+""" # #### finetune - multiple layers, freeze vs. unfreeze
 sub_dir = 'ft_tests'
 for i in range(len(model_type)):
     mt = model_type[i]
@@ -142,12 +142,12 @@ for i in range(len(model_type)):
                         args_list.append(f"--finetune_method={f}")
                         args_list.append(f"--pool_method={p}")
                         args_list.append(f"--bce_weight={b}")
-                        args_list.append(f"--seed={s}")
+                        args_list.append(f"--seed={int(s)}")
                         out_path = args.cfg_path / sub_dir
                         out_path.mkdir(parents=True, exist_ok=True)
                         out_path = str(out_path / f"{test_name}.json")
                         set_args(base_cfg, args_list, out_path)
-
+ """
 # sub_dir = 'ft_tests_v2'
 # for i in range(len(model_type)):
 #     if i == 0:

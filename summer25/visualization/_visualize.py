@@ -53,33 +53,84 @@ def extract_data_from_parentdir(parent_directory:Union[str,Path], bucket=None):
     
     return data
 
-def check_config(data):
+def check_config_v1(data):
     """
     """
+    incorrect_d = {}
     for d in data:
+        vals = []
+        incorrect_vals = {}
         split_d = str(d.name).split("_")
-        check = {'model_type':split_d[0], 'seed':int(re.findall(r'\d+', split_d[1])[0]), 'freeze_method':split_d[2], 'pool_method':split_d[3],
-                 'finetune_method':split_d[4], 'optim_type':split_d[5], 'loss_type':split_d[6], 'learning_rate':float(".".join(re.findall(r'\d+', split_d[7]))),
-                 'tf_learning_rate':float(".".join(re.findall(r'\d+', split_d[8]))), 'threshold':float(".".join(re.findall(r'\d+', split_d[10]))), 'margin':float(".".join(re.findall(r'\d+', split_d[11]))),
-                 'bce_weight':float(".".join(re.findall(r'\d+', split_d[12]))), 'early_stop':True, 'batch_size':int(re.findall(r'\d+', split_d[14])[0]), 'gradient_accumulation_steps':int(re.findall(r'\d+', split_d[15])[0]),
-                 'epochs':int(re.findall(r'\d+', split_d[16])[0])}
+        if split_d[13] == '':
+            check = {'model_type':split_d[0], 'seed':int(re.findall(r'\d+', split_d[1])[0]), 'freeze_method':split_d[2], 'pool_method':split_d[3], 'finetune_method':split_d[4],
+                    'clf_type': split_d[6], 'in_features':int(".".join(re.findall(r'\d+', split_d[7]))), 'out_features':int(".".join(re.findall(r'\d+', split_d[8]))), 'activation': split_d[9],
+                    'nlayers': int(".".join(re.findall(r'\d+', split_d[10]))), 'optim_type':split_d[12], 'learning_rate':float(".".join(re.findall(r'\d+', split_d[14]))),
+                    'tf_learning_rate':float("e-".join(re.findall(r'\d+', split_d[15]))), 'loss_type':split_d[16],'rating_threshold':float(".".join(re.findall(r'\d+', split_d[17]))), 'margin':float(".".join(re.findall(r'\d+', split_d[18]))),
+                    'bce_weight':float(".".join(re.findall(r'\d+', split_d[19]))),'scheduler_type':split_d[20], 'train_len':int(".".join(re.findall(r'\d+', split_d[21]))), 'early_stop':True, 'batch_size':int(re.findall(r'\d+', split_d[23])[0]), 'gradient_accumulation_steps':int(re.findall(r'\d+', split_d[24])[0]),
+                    'epochs':int(re.findall(r'\d+', split_d[25])[0])}
+        elif split_d[4] == 'lora' or split_d[4] == 'soft-prompt':
+            check = {'model_type':split_d[0], 'seed':int(re.findall(r'\d+', split_d[1])[0]), 'freeze_method':split_d[2], 'pool_method':split_d[3], 'finetune_method':split_d[4],
+                    'clf_type': split_d[6], 'in_features':int(".".join(re.findall(r'\d+', split_d[7]))), 'out_features':int(".".join(re.findall(r'\d+', split_d[8]))), 'activation': split_d[9],
+                    'nlayers': int(".".join(re.findall(r'\d+', split_d[10]))), 'optim_type':split_d[11], 'loss_type':split_d[12], 'learning_rate':float(".".join(re.findall(r'\d+', split_d[13]))),
+                    'tf_learning_rate':float("e-".join(re.findall(r'\d+', split_d[14]))), 'rating_threshold':float(".".join(re.findall(r'\d+', split_d[16]))), 'margin':float(".".join(re.findall(r'\d+', split_d[17]))),
+                                    'bce_weight':float(".".join(re.findall(r'\d+', split_d[18]))), 'early_stop':True, 'batch_size':int(re.findall(r'\d+', split_d[20])[0]), 'gradient_accumulation_steps':int(re.findall(r'\d+', split_d[21])[0]),
+                    'epochs':int(re.findall(r'\d+', split_d[22])[0])}
+        else:
+            check = {'model_type':split_d[0], 'seed':int(re.findall(r'\d+', split_d[1])[0]), 'freeze_method':split_d[2], 'pool_method':split_d[3],
+                    'clf_type': split_d[5], 'in_features':int(".".join(re.findall(r'\d+', split_d[6]))), 'out_features':int(".".join(re.findall(r'\d+', split_d[7]))), 'activation': split_d[8],
+                    'nlayers': int(".".join(re.findall(r'\d+', split_d[9]))), 'optim_type':split_d[10], 'loss_type':split_d[11], 'learning_rate':float(".".join(re.findall(r'\d+', split_d[12]))),
+                    'tf_learning_rate': float("e-".join(re.findall(r'\d+', split_d[13]))), 'rating_threshold':float(".".join(re.findall(r'\d+', split_d[15]))), 'margin':float(".".join(re.findall(r'\d+', split_d[16]))),
+                                    'bce_weight':float(".".join(re.findall(r'\d+', split_d[17]))), 'early_stop':True, 'batch_size':int(re.findall(r'\d+', split_d[19])[0]), 'gradient_accumulation_steps':int(re.findall(r'\d+', split_d[20])[0]),
+                    'epochs':int(re.findall(r'\d+', split_d[21])[0])}
+
 
         model = data[d]['model_config.json']
         train = data[d]['train_config.json']
 
-        
+        for m in model:
+            if m in check:
+                vals.append(model[m] == check[m])
+                spec = check[m]
+                act = model[m]
+                if model[m] != check[m]:
+                    print(f'specified: {spec} vs. actual: {act}')
+                    incorrect_vals[m] = {'specified': check[m], 'actual': model[m]}
 
-    print('pause')
+        for m in train:
+            if m in check:
+                vals.append(train[m] == check[m])
+                if train[m] != check[m]:
+                    spec = check[m]
+                    act = train[m]
+                    print(f'specified: {spec} vs. actual: {act}')
+                    incorrect_vals[m] = {'specified': check[m], 'actual': train[m]}
+        if not all(vals):
+            incorrect_d[str(d)] = incorrect_vals
+
+    return incorrect_d
+
 
 def create_data_csvs(parent_directory,  bucket, savedir):
+    if not isinstance(savedir, Path): savedir = Path(savedir)
+    if not savedir.exists():
+        savedir.mkdir(parents=True, exist_ok=True)
     data = extract_data_from_parentdir(parent_directory, bucket)
 
-    assert not check_config(data)
+    incorrect_d = check_config_v1(data)
+
+    with open(str(savedir/'incorrect.json'), 'w') as f:
+        json.dump(incorrect_d, f, indent=4)
+
+    #assert not check_config_v1(data)
 
     metadata_dict = {'file_path':[]}
     training_dict = {'file_path':[]}
     eval_dict = {'file_path':[]}
+    outputs = {'file_path':[]}
     for k in data:
+        if k in incorrect_d:
+            continue 
+
         model_path = str(k)
         model_data = data[k]
         model_md = model_data['model_config.json']
@@ -114,7 +165,8 @@ def create_data_csvs(parent_directory,  bucket, savedir):
             elif not isinstance(item, list):
                 new_item = [item] * length 
                 item = new_item
-
+            else:
+                assert length == len(item)
             if d not in training_dict:
                 training_dict[d] = item
             else:
@@ -128,69 +180,164 @@ def create_data_csvs(parent_directory,  bucket, savedir):
         else:
             temp = training_dict['epoch']
             temp.extend(epochs)
-            training_dict['epoch'] = d
+            training_dict['epoch'] = temp
 
         temp = training_dict['file_path']
         temp.extend([model_path]*length)
         training_dict['file_path'] = temp 
 
-
         evaluation = model_data['evaluation.json']
-        eval_length = None
+
+        # for binary
         target_features = evaluation['target_features']
+        probabilities = evaluation.pop('probabilities')
+        binary_targets = evaluation.pop('binary_targets')
 
+        p_df = pd.DataFrame(probabilities, columns=target_features)
+        p_df['type'] = 'probabilities'
+        bt_df = pd.DataFrame(binary_targets, columns=target_features)
+        bt_df['type'] = 'binary_targets'
+
+        binary = pd.concat([p_df, bt_df])
+        binary.to_csv(savedir / 'binary_outputs.csv', index=False)
+
+        # direct outputs/targets
+        outputs = evaluation.pop('outputs')
+        targets = evaluation.pop('targets')
+
+        o_df = pd.DataFrame(outputs, columns = target_features )
+        t_df = pd.DataFrame(targets, columns=target_features)
+        o_df['type'] = 'raw_outputs'
+        t_df['type'] = 'raw_targets'
+        
+        out = pd.concat([o_df, t_df])
+        out.to_csv(savedir/'raw_outputs.csv', index=False)
+       
+        
+        #target_features = evaluation.pop('target_features')
+
+        eval_length = len(probabilities)
+        feats = None
+        temp_dict = {}
         for d in evaluation:
-            item = evaluation[d]
-            if d == 'target_features':
-                continue 
+            if d not in ['target_features','macro_auc', 'overall_acc', 'bacc_per_feature', 'acc_per_feature', 'auc_per_feature', 'test_loss', 'avg_test_loss', 'best_epoch']:
+                continue
 
-            if isinstance(item,list):
-                if len(item) != len(target_features):
-                    if eval_length is None:
-                        eval_length = len(item)
-                    
-                    new_list = []
-                    features = []
-                    for i in range(len(item)):
-                        for j in range(len(target_features)):
-                            new_list.append(item[i,j])
-                            features.append(target_features[j])
-                    
-                    if d not in eval_dict:
-                        eval_dict[d] = new_list
-                        eval_dict['target_features'] = features
-                    else:
-                        temp_list = eval_dict[d]
-                        temp_list.extend(new_list)
-                        eval_dict[d]
-                        temp_feats = eval_dict['target_features']
-                        temp_feats.extend(features)
-                        eval_dict['target_features'] = features 
-                else:
-                    new_item = item * eval_length
-                    if d not in eval_dict:
-                        eval_dict[d] = new_item
-                    else:
-                        temp_list = eval_dict[d]
-                        temp_list.extend(new_item)
-                        eval_dict[d]
+            item = evaluation[d]
+
+            if not isinstance(item, list):
+                to_add = [item]*len(target_features)
+            elif len(item) == len(target_features):
+                to_add = item
             else:
-                new_item = [item] * (eval_length*len(target_features))
-                if d not in eval_dict:
-                    eval_dict[d] = new_item
-                else:
-                    temp_list = eval_dict[d]
-                    temp_list.extend(new_item)
-                    eval_dict[d]
+                print('pause')
+
+            if d not in eval_dict:
+                eval_dict[d] = to_add
+            else:
+                temp = eval_dict[d]
+                temp.extend(to_add)
+                eval_dict[d] = temp
+            
+            # else:
+            #     if len(item) == len(target_features):
+            #         if d not in eval_
+            #     if len(item) != len(target_features):
+            #         if eval_length is None:
+            #             eval_length = len(item)
+            #         else:
+            #             assert eval_length == len(item)
                     
+            #         new_list = []
+            #         features = []
+            #         for i in range(len(item)):
+            #             for j in range(len(target_features)):
+            #                 new_list.append(item[i][j])
+            #                 features.append(target_features[j])
+                    
+            #         if ex_feats is None: ex_feats=features
+            #         assert len(new_list) == len(features)
+
+            #         if d not in eval_dict:
+            #             eval_dict[d] = new_list
+            #             #eval_dict['target_features'] = features
+            #         else:
+            #             temp_list = eval_dict[d]
+            #             temp_list.extend(new_list)
+            #             eval_dict[d] = temp_list
+            #            # temp_feats = eval_dict['target_features']
+            #            # temp_feats.extend(features)
+
+            #             #assert len(temp_feats) == len(temp_list)
+            #            # eval_dict['target_features'] = temp_feats
+            #     else:
+            #         if eval_length is None:
+            #             temp_dict[d] = [item]
+                    
+            #         else: 
+            #             new_item = item * (eval_length)
+            #             features = target_features * eval_length
+                    
+            #         if ex_feats2 is None:
+            #             ex_feats2 = features
+            #         assert len(new_item) == len(features)
+
+
+            #         list_len = len(new_item)
+            #         if d not in eval_dict:
+            #             eval_dict[d] = new_item
+            #         else:
+            #             temp_list = eval_dict[d]
+            #             temp_list.extend(new_item)
+            #             list_len = len(temp_list)
+            #             eval_dict[d] = temp_list
+
+                    # if 'target_features' not in eval_dict:
+                    #     eval_dict['target_features'] = features
+                    # else:
+                    #     temp_feats = eval_dict['target_features']
+                    #     temp_feats.extend(features)
+                    #     assert len(temp_feats) == list_len
+                    #     eval_dict['target_features'] = temp_feats
+                    
+            # else:
+            #     new_item = [item] * (eval_length*len(target_features))
+            #     features = target_features * eval_length
+                
+            #     if ex_feats3 is None:
+            #         ex_feats3 = features
+            #     assert len(new_item) == len(features)
+            #     list_len = len(new_item)
+            #     if d not in eval_dict:
+            #         eval_dict[d] = new_item
+            #     else:
+            #         temp_list = eval_dict[d]
+            #         temp_list.extend(new_item)
+            #         list_len = len(temp_list)
+            #         eval_dict[d] = temp_list
+                    
+                # if 'target_features' not in eval_dict:
+                #     eval_dict['target_features'] = features
+                # else: 
+                #     temp_feats = eval_dict['target_features']
+                #     temp_feats.extend(features)
+                #     assert len(temp_feats) == list_len
+                #     eval_dict['target_features'] = temp_feats
+        
+        
 
 
         temp = eval_dict['file_path']
-        temp.extend([model_path]*(eval_length*len(target_features)))
+        temp.extend([model_path]*len(target_features))
         eval_dict['file_path'] = temp 
 
-
-    print('pause')
+    metadata_df = pd.DataFrame(metadata_dict)
+    metadata_df.to_csv(savedir / 'metadata.csv', index=False)
+    training_df = pd.DataFrame(training_dict)
+    training_df.to_csv(savedir/'training.csv', index=False)
+    
+    eval_df = pd.DataFrame(eval_dict)
+    eval_df.to_csv(savedir/'eval.csv', index=False)
 
 def plot_training_loss(data, save_dir):
     """
