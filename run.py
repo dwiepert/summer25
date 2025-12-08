@@ -422,22 +422,6 @@ if __name__ == "__main__":
     args_dict_m = check_model(args_dict_l)
     updated_args = save_path(argparse.Namespace(**args_dict_m))
     
-    ## INITIALIZE EXTRACTOR AND MODEL
-    ma = zip_model(updated_args)
-    ca, cckpt = zip_clf(updated_args)
-    temp_config = ma['config']
-    temp_config.update(ca)
-    ma['config'] = temp_config
-    ma['clf_checkpoint'] = cckpt
-
-    if updated_args.bucket:
-        assert 'bucket' in ma['config']
-    else:
-        print('No bucket available')
-        
-    #INITIALIZE MODEL
-    model, feature_extractor = CustomAutoModel.from_pretrained(**ma)
-    
     ## DATA
     sa = zip_splits(updated_args)
     da = zip_dataset(updated_args)
@@ -460,6 +444,22 @@ if __name__ == "__main__":
     test_dataset = WavDataset(data=test_df, **da)
     val_dataset = WavDataset(data=val_df, **da)
 
+    ## INITIALIZE EXTRACTOR AND MODEL
+    ma = zip_model(updated_args)
+    ca, cckpt = zip_clf(updated_args)
+    temp_config = ma['config']
+    temp_config.update(ca)
+    ma['config'] = temp_config
+    ma['clf_checkpoint'] = cckpt
+
+    if updated_args.bucket:
+        assert 'bucket' in ma['config']
+    else:
+        print('No bucket available')
+        
+    #INITIALIZE MODEL
+    model, feature_extractor = CustomAutoModel.from_pretrained(**ma)
+    
     #using custom collate
     collate_fn = collate_wrapper(feature_extractor)
     train_loader = DataLoader(dataset=train_dataset,batch_size=args.batch_sz,shuffle=True,collate_fn=collate_fn, num_workers=args.num_workers)

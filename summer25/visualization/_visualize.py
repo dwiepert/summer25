@@ -61,7 +61,22 @@ def check_config_v1(data):
         vals = []
         incorrect_vals = {}
         split_d = str(d.name).split("_")
-        if split_d[13] == '':
+
+        if ('tl' in  split_d[18]) or ('tl' in split_d[19]):
+            i = 0
+            check = {'model_type':split_d[i], 'seed':int(re.findall(r'\d+', split_d[i+1])[0]), 'freeze_method':split_d[i+2], 'pool_method':split_d[i+3]}
+            if split_d[i+4] != 'Classifier':
+                check['finetune_method'] = split_d[i+4]
+                i+= 1
+
+            
+            new_check = {'clf_type': split_d[i+5], 'in_features':int(".".join(re.findall(r'\d+', split_d[i+6]))), 'out_features':int(".".join(re.findall(r'\d+', split_d[i+7]))), 'activation': split_d[i+8],
+                    'nlayers': int(".".join(re.findall(r'\d+', split_d[i+9]))), 'optim_type':split_d[i+10], 'learning_rate':float(".".join(re.findall(r'\d+', split_d[i+11]))),
+                    'tf_learning_rate':float("e-".join(re.findall(r'\d+', split_d[i+12]))), 'loss_type':split_d[i+13],'rating_threshold':float(".".join(re.findall(r'\d+', split_d[i+14]))), 'margin':float(".".join(re.findall(r'\d+', split_d[i+15]))),
+                    'bce_weight':float(".".join(re.findall(r'\d+', split_d[i+16]))),'scheduler_type':split_d[i+17], 'train_len':int(".".join(re.findall(r'\d+', split_d[i+18]))), 'early_stop':True, 'batch_size':int(re.findall(r'\d+', split_d[i+20])[0]), 'gradient_accumulation_steps':int(re.findall(r'\d+', split_d[i+21])[0]),
+                    'epochs':int(re.findall(r'\d+', split_d[i+22])[0])}
+            check.update(new_check)
+        elif split_d[13] == '':
             check = {'model_type':split_d[0], 'seed':int(re.findall(r'\d+', split_d[1])[0]), 'freeze_method':split_d[2], 'pool_method':split_d[3], 'finetune_method':split_d[4],
                     'clf_type': split_d[6], 'in_features':int(".".join(re.findall(r'\d+', split_d[7]))), 'out_features':int(".".join(re.findall(r'\d+', split_d[8]))), 'activation': split_d[9],
                     'nlayers': int(".".join(re.findall(r'\d+', split_d[10]))), 'optim_type':split_d[12], 'learning_rate':float(".".join(re.findall(r'\d+', split_d[14]))),
@@ -116,17 +131,20 @@ def create_data_csvs(parent_directory,  bucket, savedir):
         savedir.mkdir(parents=True, exist_ok=True)
     data = extract_data_from_parentdir(parent_directory, bucket)
 
+    incorrect_d = []
     incorrect_d = check_config_v1(data)
 
     with open(str(savedir/'incorrect.json'), 'w') as f:
         json.dump(incorrect_d, f, indent=4)
 
     #assert not check_config_v1(data)
-
+    #incorrect_d = []
     metadata_dict = {'file_path':[]}
     training_dict = {'file_path':[]}
     eval_dict = {'file_path':[]}
     outputs = {'file_path':[]}
+    out = None
+    binary = None
     for k in data:
         if k in incorrect_d:
             continue 
@@ -198,8 +216,14 @@ def create_data_csvs(parent_directory,  bucket, savedir):
         bt_df = pd.DataFrame(binary_targets, columns=target_features)
         bt_df['type'] = 'binary_targets'
 
-        binary = pd.concat([p_df, bt_df])
-        binary.to_csv(savedir / 'binary_outputs.csv', index=False)
+        b= pd.concat([p_df, bt_df])
+        b['file_path'] = k
+
+        if binary is None:
+            binary = b
+        else:
+            binary = pd.concat([binary, b])
+       
 
         # direct outputs/targets
         outputs = evaluation.pop('outputs')
@@ -210,9 +234,14 @@ def create_data_csvs(parent_directory,  bucket, savedir):
         o_df['type'] = 'raw_outputs'
         t_df['type'] = 'raw_targets'
         
-        out = pd.concat([o_df, t_df])
-        out.to_csv(savedir/'raw_outputs.csv', index=False)
-       
+        o = pd.concat([o_df, t_df])
+        o['file_path'] = k
+
+        if out is None:
+            out = o
+        else:
+            out = pd.concat([out, o])
+ 
         
         #target_features = evaluation.pop('target_features')
 
@@ -330,6 +359,9 @@ def create_data_csvs(parent_directory,  bucket, savedir):
         temp = eval_dict['file_path']
         temp.extend([model_path]*len(target_features))
         eval_dict['file_path'] = temp 
+
+    binary.to_csv(savedir / 'binary_outputs.csv', index=False)
+    out.to_csv(savedir/'raw_outputs.csv', index=False)
 
     metadata_df = pd.DataFrame(metadata_dict)
     metadata_df.to_csv(savedir / 'metadata.csv', index=False)

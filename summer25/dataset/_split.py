@@ -94,7 +94,7 @@ def _check_existing(split_dir:Union[Path,str], load_existing:bool, audio_dir:Uni
         if bucket is None:
             assert audio_dir.exists(), 'Must give an audio_dir if not loading from existing'
         else:
-            existing = existing = search_gcs('*', audio_dir, bucket)
+            existing = search_gcs('*', audio_dir, bucket)
             assert existing != [], 'Must give an audio_dir if not loading from existing'
     return load_existing
 
