@@ -243,6 +243,8 @@ def zip_splits(args:argparse.Namespace) -> dict:
             split_args['stratify_threshold'] = args.stratify_threshold
     if args.bucket:
         split_args['bucket'] = args.bucket
+    if args.reduced:
+        split_args['reduced'] = args.reduced
     return split_args
 
 def zip_dataset(args:argparse.Namespace) -> dict:
@@ -358,6 +360,7 @@ if __name__ == "__main__":
     io_args.add_argument('--clip_length', type=float, help="Specify audio clip length in s.")
     io_args.add_argument('--trim_level', type=float, help="Specify silence trim level (dB for use_librosa, trigger level for torchaudio)")
     io_args.add_argument('--normalize', action='store_true', help='Specify whether to normalize audio.')
+    io_args.add_argument('--reduced', action='store_true')
     #BASE MODEL
     model_args = parser.add_argument_group('model', 'model related arguments')
     model_args.add_argument('--model_type', type=str,

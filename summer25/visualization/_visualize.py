@@ -126,16 +126,18 @@ def check_config_v1(data):
 
 
 def create_data_csvs(parent_directory,  bucket, savedir):
-    if not isinstance(savedir, Path): savedir = Path(savedir)
-    if not savedir.exists():
-        savedir.mkdir(parents=True, exist_ok=True)
+    if savedir:
+        if not isinstance(savedir, Path): savedir = Path(savedir)
+        if not savedir.exists():
+            savedir.mkdir(parents=True, exist_ok=True)
     data = extract_data_from_parentdir(parent_directory, bucket)
 
     incorrect_d = []
     incorrect_d = check_config_v1(data)
 
-    with open(str(savedir/'incorrect.json'), 'w') as f:
-        json.dump(incorrect_d, f, indent=4)
+    if savedir:
+        with open(str(savedir/'incorrect.json'), 'w') as f:
+            json.dump(incorrect_d, f, indent=4)
 
     #assert not check_config_v1(data)
     #incorrect_d = []
@@ -360,16 +362,21 @@ def create_data_csvs(parent_directory,  bucket, savedir):
         temp.extend([model_path]*len(target_features))
         eval_dict['file_path'] = temp 
 
-    binary.to_csv(savedir / 'binary_outputs.csv', index=False)
-    out.to_csv(savedir/'raw_outputs.csv', index=False)
-
     metadata_df = pd.DataFrame(metadata_dict)
-    metadata_df.to_csv(savedir / 'metadata.csv', index=False)
     training_df = pd.DataFrame(training_dict)
-    training_df.to_csv(savedir/'training.csv', index=False)
-    
     eval_df = pd.DataFrame(eval_dict)
-    eval_df.to_csv(savedir/'eval.csv', index=False)
+    
+    if savedir:
+        binary.to_csv(savedir / 'binary_outputs.csv', index=False)
+        out.to_csv(savedir/'raw_outputs.csv', index=False)
+
+        
+        metadata_df.to_csv(savedir / 'metadata.csv', index=False)
+        training_df.to_csv(savedir/'training.csv', index=False)
+        
+        eval_df = pd.DataFrame(eval_dict)
+        eval_df.to_csv(savedir/'eval.csv', index=False)
+    return metadata_df, binary, out, training_df, eval_df, incorrect_d
 
 def plot_training_loss(data, save_dir):
     """

@@ -29,6 +29,7 @@ parser.add_argument('--audio_key', type=str)
 parser.add_argument('--task_key', type=str)
 parser.add_argument('--epochs', type=int, default=100)
 parser.add_argument('--seed', type=int, default=100)
+parser.add_argument('--reduced', action='store_true')
 parser.add_argument
 args = parser.parse_args()
 
@@ -73,20 +74,21 @@ base_arg_list = [   f"--output_dir={args.output_dir}",
                     "--target_tasks",
                     "reading"
             ]
-
+if args.reduced:
+    base_arg_list.append("--reduced")
 
 learning_rates = [1e-4] #--learning_rate
 tf_learning_rates = [1e-6] #--tf_learning_rate
-model_type = ['wavlm-large', 'hubert-large', 'whisper-medium'] #--model_type
+model_type = ['wavlm-large', 'hubert-large']#, 'whisper-medium'] #--model_type
 args.pt_checkpoint_root = Path(args.pt_checkpoint_root)
 checkpoints = [str(args.pt_checkpoint_root / m) for m in model_type] #--pt_ckpt
 nlayers = [2]#,1,3] #--nlayers
 freeze = ['all', 'exclude-last'] #, 'half'] #--freeze_method
-#finetune = ['lora', 'soft-prompt'] #--finetune_method
-finetune = []
+finetune = ['lora', 'soft-prompt'] #--finetune_method
+#finetune = []
 pool = ['mean', 'attention'] #--pool_method max
 bce_weight = [0.5] #[0.5, 1.0] #0.25
-seed = [100]#,19, 42]#, 56]
+seed = [100, 19, 42]#,19, 42]#, 56]
 
 
 

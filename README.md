@@ -203,61 +203,20 @@ trainer.fit(train_loader, val_loader, epoch=1)
 trainer.test(test_loader)
 ```
 
-# Random Additional notes
-- once we have models, determine clinical twist, try in just ALS?
-
-a2-highgpu-2g
- 
 
 ## TRAINING PARAMS
+* gpu needed: a2-highgpu-2g
 * FEATURES: hoarse_harsh, slow_rate, sound_distortions, monopitch_monoloudness, 'inappropriate_silences_or_prolonged_intervals'
 * batch_size: 16
 * learning_rate: 0.001, 0.01, 0.0001
 * tf_learning_rate: 1e-6, 1e-5, 1e-4
 * loss: rank
     * bce_weight: 0, 0.25, 0.5, 1
-* number of classifier layers: TODO
-* freezing/finetuning: (if you are going to add parameters to model - could add to classifier level, limited compute/limited data - where to add it? Add one more classifier layer and see what happens? More data you have, the more parameters you can reasonably optimize - we're always low data, so what's the best way to limit the data.)
-    * all 
-    * exclude-last 
-    * half
-    * required-only
-    * LoRA
-    * soft-prompting
-    * add one layer to classifier
-* pooling
-    * mean
-    * max
-    * attention
-* MODELS:
-    * wavlm-large
-    * hubert-large
-    * whisper-medium
-* scheduler: TODO
-    * cosine, #skip warmup
-    * do by epoch not training step bc it's a small thought
+]
 
-## QUESTIONS/RESEARCH
-* CURRENT RUNNING TIME: LoRA - ~30min PER EPOCH
-*  5 MOST COMMON FEATURES IN SENTENCE REPETITION - REDO WITH NEW DC EVENTUALLY TODO:
-        * hoarse_harsh: 452
-        * slow_rate: 402
-        * sound_distortions: 349
-        * monopitch_monoloudness: 341
-        * inappropriate_silences_or_prolonged_intervals: 264
-        
-        ```
-        data = pd.read_csv('CSV')
-        data_feats = data[_FEATURES]
-        freq = (data_feats > 1).sum()
-        print(freq.sort_values()[-5:])
-        ```
-
-
-## All TODO
-* visualizations 
-    * training vs. validation loss
-    * weights? 
-    * any kind of attention heads during pooling?
-    * outputs
-
+## OUTPUT
+Relevant models:
+* 10162025
+* 10062025
+* 10012025
+* Small models: 03022026_small

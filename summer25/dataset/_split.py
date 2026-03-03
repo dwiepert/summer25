@@ -261,7 +261,7 @@ def _split_name(audio_dir:Union[Path, str] = None, split_dir:Union[Path, str] = 
 def _create_split(audio_dir:Union[Path,str], split_dir:Union[Path,str],
                   date_key:str, subject_key:str, audio_key:str, task_key:str, 
                   target_tasks:List[str], target_features:List[str], prop_inds:List[int], proportions:List[float],
-                  stratify_threshold:int, as_json:bool, save:bool, seed:int, bucket) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+                  stratify_threshold:int, as_json:bool, save:bool, seed:int, bucket, reduced) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
     Create split
 
@@ -280,6 +280,7 @@ def _create_split(audio_dir:Union[Path,str], split_dir:Union[Path,str],
     :param save: bool, specify whether to save created split (default = False)
     :param seed: int, random seed for splitting consistently (default = 42)
     :param bucket: GCS bucket
+    :param reduced: bool, reduce training df
 
     :return train_df: pd.DataFrame, train split
     :return val_df: pd.DataFrame, validation split
@@ -409,6 +410,9 @@ def _create_split(audio_dir:Union[Path,str], split_dir:Union[Path,str],
     else:
         test_df = None
     
+    if reduced:
+        train_df = train_df.sample(frac=0.5)
+
     temp_dict = {'train': train_df, 'val': val_df, 'test': test_df}
     
     if save:
@@ -425,7 +429,7 @@ def seeded_split(subject_key:str, date_key:str, audio_key:str, task_key:str, aud
                  split_dir:Union[Path,str]=None, proportions:List[float]=[.7, .15, .15], seed:int=42,
                  save:bool=False, load_existing:bool=False, as_json:bool=False,
                  target_tasks:List[str]=None, target_features:List[str] = None, stratify_threshold:int=10,
-                 bucket=None) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+                 bucket=None, reduced=False) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
     Create train/test/val splits
 
@@ -444,6 +448,7 @@ def seeded_split(subject_key:str, date_key:str, audio_key:str, task_key:str, aud
     :param target_features: List of target features to stratify on/keep (default = None)
     :param stratify_threshold: int, specify threshold for stratification of features (default = 10)
     :param bucket: GCS bucket (default = None)
+    :param reduced: bool, whether training set is reduced in size
     :return train_df: pd.DataFrame, train split
     :return val_df: pd.DataFrame, validation split
     :return test_df: pd.DataFrame, test split
@@ -471,6 +476,6 @@ def seeded_split(subject_key:str, date_key:str, audio_key:str, task_key:str, aud
     # create new split
     return _create_split(audio_dir=audio_dir, split_dir=split_dir, date_key=date_key, subject_key=subject_key,
                   audio_key=audio_key, task_key=task_key, target_tasks=target_tasks, target_features=target_features, prop_inds=prop_inds, proportions=proportions, stratify_threshold=stratify_threshold, 
-                  as_json=as_json, save=save, seed=seed, bucket=bucket)
+                  as_json=as_json, save=save, seed=seed, bucket=bucket, reduced=reduced)
 
 
